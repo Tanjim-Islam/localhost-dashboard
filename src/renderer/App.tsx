@@ -27,6 +27,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<any>(null);
   const [openSettings, setOpenSettings] = useState(false);
+  const [query, setQuery] = useState('');
+  const [hidden, setHidden] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const offUpdate = window.api.onScanUpdate((next) => setItems(next));
@@ -40,18 +42,49 @@ export default function App() {
     };
   }, []);
 
+  // Filter by search query and exclude optimistically hidden cards
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const now = Date.now();
+    // auto-expire hidden entries after 8s in case kill failed
+    const visible = items.filter((it) => {
+      const hidAt = hidden[it.key];
+      if (hidAt && now - hidAt < 8000) return false;
+      return true;
+    });
+    if (!q) return visible;
+    return visible.filter((it) => {
+      const hay = [
+        it.port?.toString() ?? '',
+        it.pid?.toString() ?? '',
+        it.processName ?? '',
+        it.command ?? '',
+        it.framework ?? '',
+        it.url ?? ''
+      ]
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [items, hidden, query]);
+
   const grouped = useMemo(() => {
-    return items.reduce<Record<string, Item[]>>((acc, cur) => {
+    return filtered.reduce<Record<string, Item[]>>((acc, cur) => {
       const f = cur.framework ?? 'Other';
       acc[f] = acc[f] || [];
       acc[f].push(cur);
       return acc;
     }, {});
-  }, [items]);
+  }, [filtered]);
 
   return (
     <div className="h-screen w-screen bg-night text-gray-900 select-none">
-      <TitleBar onRefresh={() => window.api.refresh()} onSettings={() => setOpenSettings(true)} />
+      <TitleBar
+        onRefresh={() => window.api.refresh()}
+        onSettings={() => setOpenSettings(true)}
+        search={query}
+        onSearchChange={setQuery}
+      />
 
       <div className="px-6 py-5 overflow-auto h-[calc(100vh-48px)]">
         {error && (
@@ -71,7 +104,13 @@ export default function App() {
             <div key={framework} className="space-y-5">
               <div className="text-gray-700 uppercase tracking-wider text-xs mb-2">{framework}</div>
               {list.map((it) => (
-                <ServerCard key={it.key} item={it} />
+                <ServerCard
+                  key={it.key}
+                  item={it}
+                  onOptimisticKill={(key) => {
+                    setHidden((h) => ({ ...h, [key]: Date.now() }));
+                  }}
+                />
               ))}
             </div>
           ))}

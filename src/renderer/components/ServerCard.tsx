@@ -1,14 +1,27 @@
 import React from 'react';
+import cx from 'classnames';
 import dayjs from 'dayjs';
 
-export default function ServerCard({ item }: { item: any }) {
+export default function ServerCard({ item, onOptimisticKill }: { item: any; onOptimisticKill?: (key: string) => void }) {
   const uptime = dayjs(item.lastSeen).from(item.firstSeen, true);
   const cpu = item.cpu ? `${item.cpu.toFixed(1)}%` : '—';
   const mem = item.memory ? readableBytes(item.memory) : '—';
 
   const open = () => window.api.openUrl(item.url);
   const copy = () => window.api.copyText(item.url);
-  const kill = () => window.api.killPid(item.pid);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [exiting, setExiting] = React.useState<null | 'left' | 'right'>(null);
+  const kill = () => {
+    if (exiting) return;
+    const rect = ref.current?.getBoundingClientRect();
+    const centerX = (rect?.left ?? 0) + (rect?.width ?? 0) / 2;
+    const dir = centerX < window.innerWidth / 2 ? 'left' : 'right';
+    setExiting(dir);
+    // Fire the actual kill immediately
+    window.api.killPid(item.pid);
+    // Hide after the animation begins so users see the motion
+    window.setTimeout(() => onOptimisticKill?.(item.key), 260);
+  };
 
   const [stats, setStats] = React.useState<any>(null);
   React.useEffect(() => {
@@ -20,7 +33,14 @@ export default function ServerCard({ item }: { item: any }) {
   const seenCount = stats?.portCounts?.[String(item.port)] ?? 0;
 
   return (
-    <div className="rounded-xl border border-gray-300/40 bg-gray-100 p-4 shadow-soft hover:shadow transition">
+    <div
+      ref={ref}
+      className={cx(
+        'rounded-xl border border-gray-300/40 bg-gray-100 p-4 shadow-soft transition-all duration-300 will-change-transform',
+        exiting === 'left' && '-translate-x-[120%] opacity-0',
+        exiting === 'right' && 'translate-x-[120%] opacity-0'
+      )}
+    >
       <div className="flex items-center justify-between">
         <div className="text-2xl font-mono text-night-900">:{item.port}</div>
         <div className="text-xs text-gray-600">PID {item.pid} • Seen {seenCount}x</div>
