@@ -4,7 +4,7 @@ import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { Scanner } from './scanner';
 import { bumpPort, stats as statsStore } from './stats';
-import { settings, parsePorts, portsToString } from './settings';
+import { settings, parsePorts, portsToString, migrateLegacyNotifications } from './settings';
 import AutoLaunch from 'auto-launch';
 
 let win: BrowserWindow | null = null;
@@ -123,6 +123,7 @@ async function setAutoLaunch(enabled: boolean) {
 app.whenReady().then(async () => {
   await createWindow();
   setupTray();
+  migrateLegacyNotifications();
   scanner.start();
 });
 
@@ -141,7 +142,7 @@ scanner.on('update', (items) => {
 
 scanner.on('new', (item) => {
   bumpPort(item.port);
-  if (settings.get('notifications')) {
+  if (settings.get('notifyOnStart')) {
     new Notification({
       title: 'New local server',
       body: `${item.processName ?? 'Process'} on :${item.port}`
@@ -151,7 +152,7 @@ scanner.on('new', (item) => {
 });
 
 scanner.on('stopped', (item) => {
-  if (settings.get('notifications')) {
+  if (settings.get('notifyOnStop')) {
     new Notification({
       title: 'Server stopped',
       body: `${item.processName ?? 'Process'} on :${item.port}`
@@ -182,7 +183,9 @@ ipcMain.handle('settings:update', async (_evt, incoming: any) => {
   // Type helper not available at runtime; trust payload shape from preload validation.
   if (typeof incoming.scanIntervalMs === 'number') settings.set('scanIntervalMs', incoming.scanIntervalMs);
   if (typeof incoming.startAtLogin === 'boolean') await setAutoLaunch(incoming.startAtLogin);
-  if (typeof incoming.notifications === 'boolean') settings.set('notifications', incoming.notifications);
+  if (typeof incoming.notifyOnStart === 'boolean') settings.set('notifyOnStart', incoming.notifyOnStart);
+  if (typeof incoming.notifyOnStop === 'boolean') settings.set('notifyOnStop', incoming.notifyOnStop);
+  if (typeof incoming.scanAllPorts === 'boolean') settings.set('scanAllPorts', incoming.scanAllPorts);
   if (typeof (incoming as any).portsText === 'string') {
     const ports = parsePorts((incoming as any).portsText);
     settings.set('ports', ports);

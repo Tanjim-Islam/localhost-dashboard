@@ -33,7 +33,7 @@ export default function ServerCard({ item }: { item: any }) {
         <span className="opacity-50">•</span>
         <span>Up {uptime}</span>
       </div>
-      <div className="mt-4 flex items-center gap-3 justify-between">
+      <div className="mt-4 flex items-center gap-4 justify-between">
         <div className="flex items-center gap-3">
           <button onClick={open} className="h-12 px-5 rounded-full bg-night-700 text-night-100 hover:bg-night-800 transition text-sm font-medium">Open</button>
           <button onClick={copy} className="h-12 px-5 rounded-full bg-gray-200 text-gray-900 hover:bg-gray-300 transition text-sm font-medium">Copy URL</button>

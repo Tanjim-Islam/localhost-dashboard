@@ -53,7 +53,7 @@ export default function App() {
     <div className="h-screen w-screen bg-night text-gray-900 select-none">
       <TitleBar onRefresh={() => window.api.refresh()} onSettings={() => setOpenSettings(true)} />
 
-      <div className="px-6 py-4 overflow-auto h-[calc(100vh-48px)]">
+      <div className="px-6 py-5 overflow-auto h-[calc(100vh-48px)]">
         {error && (
           <div className="bg-mimi_pink-700/30 text-mimi_pink-200 border border-mimi_pink-400/40 px-4 py-2 rounded mb-4">
             {error}
@@ -66,9 +66,9 @@ export default function App() {
           </div>
         )}
 
-        <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))' }}>
+        <div className="grid gap-y-6 gap-x-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))' }}>
           {Object.entries(grouped).map(([framework, list]) => (
-            <div key={framework} className="">
+            <div key={framework} className="space-y-5">
               <div className="text-gray-700 uppercase tracking-wider text-xs mb-2">{framework}</div>
               {list.map((it) => (
                 <ServerCard key={it.key} item={it} />

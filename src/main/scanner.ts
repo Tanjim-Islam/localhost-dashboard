@@ -23,6 +23,7 @@ export type ServerInfo = {
 };
 
 function inConfiguredPorts(port: number): boolean {
+  if (settings.get('scanAllPorts')) return true;
   const ports = settings.get('ports');
   for (const p of ports) {
     if (Array.isArray(p)) {
@@ -145,44 +146,45 @@ export class Scanner extends EventEmitter {
 type SimpleConn = { protocol: string; localPort: number; pid: number; state: string };
 
 async function getListening(): Promise<SimpleConn[]> {
-  // Primary path: systeminformation
+  const byKey = new Map<string, SimpleConn>();
+
+  // 1) systeminformation
   try {
     const conns = await si.networkConnections();
-    const listening = conns
-      .filter((c) => (c.protocol || '').toLowerCase().startsWith('tcp'))
-      .filter((c) => (c.state || '').toLowerCase().startsWith('listen'))
-      .map((c) => ({
-        protocol: c.protocol || 'tcp',
-        localPort: (c as any).localPort ?? (c as any).localport, // guard against unexpected casing
-        pid: c.pid ?? 0,
-        state: c.state || 'LISTENING'
-      }))
-      .filter((c) => typeof c.localPort === 'number' && c.localPort > 0);
-    if (listening.length > 0) return listening;
+    for (const c of conns) {
+      const proto = (c.protocol || '').toLowerCase();
+      const state = (c.state || '').toLowerCase();
+      const port = (c as any).localPort ?? (c as any).localport;
+      if (!proto.startsWith('tcp') || !state.startsWith('listen')) continue;
+      if (typeof port !== 'number' || port <= 0) continue;
+      const pid = c.pid ?? 0;
+      const key = `${pid}:${port}`;
+      byKey.set(key, { protocol: c.protocol || 'tcp', localPort: port, pid, state: c.state || 'LISTENING' });
+    }
   } catch {
-    // fall through to OS fallback
+    // ignore
   }
 
-  // Windows fallback: parse `netstat -ano` (TCP only)
+  // 2) Windows netstat — merge in (never treat as fallback only)
   if (process.platform === 'win32') {
     try {
-      const { stdout } = await execAsync('netstat -ano -p TCP');
+      // include both TCP and TCPv6 lines
+      const { stdout } = await execAsync('netstat -ano');
       const lines = stdout.split(/\r?\n/);
-      const result: SimpleConn[] = [];
-      const re = /^\s*TCP\s+[^:]+:(\d+)\s+[^\s]+\s+LISTENING\s+(\d+)/i;
+      const re = /^\s*TCP\S*\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)/i;
       for (const line of lines) {
         const m = re.exec(line);
         if (m) {
           const port = parseInt(m[1], 10);
           const pid = parseInt(m[2], 10);
-          result.push({ protocol: 'tcp', localPort: port, pid, state: 'LISTENING' });
+          const key = `${pid}:${port}`;
+          if (!byKey.has(key)) byKey.set(key, { protocol: 'tcp', localPort: port, pid, state: 'LISTENING' });
         }
       }
-      return result;
     } catch {
       // ignore
     }
   }
 
-  return [];
+  return Array.from(byKey.values());
 }
