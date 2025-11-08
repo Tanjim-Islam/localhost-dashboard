@@ -53,3 +53,4 @@ dist/*-unpacked/
 resources/icons/*.ico
 resources/icons/*.icns
 *.local
+AGENTS.md
