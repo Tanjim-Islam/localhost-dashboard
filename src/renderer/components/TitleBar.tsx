@@ -13,29 +13,45 @@ export default function TitleBar({
   search,
   onSearchChange,
 }: Props) {
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    const path = (e as any).nativeEvent?.composedPath?.() || [];
+    const shouldIgnore = path.some((el: any) => {
+      try {
+        if (!el || !el.tagName) return false;
+        if (el.dataset?.nodrag === "true") return true;
+        const tag = String(el.tagName).toUpperCase();
+        return tag === "INPUT" || tag === "BUTTON" || tag === "A" || tag === "TEXTAREA";
+      } catch {
+        return false;
+      }
+    });
+    if (shouldIgnore) return;
+    (window as any).windowControls?.maximize?.();
+  };
   return (
     <div
       className="flex items-center h-12 bg-gray-100 text-gray-900 px-3 border-b border-gray-300 select-none"
       style={{ WebkitAppRegion: "drag" as any }}
+      onDoubleClick={handleDoubleClick}
     >
       <div className="flex items-center gap-2 shrink-0">
         <div className="h-2.5 w-2.5 rounded-full bg-night-700"></div>
         <div className="font-semibold tracking-tight">Localhost Dashboard</div>
       </div>
-      <div
-        className="flex-1 flex justify-center px-3"
-        style={{ WebkitAppRegion: "no-drag" as any }}
-      >
+      <div className="flex-1 flex justify-center px-3" style={{ WebkitAppRegion: "drag" as any }}>
         <input
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search ports, PID, names…"
+          placeholder="Search ports, PID, names."
           className="w-[44vw] max-w-[560px] min-w-[220px] px-4 py-1.5 rounded-full bg-gray-200/80 text-gray-900 placeholder-gray-700/60 ring-1 ring-transparent focus:ring-night-700/40 outline-none transition-all duration-200 focus:bg-gray-200"
+          style={{ WebkitAppRegion: "no-drag" as any }}
+          data-nodrag="true"
         />
       </div>
       <div
         className="flex items-center gap-2 shrink-0"
         style={{ WebkitAppRegion: "no-drag" as any }}
+        data-nodrag="true"
       >
         <button
           title="Refresh (Ctrl/Cmd+R)"
@@ -74,7 +90,7 @@ function WinButtons() {
         style={{ WebkitAppRegion: "no-drag" as any }}
         aria-label="Maximize"
       >
-        ▢
+        <span className="relative top-[-1px]">□</span>
       </button>
       <button
         onClick={() => (window as any).windowControls?.close()}
