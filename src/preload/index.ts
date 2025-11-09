@@ -42,13 +42,6 @@ contextBridge.exposeInMainWorld('api', {
   // meta
   getMeta: () => ipcRenderer.invoke('app:get-meta')
 });
-
-declare global {
-  interface Window {
-    api: typeof import('./index');
-  }
-}
-
 // window controls
 contextBridge.exposeInMainWorld('windowControls', {
   minimize: () => ipcRenderer.send('window:minimize'),

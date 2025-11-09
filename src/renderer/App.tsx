@@ -100,7 +100,7 @@ export default function App() {
         )}
 
         <div className="grid gap-y-6 gap-x-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))' }}>
-          {Object.entries(grouped).map(([framework, list]) => (
+          {(Object.entries(grouped) as [string, Item[]][]).map(([framework, list]) => (
             <div key={framework} className="space-y-5">
               <div className="text-gray-700 uppercase tracking-wider text-xs mb-2">{framework}</div>
               {list.map((it) => (

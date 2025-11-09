@@ -86,7 +86,6 @@ export const settings = new Store<AppSettings>({
 export function migrateLegacyNotifications() {
   try {
     // use has() instead of get to distinguish undefined from false
-    // @ts-expect-error store.has exists at runtime
     const hasLegacy = (settings as any).has?.('notifications');
     const already = (settings as any).get?.('__legacyNotificationsMigrated');
     if (!hasLegacy || already) return;

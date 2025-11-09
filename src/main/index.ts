@@ -9,6 +9,7 @@ import {
   Notification,
   nativeImage,
   globalShortcut,
+  type NativeImage,
 } from "electron";
 import path from "node:path";
 import os from "node:os";
@@ -49,7 +50,7 @@ function resolveResource(rel: string): string | null {
   return null;
 }
 
-function getTrayImage(): nativeImage {
+function getTrayImage(): NativeImage {
   const p = resolveResource("resources/icon.png");
   if (p) {
     const img = nativeImage.createFromPath(p);
