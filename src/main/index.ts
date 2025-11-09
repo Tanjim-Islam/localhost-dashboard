@@ -4,7 +4,7 @@ import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { Scanner } from './scanner';
 import { bumpPort, stats as statsStore } from './stats';
-import { settings, parsePorts, portsToString, migrateLegacyNotifications } from './settings';
+import { settings, parsePorts, portsToString, migrateLegacyNotifications, seedDefaultsIfNeeded, resetToDefaults } from './settings';
 import AutoLaunch from 'auto-launch';
 
 let win: BrowserWindow | null = null;
@@ -123,6 +123,12 @@ async function setAutoLaunch(enabled: boolean) {
 app.whenReady().then(async () => {
   await createWindow();
   setupTray();
+  // First-run seeding from resources/default-settings.json if present
+  const seeded = seedDefaultsIfNeeded();
+  if (seeded.seeded) {
+    // Ensure OS autostart setting reflects seeded startAtLogin value
+    await setAutoLaunch(settings.get('startAtLogin'));
+  }
   migrateLegacyNotifications();
   scanner.start();
 });
@@ -192,6 +198,15 @@ ipcMain.handle('settings:update', async (_evt, incoming: any) => {
   }
   scanner.start();
   return { ...settings.store, portsText: portsToString(settings.get('ports')) };
+});
+
+ipcMain.handle('settings:reset', async () => {
+  const next = resetToDefaults();
+  await setAutoLaunch(next.startAtLogin);
+  scanner.start();
+  const payload = { ...settings.store, portsText: portsToString(settings.get('ports')) };
+  win?.webContents.send('settings:update', payload);
+  return payload;
 });
 
 ipcMain.handle('app:get-meta', () => ({

@@ -126,6 +126,11 @@ export default function App() {
           setSettings(updated);
           setOpenSettings(false);
         }}
+        onReset={async () => {
+          const updated = await window.api.resetSettings();
+          setSettings(updated);
+          setOpenSettings(false);
+        }}
       />
     </div>
   );

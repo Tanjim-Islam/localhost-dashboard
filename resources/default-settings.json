@@ -1,0 +1,9 @@
+{
+  "scanIntervalMs": 5000,
+  "ports": [3000, 3001, 3002, [5173, 5199], 8000, 8080, 5000, 4200],
+  "startAtLogin": false,
+  "notifyOnStart": true,
+  "notifyOnStop": true,
+  "scanAllPorts": false
+}
+

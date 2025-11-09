@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('api', {
   // settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (partial: any) => ipcRenderer.invoke('settings:update', partial),
+  resetSettings: () => ipcRenderer.invoke('settings:reset'),
   onSettingsUpdate: (cb: (s: any) => void) => {
     const listener = (_: any, payload: any) => cb(payload);
     ipcRenderer.on('settings:update', listener);

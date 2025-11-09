@@ -5,9 +5,10 @@ type Props = {
   onClose: () => void;
   settings: any;
   onSave: (next: any) => void | Promise<void>;
+  onReset?: () => void | Promise<void>;
 };
 
-export default function SettingsPanel({ open, onClose, settings, onSave }: Props) {
+export default function SettingsPanel({ open, onClose, settings, onSave, onReset }: Props) {
   const [scanIntervalMs, setScanIntervalMs] = useState(5000);
   const [portsText, setPortsText] = useState('3000-3999, 8000, 8080, 5000, 4200, 5173-5199');
   const [startAtLogin, setStartAtLogin] = useState(false);
@@ -65,14 +66,27 @@ export default function SettingsPanel({ open, onClose, settings, onSave }: Props
             </label>
           </div>
         </div>
-        <div className="flex justify-end gap-2 mt-5">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300">Cancel</button>
+        <div className="flex justify-between items-center gap-2 mt-5">
+          <button
+            onClick={async () => {
+              if (!onReset) return;
+              if (window.confirm('Reset all settings to defaults?')) {
+                await onReset();
+              }
+            }}
+            className="px-3 py-1.5 rounded-full bg-mimi_pink-600/20 text-mimi_pink-800 hover:bg-mimi_pink-600/30"
+          >
+            Reset to defaults
+          </button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300">Cancel</button>
           <button
             onClick={() => onSave({ scanIntervalMs, portsText, startAtLogin, notifyOnStart, notifyOnStop, scanAllPorts })}
             className="px-3 py-1.5 rounded-full bg-night-700 text-night-100 hover:bg-night-800"
           >
             Save
           </button>
+          </div>
         </div>
       </div>
     </div>
