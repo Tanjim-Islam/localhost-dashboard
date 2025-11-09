@@ -48,7 +48,7 @@
   },
   "build": {
     "appId": "com.localdashboard.app",
-    "productName": "Local Dashboard",
+    "productName": "Localhost Dashboard",
     "files": [
       "dist/**",
       "out/**",
@@ -79,7 +79,7 @@
         "AppImage",
         "deb"
       ],
-      "icon": "resources/icons"
+      "icon": "resources/icon.png"
     }
   }
 }
