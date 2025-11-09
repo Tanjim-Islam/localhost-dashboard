@@ -4,6 +4,6 @@
   "startAtLogin": false,
   "notifyOnStart": true,
   "notifyOnStop": true,
-  "scanAllPorts": false
+  "scanAllPorts": false,
+  "closeToTray": true
 }
-

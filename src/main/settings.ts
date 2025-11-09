@@ -36,6 +36,7 @@ function readDefaultSettingsFromFile(): Partial<AppSettings> | null {
     if (typeof json.notifyOnStart === 'boolean') out.notifyOnStart = json.notifyOnStart;
     if (typeof json.notifyOnStop === 'boolean') out.notifyOnStop = json.notifyOnStop;
     if (typeof json.scanAllPorts === 'boolean') out.scanAllPorts = json.scanAllPorts;
+    if (typeof json.closeToTray === 'boolean') out.closeToTray = json.closeToTray;
     return out;
   } catch {
     return null;
@@ -53,6 +54,8 @@ export type AppSettings = {
   notifications?: boolean;
   // If true, ignore `ports` filter and include all TCP listeners
   scanAllPorts: boolean;
+  // Close behavior: if true, window close hides to tray; if false, quits app
+  closeToTray: boolean;
 };
 
 const schema = {
@@ -61,7 +64,8 @@ const schema = {
   startAtLogin: { type: 'boolean', default: false },
   notifyOnStart: { type: 'boolean', default: true },
   notifyOnStop: { type: 'boolean', default: true },
-  notifications: { type: 'boolean', default: undefined }
+  notifications: { type: 'boolean', default: undefined },
+  closeToTray: { type: 'boolean', default: true }
 } as const;
 
 export const settings = new Store<AppSettings>({
@@ -73,7 +77,8 @@ export const settings = new Store<AppSettings>({
     startAtLogin: false,
     notifyOnStart: true,
     notifyOnStop: true,
-    scanAllPorts: false
+    scanAllPorts: false,
+    closeToTray: true
   }
 });
 
@@ -138,6 +143,7 @@ export function seedDefaultsIfNeeded(): { seeded: boolean; path?: string } {
     if (typeof fromFile.notifyOnStart === 'boolean') settings.set('notifyOnStart', fromFile.notifyOnStart);
     if (typeof fromFile.notifyOnStop === 'boolean') settings.set('notifyOnStop', fromFile.notifyOnStop);
     if (typeof fromFile.scanAllPorts === 'boolean') settings.set('scanAllPorts', fromFile.scanAllPorts);
+    if (typeof fromFile.closeToTray === 'boolean') settings.set('closeToTray', fromFile.closeToTray);
     (settings as any).set?.('__seededAt', Date.now());
     return { seeded: true, path: resolveDefaultSettingsPath() || undefined };
   } catch {
@@ -162,6 +168,7 @@ export function resetToDefaults(): AppSettings {
     notifyOnStart: (json?.notifyOnStart ?? true) as boolean,
     notifyOnStop: (json?.notifyOnStop ?? true) as boolean,
     scanAllPorts: (json?.scanAllPorts ?? false) as boolean,
+    closeToTray: (json?.closeToTray ?? true) as boolean,
     notifications: undefined
   } satisfies AppSettings;
   settings.set('scanIntervalMs', next.scanIntervalMs);
@@ -170,5 +177,6 @@ export function resetToDefaults(): AppSettings {
   settings.set('notifyOnStart', next.notifyOnStart);
   settings.set('notifyOnStop', next.notifyOnStop);
   settings.set('scanAllPorts', next.scanAllPorts);
+  settings.set('closeToTray', next.closeToTray);
   return next;
 }

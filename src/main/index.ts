@@ -29,6 +29,7 @@ let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let autolaunch: AutoLaunch | null = null;
 const scanner = new Scanner();
+let isQuitting = false;
 
 const isMac = process.platform === "darwin";
 
@@ -91,6 +92,16 @@ async function createWindow() {
 
   win.on("ready-to-show", () => win?.show());
   win.on("closed", () => (win = null));
+  win.on("close", (e) => {
+    try {
+      if (!isQuitting && settings.get("closeToTray")) {
+        e.preventDefault();
+        win?.hide();
+      }
+    } catch {
+      // ignore
+    }
+  });
 
   if (app.isPackaged) {
     await win.loadFile(path.join(__dirname, "../../dist/index.html"));
@@ -189,6 +200,10 @@ app.on("activate", async () => {
   if (BrowserWindow.getAllWindows().length === 0) await createWindow();
 });
 
+app.on("before-quit", () => {
+  isQuitting = true;
+});
+
 // Scanner events → renderer
 scanner.on("update", (items) => {
   win?.webContents.send("scanner:update", items);
@@ -245,6 +260,8 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
     settings.set("notifyOnStop", incoming.notifyOnStop);
   if (typeof incoming.scanAllPorts === "boolean")
     settings.set("scanAllPorts", incoming.scanAllPorts);
+  if (typeof incoming.closeToTray === "boolean")
+    settings.set("closeToTray", incoming.closeToTray);
   if (typeof (incoming as any).portsText === "string") {
     const ports = parsePorts((incoming as any).portsText);
     settings.set("ports", ports);

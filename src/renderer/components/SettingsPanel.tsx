@@ -15,6 +15,7 @@ export default function SettingsPanel({ open, onClose, settings, onSave, onReset
   const [notifyOnStart, setNotifyOnStart] = useState(true);
   const [notifyOnStop, setNotifyOnStop] = useState(true);
   const [scanAllPorts, setScanAllPorts] = useState(false);
+  const [closeToTray, setCloseToTray] = useState(true);
 
   useEffect(() => {
     if (settings) {
@@ -22,6 +23,9 @@ export default function SettingsPanel({ open, onClose, settings, onSave, onReset
       setPortsText(settings.portsText ?? portsToString(settings.ports || []));
       setStartAtLogin(Boolean(settings.startAtLogin));
       setScanAllPorts(Boolean(settings.scanAllPorts));
+      setCloseToTray(
+        typeof settings.closeToTray === 'boolean' ? settings.closeToTray : true
+      );
       // handle legacy single toggle too
       const legacy = settings.notifications;
       setNotifyOnStart(
@@ -55,6 +59,31 @@ export default function SettingsPanel({ open, onClose, settings, onSave, onReset
             <input type="checkbox" className="h-5 w-5 accent-night-700" checked={startAtLogin} onChange={(e) => setStartAtLogin(e.target.checked)} />
             <span>Start at system login</span>
           </label>
+          <div>
+            <div className="text-sm text-gray-700 mb-1">On window close</div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="closeBehavior"
+                  className="h-4 w-4 accent-night-700"
+                  checked={closeToTray}
+                  onChange={() => setCloseToTray(true)}
+                />
+                <span>Minimize to tray (default)</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="closeBehavior"
+                  className="h-4 w-4 accent-night-700"
+                  checked={!closeToTray}
+                  onChange={() => setCloseToTray(false)}
+                />
+                <span>Quit the application</span>
+              </label>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex items-center gap-2">
               <input type="checkbox" className="h-5 w-5 accent-night-700" checked={notifyOnStart} onChange={(e) => setNotifyOnStart(e.target.checked)} />
@@ -81,7 +110,7 @@ export default function SettingsPanel({ open, onClose, settings, onSave, onReset
           <div className="flex gap-2">
             <button onClick={onClose} className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300">Cancel</button>
           <button
-            onClick={() => onSave({ scanIntervalMs, portsText, startAtLogin, notifyOnStart, notifyOnStop, scanAllPorts })}
+            onClick={() => onSave({ scanIntervalMs, portsText, startAtLogin, notifyOnStart, notifyOnStop, scanAllPorts, closeToTray })}
             className="px-3 py-1.5 rounded-full bg-night-700 text-night-100 hover:bg-night-800"
           >
             Save
