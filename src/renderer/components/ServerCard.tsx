@@ -2,15 +2,42 @@ import React from 'react';
 import cx from 'classnames';
 import dayjs from 'dayjs';
 
+type ButtonState = 'idle' | 'active' | 'done';
+
 export default function ServerCard({ item, onOptimisticKill }: { item: any; onOptimisticKill?: (key: string) => void }) {
   const uptime = dayjs(item.lastSeen).from(item.firstSeen, true);
   const cpu = item.cpu ? `${item.cpu.toFixed(1)}%` : '—';
   const mem = item.memory ? readableBytes(item.memory) : '—';
 
-  const open = () => window.api.openUrl(item.url);
-  const copy = () => window.api.copyText(item.url);
   const ref = React.useRef<HTMLDivElement>(null);
   const [exiting, setExiting] = React.useState<null | 'left' | 'right'>(null);
+  
+  // Button states for animations
+  const [openState, setOpenState] = React.useState<ButtonState>('idle');
+  const [copyState, setCopyState] = React.useState<ButtonState>('idle');
+
+  const open = () => {
+    if (openState !== 'idle') return;
+    setOpenState('active');
+    window.api.openUrl(item.url);
+    
+    setTimeout(() => {
+      setOpenState('done');
+      setTimeout(() => setOpenState('idle'), 1500);
+    }, 300);
+  };
+
+  const copy = () => {
+    if (copyState !== 'idle') return;
+    setCopyState('active');
+    window.api.copyText(item.url);
+    
+    setTimeout(() => {
+      setCopyState('done');
+      setTimeout(() => setCopyState('idle'), 2000);
+    }, 150);
+  };
+
   const kill = () => {
     if (exiting) return;
     const rect = ref.current?.getBoundingClientRect();
@@ -55,10 +82,71 @@ export default function ServerCard({ item, onOptimisticKill }: { item: any; onOp
       </div>
       <div className="mt-4 flex items-center gap-4 justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={open} className="h-12 px-5 rounded-full bg-night-700 text-night-100 hover:bg-night-800 transition text-sm font-medium">Open</button>
-          <button onClick={copy} className="h-12 px-5 rounded-full bg-gray-200 text-gray-900 hover:bg-gray-300 transition text-sm font-medium">Copy URL</button>
+          {/* Open Button */}
+          <button
+            onClick={open}
+            disabled={openState !== 'idle'}
+            className={cx(
+              'h-12 px-5 rounded-full text-sm font-medium transition-all duration-200 transform',
+              openState === 'idle' && 'bg-night-700 text-night-100 hover:bg-night-800 hover:scale-105 active:scale-95',
+              openState === 'active' && 'bg-night-800 text-night-100 scale-95',
+              openState === 'done' && 'bg-night-600 text-celadon-300 scale-100'
+            )}
+          >
+            <span className="flex items-center gap-1.5">
+              {openState === 'idle' && 'Open'}
+              {openState === 'active' && (
+                <>
+                  <span className="inline-block w-3 h-3 border-2 border-night-100 border-t-transparent rounded-full animate-spin"></span>
+                  Opening...
+                </>
+              )}
+              {openState === 'done' && (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  Opened
+                </>
+              )}
+            </span>
+          </button>
+
+          {/* Copy URL Button */}
+          <button
+            onClick={copy}
+            disabled={copyState !== 'idle'}
+            className={cx(
+              'h-12 px-5 rounded-full text-sm font-medium transition-all duration-200 transform',
+              copyState === 'idle' && 'bg-gray-200 text-gray-900 hover:bg-gray-300 hover:scale-105 active:scale-95',
+              copyState === 'active' && 'bg-gray-300 text-gray-900 scale-110',
+              copyState === 'done' && 'bg-celadon-400 text-white scale-100'
+            )}
+          >
+            <span className="flex items-center gap-1.5 min-w-[72px] justify-center">
+              {copyState === 'idle' && 'Copy URL'}
+              {copyState === 'active' && (
+                <span className="inline-block animate-ping">📋</span>
+              )}
+              {copyState === 'done' && (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Copied!
+                </>
+              )}
+            </span>
+          </button>
         </div>
-        <button onClick={kill} className="h-12 px-5 rounded-full bg-mimi_pink-300 text-mimi_pink-100 hover:bg-mimi_pink-200 transition text-sm font-medium">Kill</button>
+
+        {/* Kill Button */}
+        <button
+          onClick={kill}
+          className="h-12 px-5 rounded-full bg-mimi_pink-300 text-mimi_pink-100 hover:bg-mimi_pink-200 hover:scale-105 active:scale-95 transition-all duration-200 transform text-sm font-medium"
+        >
+          Kill
+        </button>
       </div>
     </div>
   );
