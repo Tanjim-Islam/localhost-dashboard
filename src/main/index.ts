@@ -155,6 +155,15 @@ function registerGlobalHotkey() {
     console.error("Skipping invalid global hotkey", accelerator);
     return;
   }
+  // Validate structure: all parts except the last should be modifiers
+  const hasModifier = parts.slice(0, -1).every((part) => modifiers.has(part));
+  if (!hasModifier) {
+    console.error(
+      "Skipping invalid global hotkey - missing or malformed modifier",
+      accelerator
+    );
+    return;
+  }
   // Unregister previous
   if (currentGlobalHotkey) {
     try {
@@ -413,9 +422,19 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
     settings.set("scanAllPorts", incoming.scanAllPorts);
   if (typeof incoming.closeToTray === "boolean")
     settings.set("closeToTray", incoming.closeToTray);
-  if (typeof incoming.globalHotkey === "string" && incoming.globalHotkey.trim()) {
-    settings.set("globalHotkey", incoming.globalHotkey.trim());
-    registerGlobalHotkey();
+  if (
+    typeof incoming.globalHotkey === "string" &&
+    incoming.globalHotkey.trim()
+  ) {
+    const trimmed = incoming.globalHotkey.trim();
+    const parts = trimmed.split("+").filter(Boolean);
+    if (parts.length >= 2 && parts.length <= 4) {
+      settings.set("globalHotkey", trimmed);
+      registerGlobalHotkey();
+    } else {
+      console.error("Invalid hotkey format rejected:", trimmed);
+      // Optionally send error back to renderer for user feedback
+    }
   }
   if (typeof (incoming as any).portsText === "string") {
     const ports = parsePorts((incoming as any).portsText);

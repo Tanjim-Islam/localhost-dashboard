@@ -75,7 +75,7 @@ export default function SettingsPanel({
     };
     window.addEventListener("keydown", handler, { capture: true });
     return () =>
-      window.removeEventListener("keydown", handler, { capture: true } as any);
+      window.removeEventListener("keydown", handler, { capture: true });
   }, [recording]);
 
   if (!open) return null;
@@ -188,7 +188,7 @@ export default function SettingsPanel({
                       setRecordedKeys([]);
                       setHotkeyError(null);
                     }}
-                    className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-sm text-gray-50"
+                    className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-sm text-gray-900"
                   >
                     Edit
                   </button>
@@ -201,7 +201,7 @@ export default function SettingsPanel({
                         setRecording(false);
                         setHotkeyError(null);
                       }}
-                      className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-sm"
+                      className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-sm text-gray-900"
                     >
                       Cancel
                     </button>
@@ -266,8 +266,15 @@ export default function SettingsPanel({
               </div>
             </div>
             <button
-              onClick={() => window.api.checkForUpdates()}
-              className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-sm text-gray-50"
+              onClick={async () => {
+                try {
+                  await window.api.checkForUpdates();
+                } catch (err) {
+                  console.error("Failed to check for updates:", err);
+                  // Optionally show user-facing error message
+                }
+              }}
+              className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-sm text-gray-900"
             >
               Check now
             </button>
