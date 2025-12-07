@@ -44,6 +44,41 @@ let isQuitting = false;
 
 const isMac = process.platform === "darwin";
 
+const allowedHotkeyModifiers = new Set([
+  "commandorcontrol",
+  "command",
+  "control",
+  "ctrl",
+  "shift",
+  "alt",
+  "super",
+  "meta",
+]);
+
+function splitHotkeyParts(hotkey: string): string[] {
+  return hotkey
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function normalizeHotkey(hotkey: string): string {
+  return splitHotkeyParts(hotkey).join("+");
+}
+
+function isValidHotkey(hotkey: string): boolean {
+  const parts = splitHotkeyParts(hotkey);
+  if (parts.length < 2 || parts.length > 4) return false;
+  const keyPart = parts[parts.length - 1];
+  if (!keyPart) return false;
+  const modifierParts = parts.slice(0, -1);
+  const modifiersValid = modifierParts.every((mod) =>
+    allowedHotkeyModifiers.has(mod.toLowerCase())
+  );
+  if (!modifiersValid) return false;
+  return !allowedHotkeyModifiers.has(keyPart.toLowerCase());
+}
+
 function resolveResource(rel: string): string | null {
   const candidates = [
     path.join(__dirname, "../../", rel), // dev + packaged (asar)
@@ -138,32 +173,14 @@ function setupShortcuts() {
   registerGlobalHotkey();
 }
 
-function registerGlobalHotkey() {
-  const accelerator = settings.get("globalHotkey") || "Ctrl+Shift+D";
-  const parts = accelerator.split("+").filter(Boolean);
-  const modifiers = new Set([
-    "CommandOrControl",
-    "Command",
-    "Control",
-    "Ctrl",
-    "Shift",
-    "Alt",
-    "Super",
-    "Meta",
-  ]);
-  if (parts.length < 2 || parts.length > 4) {
-    console.error("Skipping invalid global hotkey", accelerator);
+function registerGlobalHotkey(acceleratorOverride?: string) {
+  const acceleratorRaw =
+    acceleratorOverride || settings.get("globalHotkey") || "Ctrl+Shift+D";
+  if (!isValidHotkey(acceleratorRaw)) {
+    console.error("Skipping invalid global hotkey", acceleratorRaw);
     return;
   }
-  // Validate structure: all parts except the last should be modifiers
-  const hasModifier = parts.slice(0, -1).every((part) => modifiers.has(part));
-  if (!hasModifier) {
-    console.error(
-      "Skipping invalid global hotkey - missing or malformed modifier",
-      accelerator
-    );
-    return;
-  }
+  const accelerator = normalizeHotkey(acceleratorRaw);
   // Unregister previous
   if (currentGlobalHotkey) {
     try {
@@ -410,6 +427,7 @@ ipcMain.handle("settings:get", () => settings.store);
 ipcMain.handle("stats:get", () => statsStore.store);
 ipcMain.handle("settings:update", async (_evt, incoming: any) => {
   // Type helper not available at runtime; trust payload shape from preload validation.
+  let hotkeyError: string | null = null;
   if (typeof incoming.scanIntervalMs === "number")
     settings.set("scanIntervalMs", incoming.scanIntervalMs);
   if (typeof incoming.startAtLogin === "boolean")
@@ -427,13 +445,13 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
     incoming.globalHotkey.trim()
   ) {
     const trimmed = incoming.globalHotkey.trim();
-    const parts = trimmed.split("+").filter(Boolean);
-    if (parts.length >= 2 && parts.length <= 4) {
-      settings.set("globalHotkey", trimmed);
-      registerGlobalHotkey();
+    if (!isValidHotkey(trimmed)) {
+      hotkeyError =
+        "Global hotkey must use 2-4 keys with valid modifiers and a final key.";
     } else {
-      console.error("Invalid hotkey format rejected:", trimmed);
-      // Optionally send error back to renderer for user feedback
+      const normalizedHotkey = normalizeHotkey(trimmed);
+      settings.set("globalHotkey", normalizedHotkey);
+      registerGlobalHotkey(normalizedHotkey);
     }
   }
   if (typeof (incoming as any).portsText === "string") {
@@ -441,7 +459,14 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
     settings.set("ports", ports);
   }
   scanner.start();
-  return { ...settings.store, portsText: portsToString(settings.get("ports")) };
+  const payload = {
+    ...settings.store,
+    portsText: portsToString(settings.get("ports")),
+  };
+  if (hotkeyError) {
+    return { ...payload, error: hotkeyError };
+  }
+  return payload;
 });
 
 ipcMain.handle("settings:reset", async () => {
