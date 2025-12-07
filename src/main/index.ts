@@ -384,6 +384,7 @@ ipcMain.handle("ahk:restart", async (_evt, scriptPath: string) => {
     }).unref();
   } catch (err) {
     console.error("Failed to restart AHK script:", err);
+    throw err; // Re-throw so renderer can handle the error
   }
 });
 
