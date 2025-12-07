@@ -63,6 +63,7 @@ export default function App() {
   const [hidden, setHidden] = useState<Record<string, number>>({});
   const [ahkHidden, setAHKHidden] = useState<Record<string, number>>({});
   const [activeTab, setActiveTab] = useState<TabType>("servers");
+  const [version, setVersion] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const offUpdate = window.api.onScanUpdate((next) => setItems(next));
@@ -89,6 +90,7 @@ export default function App() {
         })
       );
     window.api.getAllNotes().then(setPortNotes);
+    window.api.getMeta().then((meta) => setVersion(meta?.version));
     return () => {
       offUpdate?.();
       offError?.();
@@ -164,6 +166,7 @@ export default function App() {
         onSettings={() => setOpenSettings(true)}
         search={query}
         onSearchChange={setQuery}
+        version={version}
       />
 
       <div className="px-6 py-5 overflow-y-auto overflow-x-hidden h-[calc(100vh-48px)]">

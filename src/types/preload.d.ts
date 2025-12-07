@@ -59,6 +59,7 @@ export type AppSettings = {
   closeToTray: boolean;
   // legacy retained only for migration
   notifications?: boolean;
+  globalHotkey: string;
 };
 
 export type RendererSettings = AppSettings & { portsText?: string };

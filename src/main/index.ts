@@ -36,6 +36,7 @@ import AutoLaunch from "auto-launch";
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let autolaunch: AutoLaunch | null = null;
+let currentGlobalHotkey: string | null = null;
 const scanner = new Scanner();
 const ahkScanner = new AHKScanner();
 const healthChecker = new HealthChecker();
@@ -134,16 +135,48 @@ function setupShortcuts() {
   globalShortcut.register("CommandOrControl+,", () => {
     win?.webContents.send("ui:toggle-settings");
   });
-  // Global hotkey to toggle dashboard visibility from anywhere
-  globalShortcut.register("Control+Shift+Alt+D", () => {
-    if (!win) return;
-    if (win.isVisible() && win.isFocused()) {
-      win.hide();
-    } else {
-      win.show();
-      win.focus();
+  registerGlobalHotkey();
+}
+
+function registerGlobalHotkey() {
+  const accelerator = settings.get("globalHotkey") || "Ctrl+Shift+D";
+  const parts = accelerator.split("+").filter(Boolean);
+  const modifiers = new Set([
+    "CommandOrControl",
+    "Command",
+    "Control",
+    "Ctrl",
+    "Shift",
+    "Alt",
+    "Super",
+    "Meta",
+  ]);
+  if (parts.length < 2 || parts.length > 4) {
+    console.error("Skipping invalid global hotkey", accelerator);
+    return;
+  }
+  // Unregister previous
+  if (currentGlobalHotkey) {
+    try {
+      globalShortcut.unregister(currentGlobalHotkey);
+    } catch {
+      // ignore
     }
-  });
+  }
+  try {
+    globalShortcut.register(accelerator, () => {
+      if (!win) return;
+      if (win.isVisible() && win.isFocused()) {
+        win.hide();
+      } else {
+        win.show();
+        win.focus();
+      }
+    });
+    currentGlobalHotkey = accelerator;
+  } catch (err) {
+    console.error("Failed to register global hotkey", accelerator, err);
+  }
 }
 
 function setupTray() {
@@ -380,6 +413,10 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
     settings.set("scanAllPorts", incoming.scanAllPorts);
   if (typeof incoming.closeToTray === "boolean")
     settings.set("closeToTray", incoming.closeToTray);
+  if (typeof incoming.globalHotkey === "string" && incoming.globalHotkey.trim()) {
+    settings.set("globalHotkey", incoming.globalHotkey.trim());
+    registerGlobalHotkey();
+  }
   if (typeof (incoming as any).portsText === "string") {
     const ports = parsePorts((incoming as any).portsText);
     settings.set("ports", ports);
@@ -391,6 +428,7 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
 ipcMain.handle("settings:reset", async () => {
   const next = resetToDefaults();
   await setAutoLaunch(next.startAtLogin);
+  registerGlobalHotkey();
   scanner.start();
   const payload = {
     ...settings.store,

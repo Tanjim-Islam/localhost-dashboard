@@ -77,6 +77,7 @@ export default function UpdateNotification() {
   }
 
   const isVisible = visible && !dismissed;
+  const isDarkCard = status.state === "not-available";
 
   return (
     <div
@@ -86,12 +87,26 @@ export default function UpdateNotification() {
         ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}
       `}
     >
-      <div className="bg-gray-100 rounded-2xl shadow-2xl border border-gray-300 overflow-hidden min-w-[320px] max-w-[380px]">
+      <div
+        className={`rounded-2xl shadow-2xl overflow-hidden min-w-[320px] max-w-[380px] ${
+          isDarkCard
+            ? "bg-gray-800 border border-gray-700"
+            : "bg-gray-100 border border-gray-300"
+        }`}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <div
+          className={`flex items-center justify-between px-4 py-3 border-b ${
+            isDarkCard ? "border-gray-700 bg-gray-700" : "border-gray-200 bg-gray-50"
+          }`}
+        >
           <div className="flex items-center gap-2">
             <UpdateIcon state={status.state} />
-            <span className="font-semibold text-gray-900 text-sm">
+            <span
+              className={`font-semibold text-sm ${
+                isDarkCard ? "text-gray-100" : "text-gray-900"
+              }`}
+            >
               {status.state === "checking" && "Checking for updates..."}
               {status.state === "available" && "Update Available"}
               {status.state === "not-available" && "You're up to date"}
@@ -105,7 +120,11 @@ export default function UpdateNotification() {
             status.state === "not-available") && (
             <button
               onClick={handleDismiss}
-              className="w-6 h-6 rounded-full flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-200 transition-colors"
+              className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
+                isDarkCard
+                  ? "text-gray-200 hover:text-gray-50 hover:bg-gray-600"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-200"
+              }`}
               aria-label="Dismiss"
             >
               ×
@@ -147,8 +166,11 @@ export default function UpdateNotification() {
               <svg className="w-5 h-5 text-celadon-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              <span className="text-gray-600 text-sm">
-                Running latest version <span className="font-medium text-gray-800">v{status.version}</span>
+              <span className={`${isDarkCard ? "text-gray-100" : "text-gray-600"} text-sm`}>
+                Running latest version{" "}
+                <span className={`font-medium ${isDarkCard ? "text-gray-50" : "text-gray-800"}`}>
+                  v{status.version}
+                </span>
               </span>
             </div>
           )}

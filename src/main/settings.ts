@@ -56,6 +56,8 @@ export type AppSettings = {
   scanAllPorts: boolean;
   // Close behavior: if true, window close hides to tray; if false, quits app
   closeToTray: boolean;
+  // Global hotkey for toggling the dashboard
+  globalHotkey: string;
 };
 
 const schema = {
@@ -65,7 +67,8 @@ const schema = {
   notifyOnStart: { type: 'boolean', default: true },
   notifyOnStop: { type: 'boolean', default: true },
   notifications: { type: 'boolean', default: undefined },
-  closeToTray: { type: 'boolean', default: true }
+  closeToTray: { type: 'boolean', default: true },
+  globalHotkey: { type: 'string', default: 'Ctrl+Shift+D' }
 } as const;
 
 export const settings = new Store<AppSettings>({
@@ -78,7 +81,8 @@ export const settings = new Store<AppSettings>({
     notifyOnStart: true,
     notifyOnStop: true,
     scanAllPorts: false,
-    closeToTray: true
+    closeToTray: true,
+    globalHotkey: 'Ctrl+Shift+D'
   }
 });
 
@@ -168,6 +172,7 @@ export function resetToDefaults(): AppSettings {
     notifyOnStop: (json?.notifyOnStop ?? true) as boolean,
     scanAllPorts: (json?.scanAllPorts ?? false) as boolean,
     closeToTray: (json?.closeToTray ?? true) as boolean,
+    globalHotkey: (json as any)?.globalHotkey || 'Ctrl+Shift+D',
     notifications: undefined
   } satisfies AppSettings;
   settings.set('scanIntervalMs', next.scanIntervalMs);
@@ -177,5 +182,6 @@ export function resetToDefaults(): AppSettings {
   settings.set('notifyOnStop', next.notifyOnStop);
   settings.set('scanAllPorts', next.scanAllPorts);
   settings.set('closeToTray', next.closeToTray);
+  settings.set('globalHotkey', next.globalHotkey);
   return next;
 }

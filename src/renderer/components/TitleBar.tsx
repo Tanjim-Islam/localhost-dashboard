@@ -5,6 +5,7 @@ type Props = {
   onSettings: () => void;
   search: string;
   onSearchChange: (v: string) => void;
+  version?: string;
 };
 
 export default function TitleBar({
@@ -12,6 +13,7 @@ export default function TitleBar({
   onSettings,
   search,
   onSearchChange,
+  version,
 }: Props) {
   const handleDoubleClick = (e: React.MouseEvent) => {
     const path = (e as any).nativeEvent?.composedPath?.() || [];
@@ -36,7 +38,14 @@ export default function TitleBar({
     >
       <div className="flex items-center gap-2 shrink-0">
         <div className="h-2.5 w-2.5 rounded-full bg-night-700"></div>
-        <div className="font-semibold tracking-tight">Localhost Dashboard</div>
+        <div className="font-semibold tracking-tight flex items-center gap-2">
+          <span>Localhost Dashboard</span>
+          {version && (
+            <span className="px-2 py-0.5 rounded-full bg-gray-200 text-xs text-gray-700" style={{ WebkitAppRegion: "no-drag" as any }}>
+              v{version}
+            </span>
+          )}
+        </div>
       </div>
       <div className="flex-1 flex justify-center px-3" style={{ WebkitAppRegion: "drag" as any }}>
         <input
