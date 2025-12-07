@@ -114,7 +114,7 @@ export interface Api {
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
-  installUpdate(): Promise<void>;
+  installUpdate(): Promise<{ success: boolean; error?: string }>;
   getUpdateStatus(): Promise<UpdateStatus>;
   dismissUpdate(): Promise<void>;
 }
