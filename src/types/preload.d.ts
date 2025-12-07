@@ -4,16 +4,19 @@ export type ServerInfo = {
   key: string;
   pid: number;
   port: number;
-  protocol?: 'tcp' | 'udp';
+  protocol?: "tcp" | "udp";
   processName?: string;
   command?: string;
   path?: string;
+  cwd?: string;
   firstSeen: number;
   lastSeen: number;
   url: string;
   cpu?: number;
   memory?: number;
   framework?: string;
+  cpuHistory?: number[];
+  memoryHistory?: number[];
 };
 
 export type AHKScriptInfo = {
@@ -26,6 +29,15 @@ export type AHKScriptInfo = {
   lastSeen: number;
   cpu?: number;
   memory?: number;
+};
+
+export type HealthStatus = {
+  key: string;
+  url: string;
+  status: "healthy" | "slow" | "down";
+  responseTime?: number;
+  lastChecked: number;
+  error?: string;
 };
 
 export type AppSettings = {
@@ -55,8 +67,11 @@ export interface Api {
   // actions
   openUrl(url: string): void;
   killPid(pid: number): void;
+  killAllServers(): Promise<number>;
   copyText(text: string): void;
   openInVSCode(payload: any): Promise<void>;
+  openTerminal(path: string): Promise<void>;
+  openExplorer(path: string): void;
 
   // settings
   getSettings(): Promise<RendererSettings>;
@@ -67,6 +82,14 @@ export interface Api {
   // stats
   getStats(): Promise<StatsPayload>;
   onStatsUpdate(cb: (s: StatsPayload) => void): () => void;
+
+  // health checks
+  onHealthUpdate(cb: (results: HealthStatus[]) => void): () => void;
+
+  // port notes
+  getNote(port: number | string): Promise<string>;
+  setNote(port: number | string, note: string): Promise<Record<string, string>>;
+  getAllNotes(): Promise<Record<string, string>>;
 
   // AHK scripts
   onAHKUpdate(cb: (items: AHKScriptInfo[]) => void): () => void;
@@ -89,4 +112,3 @@ declare global {
     };
   }
 }
-

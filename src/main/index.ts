@@ -19,7 +19,9 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 import { Scanner } from "./scanner";
 import { AHKScanner } from "./ahk-scanner";
+import { HealthChecker } from "./health-checker";
 import { bumpPort, stats as statsStore } from "./stats";
+import { getNote, setNote, getAllNotes } from "./notes";
 import {
   settings,
   parsePorts,
@@ -35,6 +37,7 @@ let tray: Tray | null = null;
 let autolaunch: AutoLaunch | null = null;
 const scanner = new Scanner();
 const ahkScanner = new AHKScanner();
+const healthChecker = new HealthChecker();
 let isQuitting = false;
 
 const isMac = process.platform === "darwin";
@@ -130,6 +133,16 @@ function setupShortcuts() {
   globalShortcut.register("CommandOrControl+,", () => {
     win?.webContents.send("ui:toggle-settings");
   });
+  // Global hotkey to toggle dashboard visibility from anywhere
+  globalShortcut.register("Control+Shift+Alt+D", () => {
+    if (!win) return;
+    if (win.isVisible() && win.isFocused()) {
+      win.hide();
+    } else {
+      win.show();
+      win.focus();
+    }
+  });
 }
 
 function setupTray() {
@@ -197,6 +210,7 @@ app.whenReady().then(async () => {
   migrateLegacyNotifications();
   scanner.start();
   ahkScanner.start();
+  healthChecker.start();
 });
 
 app.on("window-all-closed", () => {
@@ -214,6 +228,8 @@ app.on("before-quit", () => {
 // Scanner events → renderer
 scanner.on("update", (items) => {
   win?.webContents.send("scanner:update", items);
+  // Update health checker with current servers
+  healthChecker.setServers(items.map((i: any) => ({ key: i.key, url: i.url })));
 });
 
 scanner.on("new", (item) => {
@@ -267,19 +283,82 @@ ahkScanner.on("error", (err) => {
   win?.webContents.send("scanner:error", String(err));
 });
 
+// Health checker events → renderer
+healthChecker.on("update", (results) => {
+  win?.webContents.send("health:update", results);
+});
+
 // IPC
 ipcMain.handle("scanner:refresh", async () => scanner.scan());
 ipcMain.on("app:open-url", (_evt, url: string) => shell.openExternal(url));
 ipcMain.on("app:kill-pid", (_evt, pid: number) => {
-  try {
-    process.kill(pid, "SIGTERM");
-  } catch {
-    if (process.platform === "win32") {
-      const { exec } = require("node:child_process");
-      exec(`taskkill /PID ${pid} /T /F`);
+  if (process.platform === "win32") {
+    // On Windows, use taskkill directly with /F (force) and /T (tree - kill child processes)
+    // This is more reliable than process.kill() for Windows processes
+    exec(`taskkill /PID ${pid} /T /F`, (err) => {
+      if (err) {
+        // If taskkill fails (e.g., access denied for services), try process.kill as fallback
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch {
+          // Process might be a protected service - requires admin privileges
+          console.error(`Failed to kill PID ${pid}:`, err.message);
+        }
+      }
+    });
+  } else {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // ignore - process may have already exited
     }
   }
 });
+ipcMain.handle("app:kill-all-servers", async () => {
+  const pids = scanner.getAllPids();
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      if (process.platform === "win32") {
+        exec(`taskkill /PID ${pid} /T /F`);
+      }
+    }
+  }
+  return pids.length;
+});
+ipcMain.handle("app:open-terminal", async (_evt, dirPath: string) => {
+  if (!dirPath) return;
+  try {
+    if (process.platform === "win32") {
+      spawn("cmd", ["/c", "start", "cmd", "/k", `cd /d "${dirPath}"`], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+    } else if (process.platform === "darwin") {
+      spawn("open", ["-a", "Terminal", dirPath], { detached: true }).unref();
+    } else {
+      spawn("x-terminal-emulator", [], {
+        cwd: dirPath,
+        detached: true,
+      }).unref();
+    }
+  } catch {
+    // ignore
+  }
+});
+ipcMain.on("app:open-explorer", (_evt, dirPath: string) => {
+  if (dirPath) {
+    shell.showItemInFolder(dirPath);
+  }
+});
+// Port notes
+ipcMain.handle("notes:get", (_evt, port: number | string) => getNote(port));
+ipcMain.handle("notes:set", (_evt, port: number | string, note: string) => {
+  setNote(port, note);
+  return getAllNotes();
+});
+ipcMain.handle("notes:all", () => getAllNotes());
 ipcMain.handle("settings:get", () => settings.store);
 ipcMain.handle("stats:get", () => statsStore.store);
 ipcMain.handle("settings:update", async (_evt, incoming: any) => {
@@ -391,56 +470,41 @@ ipcMain.handle("ahk:restart", async (_evt, scriptPath: string) => {
 ipcMain.handle("ahk:edit", async (_evt, scriptPath: string) => {
   if (!scriptPath) return;
   try {
-    // Open the script file in VSCode
+    // Open the script file in VSCode explicitly (not with default handler which would run AHK)
     if (process.platform === "win32") {
-      spawn("cmd", ["/c", "start", "code", scriptPath], {
-        detached: true,
-        windowsHide: true,
-      });
+      // Use execAsync to properly handle paths with spaces
+      await execAsync(`code "${scriptPath}"`);
     } else {
-      spawn("code", [scriptPath], { detached: true });
+      spawn("code", [scriptPath], { detached: true, stdio: "ignore" }).unref();
     }
   } catch {
-    // Fallback: try to open with default editor
-    shell.openPath(scriptPath);
+    // Fallback: open containing folder
+    shell.showItemInFolder(scriptPath);
   }
 });
 
 ipcMain.handle("app:open-vscode", async (_evt, payload: any) => {
-  // payload may contain path, command, pid
-  const hint: string | undefined =
-    payload?.path || extractDirFromCommand(payload?.command);
+  const projectPath: string | undefined = payload?.path;
+  if (!projectPath) return;
+
   try {
     if (process.platform === "darwin") {
-      spawn("open", ["-a", "Visual Studio Code", hint || "."], {
+      spawn("open", ["-a", "Visual Studio Code", projectPath], {
         detached: true,
-      });
+      }).unref();
     } else if (process.platform === "win32") {
-      spawn("cmd", ["/c", "start", "code", hint || "."], {
+      // Use spawn with shell:false and proper quoting for paths with spaces
+      const child = spawn("code", [projectPath], {
         detached: true,
+        shell: true,
         windowsHide: true,
+        stdio: "ignore",
       });
+      child.unref();
     } else {
-      spawn(
-        "sh",
-        ["-lc", `code ${hint ? `'${hint.replace(/'/g, "'\\''")}'` : "."}`],
-        { detached: true }
-      );
+      spawn("code", [projectPath], { detached: true }).unref();
     }
   } catch {
     // ignore
   }
 });
-
-function extractDirFromCommand(cmd?: string): string | undefined {
-  if (!cmd) return undefined;
-  // crude heuristic: take first existing path-like token
-  const parts = cmd.split(/\s+/);
-  for (const p of parts) {
-    if (p.includes("/") || p.includes("\\")) {
-      const dir = path.dirname(p.replace(/^"|"$/g, ""));
-      return dir;
-    }
-  }
-  return undefined;
-}
