@@ -352,7 +352,7 @@ ipcMain.handle("ahk:restart", async (_evt, scriptPath: string) => {
       "C:\\Program Files\\AutoHotkey\\AutoHotkey.exe",
       "C:\\Program Files (x86)\\AutoHotkey\\AutoHotkey.exe",
     ];
-    
+
     // Try to find AHK executable via where command
     let ahkExe: string | null = null;
     try {
@@ -371,12 +371,12 @@ ipcMain.handle("ahk:restart", async (_evt, scriptPath: string) => {
         }
       }
     }
-    
+
     if (!ahkExe) {
       // Fall back to just "AutoHotkey" and hope it's in PATH
       ahkExe = "AutoHotkey";
     }
-    
+
     spawn(ahkExe, [scriptPath], {
       detached: true,
       stdio: "ignore",
