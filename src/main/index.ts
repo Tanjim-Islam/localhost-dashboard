@@ -20,6 +20,7 @@ const execAsync = promisify(exec);
 import { Scanner } from "./scanner";
 import { AHKScanner } from "./ahk-scanner";
 import { HealthChecker } from "./health-checker";
+import { initUpdater } from "./updater";
 import { bumpPort, stats as statsStore } from "./stats";
 import { getNote, setNote, getAllNotes } from "./notes";
 import {
@@ -211,6 +212,10 @@ app.whenReady().then(async () => {
   scanner.start();
   ahkScanner.start();
   healthChecker.start();
+  // Initialize auto-updater (IPC handlers registered always, but actual update checking only in packaged app)
+  if (win) {
+    initUpdater(win, app.isPackaged);
+  }
 });
 
 app.on("window-all-closed", () => {

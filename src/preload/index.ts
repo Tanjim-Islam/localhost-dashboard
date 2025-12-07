@@ -67,6 +67,17 @@ contextBridge.exposeInMainWorld("api", {
   },
   // meta
   getMeta: () => ipcRenderer.invoke("app:get-meta"),
+  // auto-updater
+  onUpdateStatus: (cb: (status: any) => void) => {
+    const listener = (_: any, payload: any) => cb(payload);
+    ipcRenderer.on("updater:status", listener);
+    return () => ipcRenderer.removeListener("updater:status", listener);
+  },
+  checkForUpdates: () => ipcRenderer.invoke("updater:check"),
+  downloadUpdate: () => ipcRenderer.invoke("updater:download"),
+  installUpdate: () => ipcRenderer.invoke("updater:install"),
+  getUpdateStatus: () => ipcRenderer.invoke("updater:get-status"),
+  dismissUpdate: () => ipcRenderer.invoke("updater:dismiss"),
 });
 // window controls
 contextBridge.exposeInMainWorld("windowControls", {

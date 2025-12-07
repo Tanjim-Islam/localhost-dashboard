@@ -12,3 +12,12 @@ body { font-family: 'Geist Variable', system-ui, -apple-system, Segoe UI, Roboto
 .drag { -webkit-app-region: drag; }
 .no-drag { -webkit-app-region: no-drag; }
 
+/* shimmer animation for progress bar */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.animate-shimmer {
+  animation: shimmer 2s infinite linear;
+}
+

@@ -1,15 +1,20 @@
 {
   "name": "local-dashboard",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A premium Electron dashboard that discovers and manages local dev servers.",
   "type": "module",
   "main": "out/main/index.js",
-  "author": "",
+  "author": "Tanjim Islam",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tanjim-Islam/localhost-dashboard.git"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "package": "npm run build && electron-builder",
+    "publish": "npm run build && electron-builder --publish always",
     "lint": "eslint --ext .ts,.tsx src",
     "format": "prettier -w .",
     "start:test-servers": "node scripts/dev-servers.js"
@@ -42,6 +47,7 @@
     "classnames": "^2.5.1",
     "dayjs": "^1.11.19",
     "electron-store": "^11.0.2",
+    "electron-updater": "^6.6.2",
     "find-process": "^2.0.0",
     "lodash": "^4.17.21",
     "pidusage": "^4.0.1",
@@ -61,6 +67,11 @@
     "asar": true,
     "directories": {
       "buildResources": "resources"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Tanjim-Islam",
+      "repo": "localhost-dashboard"
     },
     "mac": {
       "category": "public.app-category.developer-tools",

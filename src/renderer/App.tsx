@@ -5,6 +5,7 @@ import TitleBar from "./components/TitleBar";
 import ServerCard from "./components/ServerCard";
 import AHKCard from "./components/AHKCard";
 import SettingsPanel from "./components/SettingsPanel";
+import UpdateNotification from "./components/UpdateNotification";
 
 dayjs.extend(relativeTime);
 
@@ -305,6 +306,9 @@ export default function App() {
           setOpenSettings(false);
         }}
       />
+
+      {/* Auto-update notification */}
+      <UpdateNotification />
     </div>
   );
 }

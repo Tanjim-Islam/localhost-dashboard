@@ -40,6 +40,15 @@ export type HealthStatus = {
   error?: string;
 };
 
+export type UpdateStatus =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "available"; version: string; releaseNotes?: string }
+  | { state: "not-available"; version: string }
+  | { state: "downloading"; percent: number; transferred: number; total: number }
+  | { state: "downloaded"; version: string }
+  | { state: "error"; message: string };
+
 export type AppSettings = {
   scanIntervalMs: number;
   ports: (number | [number, number])[];
@@ -100,6 +109,14 @@ export interface Api {
   // meta / ui
   onToggleSettings(cb: () => void): () => void;
   getMeta(): Promise<{ version: string; platform: string; arch: string }>;
+
+  // auto-updater
+  onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
+  checkForUpdates(): Promise<void>;
+  downloadUpdate(): Promise<void>;
+  installUpdate(): Promise<void>;
+  getUpdateStatus(): Promise<UpdateStatus>;
+  dismissUpdate(): Promise<void>;
 }
 
 declare global {
