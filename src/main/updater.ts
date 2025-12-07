@@ -3,7 +3,11 @@
  * Uses electron-updater to check for and apply updates from GitHub Releases
  */
 
-import { autoUpdater, type UpdateInfo, type ProgressInfo } from "electron-updater";
+import {
+  autoUpdater,
+  type UpdateInfo,
+  type ProgressInfo,
+} from "electron-updater";
 import { BrowserWindow, ipcMain } from "electron";
 
 // Disable auto-download - we want user control
@@ -15,7 +19,12 @@ export type UpdateStatus =
   | { state: "checking" }
   | { state: "available"; version: string; releaseNotes?: string }
   | { state: "not-available"; version: string }
-  | { state: "downloading"; percent: number; transferred: number; total: number }
+  | {
+      state: "downloading";
+      percent: number;
+      transferred: number;
+      total: number;
+    }
   | { state: "downloaded"; version: string }
   | { state: "error"; message: string };
 
@@ -40,6 +49,9 @@ export function initUpdater(win: BrowserWindow, isPackaged: boolean = true) {
   // Only set up auto-updater events in packaged mode
   if (!isPackaged) return;
 
+  // Avoid duplicate listeners when initUpdater is called multiple times
+  autoUpdater.removeAllListeners();
+
   // Event: Checking for update
   autoUpdater.on("checking-for-update", () => {
     setStatus({ state: "checking" });
@@ -50,7 +62,8 @@ export function initUpdater(win: BrowserWindow, isPackaged: boolean = true) {
     setStatus({
       state: "available",
       version: info.version,
-      releaseNotes: typeof info.releaseNotes === "string" ? info.releaseNotes : undefined,
+      releaseNotes:
+        typeof info.releaseNotes === "string" ? info.releaseNotes : undefined,
     });
   });
 
@@ -101,6 +114,16 @@ export function initUpdater(win: BrowserWindow, isPackaged: boolean = true) {
 }
 
 function registerIpcHandlers(isPackaged: boolean) {
+  // Remove existing handlers to avoid duplicate registrations when re-initializing
+  const channels = [
+    "updater:check",
+    "updater:download",
+    "updater:install",
+    "updater:get-status",
+    "updater:dismiss",
+  ];
+  channels.forEach((channel) => ipcMain.removeHandler(channel));
+
   // IPC: Check for updates
   ipcMain.handle("updater:check", async () => {
     if (!isPackaged) {
@@ -111,7 +134,10 @@ function registerIpcHandlers(isPackaged: boolean) {
     try {
       await autoUpdater.checkForUpdates();
     } catch (err: any) {
-      setStatus({ state: "error", message: err.message || "Failed to check for updates" });
+      setStatus({
+        state: "error",
+        message: err.message || "Failed to check for updates",
+      });
     }
   });
 
@@ -121,7 +147,10 @@ function registerIpcHandlers(isPackaged: boolean) {
     try {
       await autoUpdater.downloadUpdate();
     } catch (err: any) {
-      setStatus({ state: "error", message: err.message || "Failed to download update" });
+      setStatus({
+        state: "error",
+        message: err.message || "Failed to download update",
+      });
     }
   });
 
@@ -143,4 +172,3 @@ function registerIpcHandlers(isPackaged: boolean) {
 export function checkForUpdates() {
   return autoUpdater.checkForUpdates();
 }
-
