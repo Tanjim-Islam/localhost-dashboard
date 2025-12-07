@@ -55,6 +55,92 @@ const allowedHotkeyModifiers = new Set([
   "meta",
 ]);
 
+const letterHotkeyKeys = Array.from({ length: 26 }, (_, i) =>
+  String.fromCharCode(65 + i)
+);
+const numberHotkeyKeys = Array.from({ length: 10 }, (_, i) => `${i}`);
+const functionHotkeyKeys = Array.from({ length: 24 }, (_, i) => `F${i + 1}`);
+const numpadHotkeyKeys = [
+  ...Array.from({ length: 10 }, (_, i) => `Num${i}`),
+  ...Array.from({ length: 10 }, (_, i) => `Numpad${i}`),
+  "NumpadAdd",
+  "NumpadSubtract",
+  "NumpadMultiply",
+  "NumpadDivide",
+  "NumpadDecimal",
+  "NumpadEnter",
+];
+const namedHotkeyKeys = [
+  "Space",
+  "Tab",
+  "Enter",
+  "Return",
+  "Escape",
+  "Esc",
+  "Backspace",
+  "Delete",
+  "Del",
+  "Insert",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+  "Up",
+  "Down",
+  "Left",
+  "Right",
+  "CapsLock",
+  "NumLock",
+  "ScrollLock",
+  "PrintScreen",
+  "Pause",
+  "Break",
+  "VolumeUp",
+  "VolumeDown",
+  "VolumeMute",
+  "MediaNextTrack",
+  "MediaPreviousTrack",
+  "MediaStop",
+  "MediaPlayPause",
+];
+const punctuationHotkeyKeys = [
+  "Plus",
+  "Minus",
+  "Equals",
+  "Equal",
+  "Comma",
+  "Period",
+  "Slash",
+  "Backslash",
+  "Semicolon",
+  "Quote",
+  "Tilde",
+  ",",
+  ".",
+  "/",
+  "\\",
+  ";",
+  "'",
+  '"',
+  "`",
+  "~",
+  "-",
+  "=",
+  "[",
+  "]",
+];
+
+const allowedHotkeyKeys = new Set<string>(
+  [
+    ...letterHotkeyKeys,
+    ...numberHotkeyKeys,
+    ...functionHotkeyKeys,
+    ...numpadHotkeyKeys,
+    ...namedHotkeyKeys,
+    ...punctuationHotkeyKeys,
+  ].map((key) => key.toLowerCase())
+);
+
 function splitHotkeyParts(hotkey: string): string[] {
   return hotkey
     .split("+")
@@ -76,7 +162,9 @@ function isValidHotkey(hotkey: string): boolean {
     allowedHotkeyModifiers.has(mod.toLowerCase())
   );
   if (!modifiersValid) return false;
-  return !allowedHotkeyModifiers.has(keyPart.toLowerCase());
+  const keyPartNormalized = keyPart.toLowerCase();
+  if (allowedHotkeyModifiers.has(keyPartNormalized)) return false;
+  return allowedHotkeyKeys.has(keyPartNormalized);
 }
 
 function resolveResource(rel: string): string | null {
