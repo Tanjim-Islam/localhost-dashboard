@@ -49,13 +49,18 @@ export default function AHKCard({
     if (!item.scriptPath || restartState !== 'idle') return;
     setRestartState('active');
     
-    // Kill first, then restart after a brief delay
-    window.api.killAHK(item.pid);
-    await new Promise((r) => setTimeout(r, 500));
-    await window.api.restartAHK(item.scriptPath);
-    
-    setRestartState('done');
-    setTimeout(() => setRestartState('idle'), 2000);
+    try {
+      // Kill first, then restart after a brief delay
+      window.api.killAHK(item.pid);
+      await new Promise((r) => setTimeout(r, 500));
+      await window.api.restartAHK(item.scriptPath);
+      
+      setRestartState('done');
+      setTimeout(() => setRestartState('idle'), 2000);
+    } catch {
+      // Reset to idle on error so button can be clicked again
+      setRestartState('idle');
+    }
   };
 
   const edit = () => {
