@@ -13,8 +13,12 @@ import {
 } from "electron";
 import path from "node:path";
 import os from "node:os";
-import { execFile, spawn } from "node:child_process";
+import { exec, execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 import { Scanner } from "./scanner";
+import { AHKScanner } from "./ahk-scanner";
 import { bumpPort, stats as statsStore } from "./stats";
 import {
   settings,
@@ -30,6 +34,7 @@ let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let autolaunch: AutoLaunch | null = null;
 const scanner = new Scanner();
+const ahkScanner = new AHKScanner();
 let isQuitting = false;
 
 const isMac = process.platform === "darwin";
@@ -191,6 +196,7 @@ app.whenReady().then(async () => {
   }
   migrateLegacyNotifications();
   scanner.start();
+  ahkScanner.start();
 });
 
 app.on("window-all-closed", () => {
@@ -231,6 +237,33 @@ scanner.on("stopped", (item) => {
 });
 
 scanner.on("error", (err) => {
+  win?.webContents.send("scanner:error", String(err));
+});
+
+// AHK Scanner events → renderer
+ahkScanner.on("update", (items) => {
+  win?.webContents.send("ahk:update", items);
+});
+
+ahkScanner.on("new", (item) => {
+  if (settings.get("notifyOnStart")) {
+    new Notification({
+      title: "AHK Script Started",
+      body: item.scriptName || item.processName || "AutoHotkey script",
+    }).show();
+  }
+});
+
+ahkScanner.on("stopped", (item) => {
+  if (settings.get("notifyOnStop")) {
+    new Notification({
+      title: "AHK Script Stopped",
+      body: item.scriptName || item.processName || "AutoHotkey script",
+    }).show();
+  }
+});
+
+ahkScanner.on("error", (err) => {
   win?.webContents.send("scanner:error", String(err));
 });
 
@@ -297,6 +330,80 @@ ipcMain.on("window:maximize", () => {
   else win.maximize();
 });
 ipcMain.on("window:close", () => win?.close());
+
+// AHK IPC handlers
+ipcMain.on("ahk:kill", (_evt, pid: number) => {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    if (process.platform === "win32") {
+      exec(`taskkill /PID ${pid} /T /F`);
+    }
+  }
+});
+
+ipcMain.handle("ahk:restart", async (_evt, scriptPath: string) => {
+  if (!scriptPath) return;
+  try {
+    // Find AutoHotkey executable - try common locations
+    const ahkPaths = [
+      "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe",
+      "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey32.exe",
+      "C:\\Program Files\\AutoHotkey\\AutoHotkey.exe",
+      "C:\\Program Files (x86)\\AutoHotkey\\AutoHotkey.exe",
+    ];
+    
+    // Try to find AHK executable via where command
+    let ahkExe: string | null = null;
+    try {
+      const { stdout } = await execAsync("where AutoHotkey");
+      const lines = stdout.split(/\r?\n/).filter(Boolean);
+      if (lines.length > 0) ahkExe = lines[0];
+    } catch {
+      // Try known paths
+      for (const p of ahkPaths) {
+        try {
+          await execAsync(`if exist "${p}" echo found`);
+          ahkExe = p;
+          break;
+        } catch {
+          // continue
+        }
+      }
+    }
+    
+    if (!ahkExe) {
+      // Fall back to just "AutoHotkey" and hope it's in PATH
+      ahkExe = "AutoHotkey";
+    }
+    
+    spawn(ahkExe, [scriptPath], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    }).unref();
+  } catch (err) {
+    console.error("Failed to restart AHK script:", err);
+  }
+});
+
+ipcMain.handle("ahk:edit", async (_evt, scriptPath: string) => {
+  if (!scriptPath) return;
+  try {
+    // Open the script file in VSCode
+    if (process.platform === "win32") {
+      spawn("cmd", ["/c", "start", "code", scriptPath], {
+        detached: true,
+        windowsHide: true,
+      });
+    } else {
+      spawn("code", [scriptPath], { detached: true });
+    }
+  } catch {
+    // Fallback: try to open with default editor
+    shell.openPath(scriptPath);
+  }
+});
 
 ipcMain.handle("app:open-vscode", async (_evt, payload: any) => {
   // payload may contain path, command, pid

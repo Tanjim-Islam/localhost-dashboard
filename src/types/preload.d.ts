@@ -16,6 +16,18 @@ export type ServerInfo = {
   framework?: string;
 };
 
+export type AHKScriptInfo = {
+  key: string; // pid as string
+  pid: number;
+  processName: string;
+  scriptPath?: string;
+  scriptName?: string;
+  firstSeen: number;
+  lastSeen: number;
+  cpu?: number;
+  memory?: number;
+};
+
 export type AppSettings = {
   scanIntervalMs: number;
   ports: (number | [number, number])[];
@@ -55,6 +67,12 @@ export interface Api {
   // stats
   getStats(): Promise<StatsPayload>;
   onStatsUpdate(cb: (s: StatsPayload) => void): () => void;
+
+  // AHK scripts
+  onAHKUpdate(cb: (items: AHKScriptInfo[]) => void): () => void;
+  killAHK(pid: number): void;
+  restartAHK(scriptPath: string): Promise<void>;
+  editAHK(scriptPath: string): Promise<void>;
 
   // meta / ui
   onToggleSettings(cb: () => void): () => void;

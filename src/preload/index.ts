@@ -33,6 +33,15 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('stats:update', listener);
     return () => ipcRenderer.removeListener('stats:update', listener);
   },
+  // AHK scripts
+  onAHKUpdate: (cb: (items: any[]) => void) => {
+    const listener = (_: any, payload: any) => cb(payload);
+    ipcRenderer.on('ahk:update', listener);
+    return () => ipcRenderer.removeListener('ahk:update', listener);
+  },
+  killAHK: (pid: number) => ipcRenderer.send('ahk:kill', pid),
+  restartAHK: (scriptPath: string) => ipcRenderer.invoke('ahk:restart', scriptPath),
+  editAHK: (scriptPath: string) => ipcRenderer.invoke('ahk:edit', scriptPath),
   // UI events from main
   onToggleSettings: (cb: () => void) => {
     const listener = () => cb();
