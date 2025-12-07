@@ -255,9 +255,9 @@ function TabButton({
         {typeof count === 'number' && (
           <span
             className={`
-              inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-semibold rounded-full
+              inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-semibold rounded-full transition-colors
               ${active
-                ? 'bg-night-500/50 text-night-100'
+                ? 'bg-celadon-400 text-white'
                 : 'bg-gray-400/30 text-gray-600'
               }
             `}

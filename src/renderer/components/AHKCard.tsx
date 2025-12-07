@@ -14,6 +14,8 @@ type AHKItem = {
   memory?: number;
 };
 
+type ButtonState = 'idle' | 'active' | 'done';
+
 export default function AHKCard({
   item,
   onOptimisticKill,
@@ -27,6 +29,11 @@ export default function AHKCard({
 
   const ref = React.useRef<HTMLDivElement>(null);
   const [exiting, setExiting] = React.useState<null | 'left' | 'right'>(null);
+  
+  // Button states for animations
+  const [copyState, setCopyState] = React.useState<ButtonState>('idle');
+  const [restartState, setRestartState] = React.useState<ButtonState>('idle');
+  const [editState, setEditState] = React.useState<ButtonState>('idle');
 
   const kill = () => {
     if (exiting) return;
@@ -39,22 +46,38 @@ export default function AHKCard({
   };
 
   const restart = async () => {
-    if (!item.scriptPath) return;
+    if (!item.scriptPath || restartState !== 'idle') return;
+    setRestartState('active');
+    
     // Kill first, then restart after a brief delay
     window.api.killAHK(item.pid);
     await new Promise((r) => setTimeout(r, 500));
     await window.api.restartAHK(item.scriptPath);
+    
+    setRestartState('done');
+    setTimeout(() => setRestartState('idle'), 2000);
   };
 
   const edit = () => {
-    if (!item.scriptPath) return;
+    if (!item.scriptPath || editState !== 'idle') return;
+    setEditState('active');
     window.api.editAHK(item.scriptPath);
+    
+    setTimeout(() => {
+      setEditState('done');
+      setTimeout(() => setEditState('idle'), 1500);
+    }, 300);
   };
 
   const copyPath = () => {
-    if (item.scriptPath) {
-      window.api.copyText(item.scriptPath);
-    }
+    if (!item.scriptPath || copyState !== 'idle') return;
+    setCopyState('active');
+    window.api.copyText(item.scriptPath);
+    
+    setTimeout(() => {
+      setCopyState('done');
+      setTimeout(() => setCopyState('idle'), 2000);
+    }, 150);
   };
 
   return (
@@ -97,30 +120,99 @@ export default function AHKCard({
       <div className="mt-4 flex items-center gap-3 flex-wrap">
         {item.scriptPath && (
           <>
+            {/* Edit Button */}
             <button
               onClick={edit}
-              className="h-10 px-4 rounded-full bg-night-700 text-night-100 hover:bg-night-800 transition text-sm font-medium"
+              disabled={editState !== 'idle'}
+              className={cx(
+                'h-10 px-4 rounded-full text-sm font-medium transition-all duration-200 transform',
+                editState === 'idle' && 'bg-night-700 text-night-100 hover:bg-night-800 hover:scale-105 active:scale-95',
+                editState === 'active' && 'bg-night-800 text-night-100 scale-95',
+                editState === 'done' && 'bg-night-600 text-celadon-300 scale-100'
+              )}
             >
-              Edit
+              <span className="flex items-center gap-1.5">
+                {editState === 'idle' && 'Edit'}
+                {editState === 'active' && (
+                  <>
+                    <span className="inline-block w-3 h-3 border-2 border-night-100 border-t-transparent rounded-full animate-spin"></span>
+                    Opening...
+                  </>
+                )}
+                {editState === 'done' && (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    Opened
+                  </>
+                )}
+              </span>
             </button>
+
+            {/* Restart Button */}
             <button
               onClick={restart}
-              className="h-10 px-4 rounded-full bg-celadon-400/80 text-night-900 hover:bg-celadon-400 transition text-sm font-medium"
+              disabled={restartState !== 'idle'}
+              className={cx(
+                'h-10 px-4 rounded-full text-sm font-medium transition-all duration-200 transform',
+                restartState === 'idle' && 'bg-celadon-400/80 text-night-900 hover:bg-celadon-400 hover:scale-105 active:scale-95',
+                restartState === 'active' && 'bg-celadon-500 text-night-900 scale-95 animate-pulse',
+                restartState === 'done' && 'bg-celadon-500 text-white scale-100'
+              )}
             >
-              Restart
+              <span className="flex items-center gap-1.5">
+                {restartState === 'idle' && 'Restart'}
+                {restartState === 'active' && (
+                  <>
+                    <span className="inline-block w-3 h-3 border-2 border-night-900 border-t-transparent rounded-full animate-spin"></span>
+                    Restarting...
+                  </>
+                )}
+                {restartState === 'done' && (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Restarted!
+                  </>
+                )}
+              </span>
             </button>
           </>
         )}
+
+        {/* Copy Path Button */}
         <button
           onClick={copyPath}
-          disabled={!item.scriptPath}
-          className="h-10 px-4 rounded-full bg-gray-200 text-gray-900 hover:bg-gray-300 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!item.scriptPath || copyState !== 'idle'}
+          className={cx(
+            'h-10 px-4 rounded-full text-sm font-medium transition-all duration-200 transform',
+            copyState === 'idle' && 'bg-gray-200 text-gray-900 hover:bg-gray-300 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100',
+            copyState === 'active' && 'bg-gray-300 text-gray-900 scale-110',
+            copyState === 'done' && 'bg-celadon-400 text-white scale-100'
+          )}
         >
-          Copy Path
+          <span className="flex items-center gap-1.5 min-w-[80px] justify-center">
+            {copyState === 'idle' && 'Copy Path'}
+            {copyState === 'active' && (
+              <span className="inline-block animate-ping">📋</span>
+            )}
+            {copyState === 'done' && (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Copied!
+              </>
+            )}
+          </span>
         </button>
+
+        {/* Kill Button */}
         <button
           onClick={kill}
-          className="h-10 px-4 rounded-full bg-mimi_pink-300 text-mimi_pink-100 hover:bg-mimi_pink-200 transition text-sm font-medium ml-auto"
+          className="h-10 px-4 rounded-full bg-mimi_pink-300 text-mimi_pink-100 hover:bg-mimi_pink-200 hover:scale-105 active:scale-95 transition-all duration-200 transform text-sm font-medium ml-auto"
         >
           Kill
         </button>
@@ -139,4 +231,3 @@ function readableBytes(bytes: number) {
   }
   return `${v.toFixed(1)} ${units[i]}`;
 }
-
