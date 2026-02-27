@@ -170,13 +170,13 @@ export default function SettingsPanel({
           </div>
 
           {/* Global hotkey recorder */}
-          <div className="border border-gray-700 rounded-lg p-3 bg-gray-800 text-gray-100">
+          <div className="border border-gray-300 rounded-lg p-3 bg-gray-200 text-gray-900">
             <div className="flex items-center justify-between mb-2">
               <div>
-                <div className="text-sm font-semibold text-gray-100">
+                <div className="text-sm font-semibold text-gray-900">
                   Global hotkey
                 </div>
-                <div className="text-xs text-gray-200">
+                <div className="text-xs text-gray-700">
                   Toggle the dashboard from anywhere
                 </div>
               </div>
@@ -188,7 +188,7 @@ export default function SettingsPanel({
                       setRecordedKeys([]);
                       setHotkeyError(null);
                     }}
-                    className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-sm text-gray-900"
+                    className="px-3 py-1.5 rounded-full bg-gray-300 hover:bg-gray-400 text-sm text-gray-900"
                   >
                     Edit
                   </button>
@@ -201,7 +201,7 @@ export default function SettingsPanel({
                         setRecording(false);
                         setHotkeyError(null);
                       }}
-                      className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-sm text-gray-900"
+                      className="px-3 py-1.5 rounded-full bg-gray-300 hover:bg-gray-400 text-sm text-gray-900"
                     >
                       Cancel
                     </button>
@@ -220,7 +220,7 @@ export default function SettingsPanel({
                       disabled={!isValidHotkey(recordedKeys)}
                       className={`px-3 py-1.5 rounded-full text-sm ${
                         !isValidHotkey(recordedKeys)
-                          ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                          ? "bg-gray-300 text-gray-600 cursor-not-allowed"
                           : "bg-night-700 text-night-100 hover:bg-night-800"
                       }`}
                     >
@@ -244,7 +244,7 @@ export default function SettingsPanel({
               )}
             </div>
             {recording && recordedKeys.length === 0 && (
-              <div className="text-xs text-gray-200 mt-2">
+              <div className="text-xs text-gray-700 mt-2">
                 Press 2-4 keys (e.g., Ctrl, Shift, D)
               </div>
             )}
@@ -256,12 +256,12 @@ export default function SettingsPanel({
           </div>
 
           {/* Updates */}
-          <div className="border border-gray-700 rounded-lg p-3 bg-gray-800 text-gray-100 flex items-center justify-between">
+          <div className="border border-gray-300 rounded-lg p-3 bg-gray-200 text-gray-900 flex items-center justify-between">
             <div>
-              <div className="text-sm font-semibold text-gray-100">
+              <div className="text-sm font-semibold text-gray-900">
                 Check for updates
               </div>
-              <div className="text-xs text-gray-200">
+              <div className="text-xs text-gray-700">
                 Manually trigger an update check
               </div>
             </div>
@@ -274,7 +274,7 @@ export default function SettingsPanel({
                   // Optionally show user-facing error message
                 }
               }}
-              className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-sm text-gray-900"
+              className="px-3 py-1.5 rounded-full bg-gray-300 hover:bg-gray-400 text-sm text-gray-900"
             >
               Check now
             </button>
@@ -386,12 +386,12 @@ function parseAccelerator(accel: string): string[] {
 
 function renderKeys(keys: string[]) {
   if (!keys.length) {
-    return <span className="text-sm text-gray-100">No shortcut set</span>;
+    return <span className="text-sm text-gray-700">No shortcut set</span>;
   }
   return keys.map((k) => (
     <span
       key={k}
-      className="px-2.5 py-1 rounded-full bg-gray-200 text-gray-800 text-xs font-semibold shadow-sm border border-gray-300"
+      className="px-2.5 py-1 rounded-full bg-gray-300 text-gray-900 text-xs font-semibold shadow-sm border border-gray-400"
     >
       {k}
     </span>

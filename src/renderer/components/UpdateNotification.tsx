@@ -88,24 +88,16 @@ export default function UpdateNotification() {
       `}
     >
       <div
-        className={`rounded-2xl shadow-2xl overflow-hidden min-w-[320px] max-w-[380px] ${
-          isDarkCard
-            ? "bg-gray-800 border border-gray-700"
-            : "bg-gray-100 border border-gray-300"
-        }`}
+        className="rounded-2xl shadow-soft overflow-hidden min-w-[320px] max-w-[380px] bg-gray-100 border border-gray-300"
       >
         {/* Header */}
         <div
-          className={`flex items-center justify-between px-4 py-3 border-b ${
-            isDarkCard ? "border-gray-700 bg-gray-700" : "border-gray-200 bg-gray-50"
-          }`}
+          className="flex items-center justify-between px-4 py-3 border-b border-gray-300 bg-gray-200"
         >
           <div className="flex items-center gap-2">
             <UpdateIcon state={status.state} />
             <span
-              className={`font-semibold text-sm ${
-                isDarkCard ? "text-gray-100" : "text-gray-900"
-              }`}
+              className="font-semibold text-sm text-gray-900"
             >
               {status.state === "checking" && "Checking for updates..."}
               {status.state === "available" && "Update Available"}
@@ -120,11 +112,7 @@ export default function UpdateNotification() {
             status.state === "not-available") && (
             <button
               onClick={handleDismiss}
-              className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
-                isDarkCard
-                  ? "text-gray-200 hover:text-gray-50 hover:bg-gray-600"
-                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-200"
-              }`}
+              className="w-6 h-6 rounded-full flex items-center justify-center transition-colors text-gray-600 hover:text-gray-900 hover:bg-gray-300"
               aria-label="Dismiss"
             >
               ×
@@ -138,7 +126,7 @@ export default function UpdateNotification() {
           {status.state === "checking" && (
             <div className="flex items-center gap-3">
               <div className="w-5 h-5 border-2 border-celadon-400 border-t-transparent rounded-full animate-spin" />
-              <span className="text-gray-600 text-sm">Looking for new versions...</span>
+              <span className="text-gray-700 text-sm">Looking for new versions...</span>
             </div>
           )}
 
@@ -146,7 +134,7 @@ export default function UpdateNotification() {
           {status.state === "available" && (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <span className="text-gray-600 text-sm">New version</span>
+                <span className="text-gray-700 text-sm">New version</span>
                 <span className="bg-celadon-400/20 text-celadon-700 px-2 py-0.5 rounded-full text-xs font-semibold">
                   v{status.version}
                 </span>
@@ -166,9 +154,9 @@ export default function UpdateNotification() {
               <svg className="w-5 h-5 text-celadon-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              <span className={`${isDarkCard ? "text-gray-100" : "text-gray-600"} text-sm`}>
+              <span className="text-gray-700 text-sm">
                 Running latest version{" "}
-                <span className={`font-medium ${isDarkCard ? "text-gray-50" : "text-gray-800"}`}>
+                <span className="font-medium text-gray-900">
                   v{status.version}
                 </span>
               </span>
@@ -179,10 +167,10 @@ export default function UpdateNotification() {
           {status.state === "downloading" && (
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Downloading...</span>
-                <span className="text-gray-800 font-medium">{Math.round(status.percent)}%</span>
+                <span className="text-gray-700">Downloading...</span>
+                <span className="text-gray-900 font-medium">{Math.round(status.percent)}%</span>
               </div>
-              <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div className="relative h-2 bg-gray-300 rounded-full overflow-hidden">
                 <div
                   className="absolute inset-y-0 left-0 bg-gradient-to-r from-celadon-400 to-celadon-500 rounded-full transition-all duration-300 ease-out"
                   style={{ width: `${status.percent}%` }}
@@ -193,7 +181,7 @@ export default function UpdateNotification() {
                   style={{ backgroundSize: "200% 100%" }}
                 />
               </div>
-              <div className="flex items-center justify-between text-xs text-gray-500">
+              <div className="flex items-center justify-between text-xs text-gray-600">
                 <span>{formatBytes(status.transferred)}</span>
                 <span>{formatBytes(status.total)}</span>
               </div>
@@ -207,8 +195,8 @@ export default function UpdateNotification() {
                 <svg className="w-5 h-5 text-celadon-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                <span className="text-gray-600 text-sm">
-                  Version <span className="font-medium text-gray-800">v{status.version}</span> ready
+                <span className="text-gray-700 text-sm">
+                  Version <span className="font-medium text-gray-900">v{status.version}</span> ready
                 </span>
               </div>
               <button
@@ -230,11 +218,11 @@ export default function UpdateNotification() {
                 <svg className="w-5 h-5 text-mimi_pink-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
-                <span className="text-gray-600 text-sm">{status.message}</span>
+                <span className="text-gray-700 text-sm">{status.message}</span>
               </div>
               <button
                 onClick={handleCheckAgain}
-                className="w-full py-2 rounded-xl bg-gray-200 text-gray-700 font-medium text-sm hover:bg-gray-300 active:scale-[0.98] transition-all duration-150"
+                className="w-full py-2 rounded-xl bg-gray-300 text-gray-900 font-medium text-sm hover:bg-gray-400 active:scale-[0.98] transition-all duration-150"
               >
                 Try Again
               </button>
