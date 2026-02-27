@@ -62,14 +62,17 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [hidden, setHidden] = useState<Record<string, number>>({});
   const [ahkHidden, setAHKHidden] = useState<Record<string, number>>({});
-  const [activeTab, setActiveTab] = useState<TabType>("servers");
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    const saved = localStorage.getItem("dashboard:activeTab");
+    return saved === "ahk" ? "ahk" : "servers";
+  });
   const [version, setVersion] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const offUpdate = window.api.onScanUpdate((next) => setItems(next));
     const offError = window.api.onScanError((msg) => setError(msg));
     const offToggle = window.api.onToggleSettings(() =>
-      setOpenSettings((v) => !v)
+      setOpenSettings((v) => !v),
     );
     const offAHK = window.api.onAHKUpdate((next) => setAHKItems(next));
     const offHealth = window.api.onHealthUpdate((results) => {
@@ -79,16 +82,14 @@ export default function App() {
       });
       setHealthResults(map);
     });
-    window.api
-      .getSettings()
-      .then((s) =>
-        setSettings({
-          ...s,
-          portsText: (s.ports ?? [])
-            .map((p: any) => (Array.isArray(p) ? `${p[0]}-${p[1]}` : String(p)))
-            .join(", "),
-        })
-      );
+    window.api.getSettings().then((s) =>
+      setSettings({
+        ...s,
+        portsText: (s.ports ?? [])
+          .map((p: any) => (Array.isArray(p) ? `${p[0]}-${p[1]}` : String(p)))
+          .join(", "),
+      }),
+    );
     window.api.getAllNotes().then(setPortNotes);
     window.api.getMeta().then((meta) => setVersion(meta?.version));
     return () => {
@@ -99,6 +100,18 @@ export default function App() {
       offHealth?.();
     };
   }, []);
+
+  // Persist active tab to localStorage
+  useEffect(() => {
+    localStorage.setItem("dashboard:activeTab", activeTab);
+  }, [activeTab]);
+
+  // If AHK tab was remembered but no AHK scripts exist, fall back to servers
+  useEffect(() => {
+    if (activeTab === "ahk" && ahkItems.length === 0) {
+      setActiveTab("servers");
+    }
+  }, [ahkItems, activeTab]);
 
   // Filter by search query and exclude optimistically hidden cards
   const filtered = useMemo(() => {
@@ -212,7 +225,7 @@ export default function App() {
                 // Optimistically hide all servers
                 const allKeys = filtered.reduce(
                   (acc, it) => ({ ...acc, [it.key]: Date.now() }),
-                  {}
+                  {},
                 );
                 setHidden((h) => ({ ...h, ...allKeys }));
               }}
@@ -258,7 +271,7 @@ export default function App() {
                       />
                     ))}
                   </div>
-                )
+                ),
               )}
             </div>
           </>

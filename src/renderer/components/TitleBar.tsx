@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 type Props = {
   onRefresh: () => void;
@@ -15,6 +15,15 @@ export default function TitleBar({
   onSearchChange,
   version,
 }: Props) {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    if (refreshing) return;
+    onRefresh();
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
   const handleDoubleClick = (e: React.MouseEvent) => {
     const path = (e as any).nativeEvent?.composedPath?.() || [];
     const shouldIgnore = path.some((el: any) => {
@@ -22,7 +31,12 @@ export default function TitleBar({
         if (!el || !el.tagName) return false;
         if (el.dataset?.nodrag === "true") return true;
         const tag = String(el.tagName).toUpperCase();
-        return tag === "INPUT" || tag === "BUTTON" || tag === "A" || tag === "TEXTAREA";
+        return (
+          tag === "INPUT" ||
+          tag === "BUTTON" ||
+          tag === "A" ||
+          tag === "TEXTAREA"
+        );
       } catch {
         return false;
       }
@@ -41,13 +55,19 @@ export default function TitleBar({
         <div className="font-semibold tracking-tight flex items-center gap-2">
           <span>Localhost Dashboard</span>
           {version && (
-            <span className="px-2 py-0.5 rounded-full bg-gray-200 text-xs text-gray-700" style={{ WebkitAppRegion: "no-drag" as any }}>
+            <span
+              className="px-2 py-0.5 rounded-full bg-gray-200 text-xs text-gray-700"
+              style={{ WebkitAppRegion: "no-drag" as any }}
+            >
               v{version}
             </span>
           )}
         </div>
       </div>
-      <div className="flex-1 flex justify-center px-3" style={{ WebkitAppRegion: "drag" as any }}>
+      <div
+        className="flex-1 flex justify-center px-3"
+        style={{ WebkitAppRegion: "drag" as any }}
+      >
         <input
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
@@ -64,10 +84,30 @@ export default function TitleBar({
       >
         <button
           title="Refresh (Ctrl/Cmd+R)"
-          onClick={onRefresh}
-          className="px-3 py-1.5 text-sm rounded-full bg-gray-200/90 text-gray-900 ring-1 ring-transparent hover:bg-gray-300 hover:ring-gray-400/40 transition-colors duration-150"
+          onClick={handleRefresh}
+          className={`
+            flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full ring-1 ring-transparent transition-all duration-200
+            ${
+              refreshing
+                ? "bg-celadon-400/20 text-celadon-700 ring-celadon-400/40"
+                : "bg-gray-200/90 text-gray-900 hover:bg-gray-300 hover:ring-gray-400/40"
+            }
+          `}
         >
-          Refresh
+          <svg
+            className={`w-3.5 h-3.5 transition-transform duration-700 ${refreshing ? "animate-spin" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+          {refreshing ? "Refreshing…" : "Refresh"}
         </button>
         <button
           title="Settings (Ctrl/Cmd+,)"
