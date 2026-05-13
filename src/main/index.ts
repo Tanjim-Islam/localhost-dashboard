@@ -21,6 +21,11 @@ import { Scanner } from "./scanner";
 import { AHKScanner } from "./ahk-scanner";
 import { HealthChecker } from "./health-checker";
 import { initUpdater } from "./updater";
+import {
+  GlobalShortcutsScanner,
+  registerOwnShortcut,
+  clearOwnShortcut,
+} from "./global-shortcuts";
 import { bumpPort, stats as statsStore } from "./stats";
 import { getNote, setNote, getAllNotes } from "./notes";
 import {
@@ -40,6 +45,7 @@ let currentGlobalHotkey: string | null = null;
 const scanner = new Scanner();
 const ahkScanner = new AHKScanner();
 const healthChecker = new HealthChecker();
+const globalShortcutsScanner = new GlobalShortcutsScanner(ahkScanner);
 let isQuitting = false;
 
 const isMac = process.platform === "darwin";
@@ -249,15 +255,21 @@ async function createWindow() {
 }
 
 function setupShortcuts() {
-  globalShortcut.register("CommandOrControl+R", () => {
+  if (globalShortcut.register("CommandOrControl+R", () => {
     win?.webContents.send("scanner:refresh");
-  });
-  globalShortcut.register("F5", () => {
+  })) {
+    registerOwnShortcut("CommandOrControl+R", "Refresh dashboard");
+  }
+  if (globalShortcut.register("F5", () => {
     win?.webContents.send("scanner:refresh");
-  });
-  globalShortcut.register("CommandOrControl+,", () => {
+  })) {
+    registerOwnShortcut("F5", "Refresh dashboard");
+  }
+  if (globalShortcut.register("CommandOrControl+,", () => {
     win?.webContents.send("ui:toggle-settings");
-  });
+  })) {
+    registerOwnShortcut("CommandOrControl+,", "Open settings");
+  }
   registerGlobalHotkey();
 }
 
@@ -273,12 +285,13 @@ function registerGlobalHotkey(acceleratorOverride?: string) {
   if (currentGlobalHotkey) {
     try {
       globalShortcut.unregister(currentGlobalHotkey);
+      clearOwnShortcut(currentGlobalHotkey);
     } catch {
       // ignore
     }
   }
   try {
-    globalShortcut.register(accelerator, () => {
+    const ok = globalShortcut.register(accelerator, () => {
       if (!win) return;
       if (win.isVisible() && win.isFocused()) {
         win.hide();
@@ -288,6 +301,7 @@ function registerGlobalHotkey(acceleratorOverride?: string) {
       }
     });
     currentGlobalHotkey = accelerator;
+    if (ok) registerOwnShortcut(accelerator, "Toggle dashboard visibility");
   } catch (err) {
     console.error("Failed to register global hotkey", accelerator, err);
   }
@@ -359,6 +373,7 @@ app.whenReady().then(async () => {
   scanner.start();
   ahkScanner.start();
   healthChecker.start();
+  globalShortcutsScanner.start();
   // Initialize auto-updater (IPC handlers registered always, but actual update checking only in packaged app)
   if (win) {
     initUpdater(win, app.isPackaged);
@@ -438,6 +453,11 @@ ahkScanner.on("error", (err) => {
 // Health checker events → renderer
 healthChecker.on("update", (results) => {
   win?.webContents.send("health:update", results);
+});
+
+// Global shortcuts scanner events → renderer
+globalShortcutsScanner.on("update", (records) => {
+  win?.webContents.send("global-shortcuts:update", records);
 });
 
 // IPC
@@ -683,3 +703,49 @@ ipcMain.handle("app:open-vscode", async (_evt, payload: any) => {
     // ignore
   }
 });
+
+// =============================================================================
+// Global Shortcuts (Windows-only)
+// =============================================================================
+
+ipcMain.handle("global-shortcuts:get", () => ({
+  platform: process.platform,
+  supported: process.platform === "win32",
+  records: globalShortcutsScanner.snapshot(),
+}));
+
+ipcMain.handle("global-shortcuts:refresh", async () => {
+  if (process.platform !== "win32") {
+    return {
+      platform: process.platform,
+      supported: false,
+      records: globalShortcutsScanner.snapshot(),
+    };
+  }
+  const records = await globalShortcutsScanner.refresh();
+  return { platform: process.platform, supported: true, records };
+});
+
+ipcMain.handle(
+  "global-shortcuts:check",
+  (_evt, accelerator: string) => {
+    if (typeof accelerator !== "string" || !accelerator.trim()) {
+      return {
+        shortcut: "",
+        accelerator: "",
+        status: "invalid" as const,
+        reason: "Empty shortcut",
+      };
+    }
+    return globalShortcutsScanner.check(accelerator.trim());
+  }
+);
+
+ipcMain.handle(
+  "global-shortcuts:recommend",
+  (_evt, payload: { keyCount?: number }) => {
+    const keyCount = Number(payload?.keyCount);
+    if (!Number.isFinite(keyCount)) return [];
+    return globalShortcutsScanner.recommend(keyCount);
+  }
+);

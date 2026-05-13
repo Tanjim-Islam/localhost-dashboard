@@ -6,6 +6,7 @@ import ServerCard from "./components/ServerCard";
 import AHKCard from "./components/AHKCard";
 import SettingsPanel from "./components/SettingsPanel";
 import UpdateNotification from "./components/UpdateNotification";
+import GlobalShortcutsTab from "./components/GlobalShortcutsTab";
 
 dayjs.extend(relativeTime);
 
@@ -38,7 +39,7 @@ type AHKItem = {
   memory?: number;
 };
 
-type TabType = "servers" | "ahk";
+type TabType = "servers" | "ahk" | "shortcuts";
 
 type HealthResult = {
   key: string;
@@ -64,7 +65,10 @@ export default function App() {
   const [ahkHidden, setAHKHidden] = useState<Record<string, number>>({});
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem("dashboard:activeTab");
-    return saved === "ahk" ? "ahk" : "servers";
+    if (saved === "ahk" || saved === "shortcuts" || saved === "servers") {
+      return saved;
+    }
+    return "servers";
   });
   const [version, setVersion] = useState<string | undefined>(undefined);
 
@@ -112,6 +116,8 @@ export default function App() {
       setActiveTab("servers");
     }
   }, [ahkItems, activeTab]);
+
+  // Note: "shortcuts" tab is always available, no fallback needed.
 
   // Filter by search query and exclude optimistically hidden cards
   const filtered = useMemo(() => {
@@ -170,7 +176,8 @@ export default function App() {
     }, {});
   }, [filtered]);
 
-  const showTabs = ahkItems.length > 0;
+  // Global Shortcuts is always available, so tabs are always visible.
+  const showAHKTab = ahkItems.length > 0;
 
   return (
     <div className="h-screen w-screen bg-night text-gray-900 select-none overflow-hidden">
@@ -190,31 +197,30 @@ export default function App() {
         )}
 
         {/* Tabs and Kill All button */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-1">
-            {showTabs ? (
-              <>
-                <TabButton
-                  active={activeTab === "servers"}
-                  onClick={() => setActiveTab("servers")}
-                  count={filtered.length}
-                >
-                  Servers
-                </TabButton>
-                <TabButton
-                  active={activeTab === "ahk"}
-                  onClick={() => setActiveTab("ahk")}
-                  count={filteredAHK.length}
-                >
-                  AHK Scripts
-                </TabButton>
-              </>
-            ) : (
-              <div className="text-gray-600 text-sm font-medium">
-                {filtered.length} server{filtered.length !== 1 ? "s" : ""}{" "}
-                running
-              </div>
+        <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
+          <div className="flex items-center gap-1 flex-wrap">
+            <TabButton
+              active={activeTab === "servers"}
+              onClick={() => setActiveTab("servers")}
+              count={filtered.length}
+            >
+              Servers
+            </TabButton>
+            {showAHKTab && (
+              <TabButton
+                active={activeTab === "ahk"}
+                onClick={() => setActiveTab("ahk")}
+                count={filteredAHK.length}
+              >
+                AHK Scripts
+              </TabButton>
             )}
+            <TabButton
+              active={activeTab === "shortcuts"}
+              onClick={() => setActiveTab("shortcuts")}
+            >
+              Global Shortcuts
+            </TabButton>
           </div>
 
           {/* Kill All button - only on Servers tab */}
@@ -276,6 +282,9 @@ export default function App() {
             </div>
           </>
         )}
+
+        {/* Global Shortcuts Tab Content */}
+        {activeTab === "shortcuts" && <GlobalShortcutsTab query={query} />}
 
         {/* AHK Tab Content */}
         {activeTab === "ahk" && (

@@ -78,6 +78,19 @@ contextBridge.exposeInMainWorld("api", {
   installUpdate: () => ipcRenderer.invoke("updater:install"),
   getUpdateStatus: () => ipcRenderer.invoke("updater:get-status"),
   dismissUpdate: () => ipcRenderer.invoke("updater:dismiss"),
+  // global shortcuts (Windows-only)
+  getGlobalShortcuts: () => ipcRenderer.invoke("global-shortcuts:get"),
+  refreshGlobalShortcuts: () =>
+    ipcRenderer.invoke("global-shortcuts:refresh"),
+  checkGlobalShortcut: (accelerator: string) =>
+    ipcRenderer.invoke("global-shortcuts:check", accelerator),
+  recommendGlobalShortcuts: (payload: { keyCount: number }) =>
+    ipcRenderer.invoke("global-shortcuts:recommend", payload),
+  onGlobalShortcutsUpdate: (cb: (records: any[]) => void) => {
+    const listener = (_: any, payload: any) => cb(payload);
+    ipcRenderer.on("global-shortcuts:update", listener);
+    return () => ipcRenderer.removeListener("global-shortcuts:update", listener);
+  },
 });
 // window controls
 contextBridge.exposeInMainWorld("windowControls", {

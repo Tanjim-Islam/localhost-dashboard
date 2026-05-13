@@ -68,6 +68,67 @@ export interface StatsPayload {
   portCounts: Record<string, number>;
 }
 
+// ===== Global Shortcuts (Windows-only feature) =====
+
+export type ShortcutSourceType =
+  | "this-app"
+  | "windows-reserved"
+  | "lnk"
+  | "ahk"
+  | "cache"
+  | "probe";
+
+export type ShortcutStatus =
+  | "active"
+  | "taken"
+  | "available"
+  | "previously-seen"
+  | "now-free"
+  | "reserved"
+  | "used-by-app"
+  | "unknown-owner"
+  | "invalid";
+
+export interface ShortcutRecord {
+  shortcut: string; // human display, e.g. "Ctrl + Shift + K"
+  accelerator: string; // normalized Electron accelerator, e.g. "CommandOrControl+Shift+K"
+  sourceType: ShortcutSourceType;
+  sourceName?: string;
+  sourcePath?: string;
+  status: ShortcutStatus;
+  firstSeen: number;
+  lastSeen: number;
+  lastChecked: number;
+  ownerKnown: boolean;
+  confidence: "low" | "medium" | "high";
+}
+
+export interface ShortcutCheckResult {
+  shortcut: string;
+  accelerator: string;
+  status: ShortcutStatus;
+  source?: {
+    type: ShortcutSourceType;
+    name?: string;
+    path?: string;
+  };
+  reason?: string;
+}
+
+export interface RecommendationEntry {
+  shortcut: string;
+  accelerator: string;
+  reason: string;
+  previouslySeen: boolean;
+  includesWin: boolean;
+}
+
+export interface GlobalShortcutsSnapshot {
+  platform: NodeJS.Platform | string;
+  supported: boolean;
+  records: ShortcutRecord[];
+}
+
 export interface Api {
   // scanning
   onScanUpdate(cb: (items: ServerInfo[]) => void): () => void;
@@ -118,6 +179,17 @@ export interface Api {
   installUpdate(): Promise<{ success: boolean; error?: string }>;
   getUpdateStatus(): Promise<UpdateStatus>;
   dismissUpdate(): Promise<void>;
+
+  // global shortcuts (Windows-only)
+  getGlobalShortcuts(): Promise<GlobalShortcutsSnapshot>;
+  refreshGlobalShortcuts(): Promise<GlobalShortcutsSnapshot>;
+  checkGlobalShortcut(accelerator: string): Promise<ShortcutCheckResult>;
+  recommendGlobalShortcuts(payload: {
+    keyCount: number;
+  }): Promise<RecommendationEntry[]>;
+  onGlobalShortcutsUpdate(
+    cb: (records: ShortcutRecord[]) => void
+  ): () => void;
 }
 
 declare global {

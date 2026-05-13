@@ -15,6 +15,7 @@ A simple Electron app that shows all my running local dev servers in one place. 
 - Project actions: open terminal, explorer, or VS Code at project directory
 - Health monitoring with response time indicators
 - AutoHotkey script detection (Windows) with kill/restart/edit
+- Global Shortcuts tab (Windows) — see which shortcuts are taken/free, record + check a shortcut, get smart recommendations
 - Global hotkey `Ctrl+Shift+Alt+D` to toggle visibility
 - Runs in system tray
 
@@ -100,6 +101,38 @@ Detects running AHK scripts and shows them in a separate tab. You can:
 - Edit in VS Code
 - Copy the script path
 
+### Global Shortcuts (Windows)
+
+A dedicated tab to keep track of which keyboard shortcuts are already in use, free, or were used by something I forgot about.
+
+Detection sources (best-effort; Windows doesn't expose every shortcut owner cleanly):
+
+- Shortcuts this app itself registered → **Used by this app**
+- Hardcoded list of well-known Windows reserved shortcuts (Win+D, Win+E, Win+L, Win+R, Win+I, Win+X, Win+Tab, Alt+Tab, Ctrl+Alt+Delete, …) → **Reserved by Windows**
+- `.lnk` shortcut hotkeys from Desktop / Public Desktop / Start Menu / ProgramData Start Menu, scanned via PowerShell + `WScript.Shell`
+- Hotkeys parsed out of running AutoHotkey script files (`^!+#` syntax)
+- An Electron `globalShortcut` register/unregister probe to confirm whether a given accelerator is currently free
+
+Cache:
+
+- Persisted via `electron-store` (`global-shortcuts.json`).
+- Records remember the past owner even after a source disappears, so you can see which app/script *used to* hold a shortcut.
+- A previously-seen shortcut that is currently free shows as **Now free**.
+
+Shortcut recorder + checker:
+
+- Click the recorder, press the actual key combination (e.g. Ctrl + Shift + K), and the result appears immediately.
+- 2–4 keys, must include at least one modifier. Esc cancels.
+
+Recommend a shortcut:
+
+- Pick 2, 3, or 4 keys, click Recommend, get up to 5 suggestions ranked by ergonomics and conflict risk.
+- Avoids common app shortcuts (Ctrl+C/V/S/A/F/X/Z/Y) and Win-key combos for safety, but they can still appear if everything safer is taken.
+
+Refresh:
+
+- Auto every 1 hour. Manual refresh from the Refresh Now button. Set `GLOBAL_SHORTCUTS_REFRESH=30m` to drop the interval to 30 minutes.
+
 ### Global Hotkey
 
 Press `Ctrl+Shift+Alt+D` from anywhere to show/hide the dashboard.
@@ -121,6 +154,7 @@ src/
 │   ├── scanner.ts  # Server detection
 │   ├── ahk-scanner.ts
 │   ├── health-checker.ts
+│   ├── global-shortcuts.ts  # Windows shortcut detection + cache + recommend
 │   ├── settings.ts
 │   ├── notes.ts
 │   └── stats.ts
