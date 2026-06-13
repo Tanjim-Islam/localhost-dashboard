@@ -59,6 +59,18 @@ contextBridge.exposeInMainWorld("api", {
   restartAHK: (scriptPath: string) =>
     ipcRenderer.invoke("ahk:restart", scriptPath),
   editAHK: (scriptPath: string) => ipcRenderer.invoke("ahk:edit", scriptPath),
+  // Automator scripts
+  onAutomatorUpdate: (cb: (items: any[]) => void) => {
+    const listener = (_: any, payload: any) => cb(payload);
+    ipcRenderer.on("automator:update", listener);
+    return () => ipcRenderer.removeListener("automator:update", listener);
+  },
+  refreshAutomator: () => ipcRenderer.invoke("automator:refresh"),
+  stopAutomator: (pid: number) => ipcRenderer.send("automator:stop", pid),
+  openAutomator: (scriptPath: string) =>
+    ipcRenderer.invoke("automator:open", scriptPath),
+  revealAutomator: (targetPath: string) =>
+    ipcRenderer.invoke("automator:reveal", targetPath),
   // UI events from main
   onToggleSettings: (cb: () => void) => {
     const listener = () => cb();

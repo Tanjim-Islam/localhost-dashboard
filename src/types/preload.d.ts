@@ -31,6 +31,39 @@ export type AHKScriptInfo = {
   memory?: number;
 };
 
+export type PlatformFeatures = {
+  servers: true;
+  ahkScripts: boolean;
+  automatorScripts: boolean;
+};
+
+export type AutomatorScriptInfo = {
+  key: string;
+  pid?: number;
+  ppid?: number;
+  processName?: string;
+  scriptName: string;
+  sourceKind:
+    | "service-workflow"
+    | "service-script"
+    | "workflow-service-runner"
+    | "automator-runner"
+    | "automator-app"
+    | "workflow"
+    | "osascript";
+  sourceLabel: string;
+  status: "running" | "installed";
+  firstSeen: number;
+  lastSeen: number;
+  command?: string;
+  scriptPath?: string;
+  processPath?: string;
+  runtimeSeconds?: number;
+  canOpenInAutomator: boolean;
+  cpu?: number;
+  memory?: number;
+};
+
 export type HealthStatus = {
   key: string;
   url: string;
@@ -107,9 +140,21 @@ export interface Api {
   restartAHK(scriptPath: string): Promise<void>;
   editAHK(scriptPath: string): Promise<void>;
 
+  // Automator scripts
+  onAutomatorUpdate(cb: (items: AutomatorScriptInfo[]) => void): () => void;
+  refreshAutomator(): Promise<void>;
+  stopAutomator(pid: number): void;
+  openAutomator(scriptPath: string): Promise<void>;
+  revealAutomator(targetPath: string): Promise<void>;
+
   // meta / ui
   onToggleSettings(cb: () => void): () => void;
-  getMeta(): Promise<{ version: string; platform: string; arch: string }>;
+  getMeta(): Promise<{
+    version: string;
+    platform: string;
+    arch: string;
+    features: PlatformFeatures;
+  }>;
 
   // auto-updater
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;

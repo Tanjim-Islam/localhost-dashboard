@@ -1,6 +1,6 @@
 {
   "name": "local-dashboard",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "An Electron dashboard that discovers and manages local dev servers.",
   "type": "module",
   "main": "out/main/index.js",
@@ -11,10 +11,11 @@
     "url": "https://github.com/Tanjim-Islam/localhost-dashboard.git"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/prepare-macos-dev-app.mjs && electron-vite dev",
     "build": "electron-vite build",
     "package": "npm run build && electron-builder",
     "publish": "npm run build && electron-builder --publish always",
+    "test": "tsc -p tsconfig.test.json && node -e \"require('node:fs').writeFileSync('.tmp-tests/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\n')\" && node --test .tmp-tests/tests/*.test.js",
     "lint": "eslint --ext .ts,.tsx src",
     "format": "prettier -w .",
     "start:test-servers": "node scripts/dev-servers.js"

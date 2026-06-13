@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "noEmit": false,
+    "outDir": ".tmp-tests",
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": [
+    "src/main/automator-detection.ts",
+    "src/main/automator-services.ts",
+    "src/main/app-identity.ts",
+    "src/main/platform-features.ts",
+    "src/main/server-detection.ts",
+    "src/renderer/components/titleBarLayout.ts",
+    "tests/**/*.ts"
+  ]
+}

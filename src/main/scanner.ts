@@ -2,9 +2,16 @@ import si from "systeminformation";
 import pidusage from "pidusage";
 import { EventEmitter } from "node:events";
 import { settings } from "./settings";
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
+import {
+  parseLsofListeningOutput,
+  parseNumericPid,
+  parseNumericPort,
+  shouldIgnoreListener,
+} from "./server-detection";
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export type ServerInfo = {
   key: string; // pid:port
@@ -82,9 +89,18 @@ async function getProcessCwd(pid: number): Promise<string | null> {
       // Look for paths containing common project indicators
       const cmdLine = stdout.replace(/\r?\n/g, " ").trim();
       cwd = extractProjectPath(cmdLine);
+    } else if (process.platform === "darwin") {
+      const { stdout } = await execFileAsync(
+        "/usr/sbin/lsof",
+        ["-a", "-p", String(pid), "-d", "cwd", "-Fn"],
+        { timeout: 3000 }
+      );
+      const cwdLine = stdout
+        .split(/\r?\n/)
+        .find((line) => line.startsWith("n/"));
+      cwd = cwdLine ? cwdLine.slice(1).trim() : null;
     } else {
-      // On Unix, we can read /proc/<pid>/cwd
-      const { stdout } = await execAsync(`readlink /proc/${pid}/cwd`, {
+      const { stdout } = await execFileAsync("readlink", [`/proc/${pid}/cwd`], {
         timeout: 3000,
       });
       cwd = stdout.trim() || null;
@@ -255,6 +271,20 @@ export class Scanner extends EventEmitter {
         }
       }
 
+      for (const [key, rec] of this.items) {
+        if (
+          shouldIgnoreListener(
+            process.platform,
+            rec.port,
+            rec.processName,
+            rec.command || rec.path,
+          )
+        ) {
+          this.items.delete(key);
+          keys.delete(key);
+        }
+      }
+
       const payload = Array.from(this.items.values()).sort(
         (a, b) => a.port - b.port
       );
@@ -282,10 +312,11 @@ async function getListening(): Promise<SimpleConn[]> {
     for (const c of conns) {
       const proto = (c.protocol || "").toLowerCase();
       const state = (c.state || "").toLowerCase();
-      const port = (c as any).localPort ?? (c as any).localport;
+      const port = parseNumericPort((c as any).localPort ?? (c as any).localport);
       if (!proto.startsWith("tcp") || !state.startsWith("listen")) continue;
-      if (typeof port !== "number" || port <= 0) continue;
-      const pid = c.pid ?? 0;
+      if (!port) continue;
+      const pid = parseNumericPid(c.pid);
+      if (!pid) continue;
       const key = `${pid}:${port}`;
       byKey.set(key, {
         protocol: c.protocol || "tcp",
@@ -298,7 +329,24 @@ async function getListening(): Promise<SimpleConn[]> {
     // ignore
   }
 
-  // 2) Windows netstat — merge in (never treat as fallback only)
+  // 2) macOS lsof, merge in real PIDs when systeminformation returns NaN.
+  if (process.platform === "darwin") {
+    try {
+      const { stdout } = await execFileAsync(
+        "/usr/sbin/lsof",
+        ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fp", "-Fn"],
+        { timeout: 5000, maxBuffer: 1024 * 1024 }
+      );
+      for (const listener of parseLsofListeningOutput(stdout)) {
+        const key = `${listener.pid}:${listener.localPort}`;
+        if (!byKey.has(key)) byKey.set(key, listener);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3) Windows netstat, merge in.
   if (process.platform === "win32") {
     try {
       // include both TCP and TCPv6 lines
