@@ -35,25 +35,23 @@ export default function UpdateNotification() {
     return () => off?.();
   }, []);
 
+  const shouldShow =
+    !dismissed &&
+    (status.state === "checking" ||
+      status.state === "available" ||
+      status.state === "downloading" ||
+      status.state === "downloaded" ||
+      status.state === "error" ||
+      status.state === "not-available");
+
   // Determine visibility based on status
   useEffect(() => {
-    const shouldShow =
-      !dismissed &&
-      (status.state === "checking" ||
-        status.state === "available" ||
-        status.state === "downloading" ||
-        status.state === "downloaded" ||
-        status.state === "error" ||
-        status.state === "not-available");
-
     if (shouldShow) {
       setVisible(true);
     } else {
-      // Delay hiding for animation
-      const timeout = setTimeout(() => setVisible(false), 300);
-      return () => clearTimeout(timeout);
+      setVisible(false);
     }
-  }, [status, dismissed]);
+  }, [shouldShow]);
 
   const handleDismiss = () => {
     setDismissed(true);
@@ -72,19 +70,16 @@ export default function UpdateNotification() {
     window.api.checkForUpdates();
   };
 
-  if (!visible && status.state === "idle") {
+  if (!shouldShow || !visible) {
     return null;
   }
-
-  const isVisible = visible && !dismissed;
-  const isDarkCard = status.state === "not-available";
 
   return (
     <div
       className={`
         fixed bottom-5 right-5 z-50 
         transition-all duration-300 ease-out
-        ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}
+        opacity-100 translate-y-0
       `}
     >
       <div
@@ -236,9 +231,7 @@ export default function UpdateNotification() {
 
 function UpdateIcon({ state }: { state: string }) {
   if (state === "checking") {
-    return (
-      <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-    );
+    return null;
   }
 
   if (state === "available" || state === "downloading") {
@@ -267,4 +260,3 @@ function UpdateIcon({ state }: { state: string }) {
 
   return null;
 }
-
