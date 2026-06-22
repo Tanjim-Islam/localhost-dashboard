@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer, clipboard } from "electron";
 
+const requireString = (value: unknown, label: string): string => {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${label} is required`);
+  }
+  return value;
+};
+
 contextBridge.exposeInMainWorld("api", {
   // scanning
   onScanUpdate: (cb: (items: any[]) => void) => {
@@ -55,6 +62,17 @@ contextBridge.exposeInMainWorld("api", {
   setNote: (port: number | string, note: string) =>
     ipcRenderer.invoke("notes:set", port, note),
   getAllNotes: () => ipcRenderer.invoke("notes:all"),
+  // Recent scripts
+  getRecentScripts: () => ipcRenderer.invoke("scripts:recent:get"),
+  onRecentScriptsUpdate: (cb: (items: any[]) => void) => {
+    const listener = (_: any, payload: any) => cb(payload);
+    ipcRenderer.on("scripts:recent:update", listener);
+    return () => ipcRenderer.removeListener("scripts:recent:update", listener);
+  },
+  startRecentScript: (id: string) =>
+    ipcRenderer.invoke("scripts:recent:start", requireString(id, "Script id")),
+  deleteRecentScript: (id: string) =>
+    ipcRenderer.invoke("scripts:recent:delete", requireString(id, "Script id")),
   killAHK: (pid: number) => ipcRenderer.send("ahk:kill", pid),
   restartAHK: (scriptPath: string) =>
     ipcRenderer.invoke("ahk:restart", scriptPath),

@@ -12,17 +12,27 @@ import {
   type NativeImage,
 } from "electron";
 import path from "node:path";
+import fs from "node:fs";
 import os from "node:os";
 import { exec, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 import { Scanner } from "./scanner";
 import { AHKScanner } from "./ahk-scanner";
 import { HealthChecker } from "./health-checker";
 import { initUpdater } from "./updater";
 import { bumpPort, stats as statsStore } from "./stats";
 import { getNote, setNote, getAllNotes } from "./notes";
+import {
+  deleteRecentScript,
+  getPlatformRecentScriptType,
+  getRecentScriptById,
+  getRecentScripts,
+  rememberRecentScript,
+  type RecentScriptInfo,
+} from "./recent-scripts";
 import {
   settings,
   parsePorts,
@@ -43,6 +53,98 @@ const healthChecker = new HealthChecker();
 let isQuitting = false;
 
 const isMac = process.platform === "darwin";
+
+const ahkExecutablePaths = [
+  "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe",
+  "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey32.exe",
+  "C:\\Program Files\\AutoHotkey\\AutoHotkey.exe",
+  "C:\\Program Files (x86)\\AutoHotkey\\AutoHotkey.exe",
+];
+
+function getPlatformRecentScripts(): RecentScriptInfo[] {
+  const type = getPlatformRecentScriptType();
+  return type ? getRecentScripts(type) : [];
+}
+
+function sendRecentScriptsUpdate() {
+  win?.webContents.send("scripts:recent:update", getPlatformRecentScripts());
+}
+
+function ensureScriptFile(scriptPath: string, extensions: string[]) {
+  const ext = path.extname(scriptPath).toLowerCase();
+  if (!extensions.includes(ext)) {
+    throw new Error("Unsupported script file type.");
+  }
+  if (!fs.existsSync(scriptPath)) {
+    throw new Error("Script file was not found.");
+  }
+}
+
+function spawnDetached(command: string, args: string[], windowsHide = false) {
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide,
+  });
+  child.on("error", (err) => {
+    console.error(`Failed to start ${command}:`, err);
+  });
+  child.unref();
+}
+
+async function resolveAutoHotkeyExecutable(): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("where", ["AutoHotkey"]);
+    const lines = stdout.split(/\r?\n/).filter(Boolean);
+    if (lines.length > 0) return lines[0];
+  } catch {
+    // Fall through to known install paths.
+  }
+
+  const knownPath = ahkExecutablePaths.find((candidate) =>
+    fs.existsSync(candidate),
+  );
+  return knownPath || "AutoHotkey";
+}
+
+async function startAHKScript(scriptPath: string) {
+  if (process.platform !== "win32") {
+    throw new Error("AutoHotkey scripts can only be started on Windows.");
+  }
+
+  ensureScriptFile(scriptPath, [".ahk"]);
+  const ahkExe = await resolveAutoHotkeyExecutable();
+  spawnDetached(ahkExe, [scriptPath], true);
+  rememberRecentScript("ahk", scriptPath);
+  sendRecentScriptsUpdate();
+}
+
+async function startAutomatorScript(scriptPath: string) {
+  if (process.platform !== "darwin") {
+    throw new Error("Automator scripts can only be started on macOS.");
+  }
+
+  ensureScriptFile(scriptPath, [".workflow", ".app", ".scpt"]);
+  const ext = path.extname(scriptPath).toLowerCase();
+  const command =
+    ext === ".workflow" ? "automator" : ext === ".scpt" ? "osascript" : "open";
+  spawnDetached(command, [scriptPath]);
+  rememberRecentScript("automator", scriptPath);
+  sendRecentScriptsUpdate();
+}
+
+async function startRecentScript(id: string) {
+  const script = getRecentScriptById(id);
+  if (!script) {
+    throw new Error("Recent script was not found.");
+  }
+
+  if (script.type === "ahk") {
+    await startAHKScript(script.scriptPath);
+  } else {
+    await startAutomatorScript(script.scriptPath);
+  }
+}
 
 const allowedHotkeyModifiers = new Set([
   "commandorcontrol",
@@ -414,6 +516,10 @@ ahkScanner.on("update", (items) => {
 });
 
 ahkScanner.on("new", (item) => {
+  if (item.scriptPath) {
+    rememberRecentScript("ahk", item.scriptPath, item.scriptName);
+    sendRecentScriptsUpdate();
+  }
   if (settings.get("notifyOnStart")) {
     new Notification({
       title: "AHK Script Started",
@@ -511,6 +617,22 @@ ipcMain.handle("notes:set", (_evt, port: number | string, note: string) => {
   return getAllNotes();
 });
 ipcMain.handle("notes:all", () => getAllNotes());
+ipcMain.handle("scripts:recent:get", () => getPlatformRecentScripts());
+ipcMain.handle("scripts:recent:start", async (_evt, id: string) => {
+  if (typeof id !== "string" || !id.trim()) {
+    throw new Error("Recent script id is required.");
+  }
+  await startRecentScript(id);
+  return getPlatformRecentScripts();
+});
+ipcMain.handle("scripts:recent:delete", (_evt, id: string) => {
+  if (typeof id !== "string" || !id.trim()) {
+    throw new Error("Recent script id is required.");
+  }
+  deleteRecentScript(id);
+  sendRecentScriptsUpdate();
+  return getPlatformRecentScripts();
+});
 ipcMain.handle("settings:get", () => settings.store);
 ipcMain.handle("stats:get", () => statsStore.store);
 ipcMain.handle("settings:update", async (_evt, incoming: any) => {
@@ -599,43 +721,7 @@ ipcMain.on("ahk:kill", (_evt, pid: number) => {
 ipcMain.handle("ahk:restart", async (_evt, scriptPath: string) => {
   if (!scriptPath) return;
   try {
-    // Find AutoHotkey executable - try common locations
-    const ahkPaths = [
-      "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe",
-      "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey32.exe",
-      "C:\\Program Files\\AutoHotkey\\AutoHotkey.exe",
-      "C:\\Program Files (x86)\\AutoHotkey\\AutoHotkey.exe",
-    ];
-
-    // Try to find AHK executable via where command
-    let ahkExe: string | null = null;
-    try {
-      const { stdout } = await execAsync("where AutoHotkey");
-      const lines = stdout.split(/\r?\n/).filter(Boolean);
-      if (lines.length > 0) ahkExe = lines[0];
-    } catch {
-      // Try known paths
-      for (const p of ahkPaths) {
-        try {
-          await execAsync(`if exist "${p}" echo found`);
-          ahkExe = p;
-          break;
-        } catch {
-          // continue
-        }
-      }
-    }
-
-    if (!ahkExe) {
-      // Fall back to just "AutoHotkey" and hope it's in PATH
-      ahkExe = "AutoHotkey";
-    }
-
-    spawn(ahkExe, [scriptPath], {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    }).unref();
+    await startAHKScript(scriptPath);
   } catch (err) {
     console.error("Failed to restart AHK script:", err);
     throw err; // Re-throw so renderer can handle the error

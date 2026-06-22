@@ -6,6 +6,7 @@ import ServerCard from "./components/ServerCard";
 import AHKCard from "./components/AHKCard";
 import SettingsPanel from "./components/SettingsPanel";
 import UpdateNotification from "./components/UpdateNotification";
+import RecentScriptsDrawer from "./components/RecentScriptsDrawer";
 
 dayjs.extend(relativeTime);
 
@@ -40,6 +41,22 @@ type AHKItem = {
 
 type TabType = "servers" | "ahk";
 
+type AppMeta = {
+  version: string;
+  platform: string;
+  arch: string;
+};
+
+type RecentScript = {
+  id: string;
+  type: "ahk" | "automator";
+  scriptPath: string;
+  scriptName: string;
+  firstSeen: number;
+  lastUsed: number;
+  useCount: number;
+};
+
 type HealthResult = {
   key: string;
   url: string;
@@ -62,10 +79,14 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [hidden, setHidden] = useState<Record<string, number>>({});
   const [ahkHidden, setAHKHidden] = useState<Record<string, number>>({});
+  const [recentScripts, setRecentScripts] = useState<RecentScript[]>([]);
+  const [recentLoaded, setRecentLoaded] = useState(false);
+  const [recentOpen, setRecentOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem("dashboard:activeTab");
     return saved === "ahk" ? "ahk" : "servers";
   });
+  const [meta, setMeta] = useState<AppMeta | null>(null);
   const [version, setVersion] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -82,6 +103,7 @@ export default function App() {
       });
       setHealthResults(map);
     });
+    const offRecent = window.api.onRecentScriptsUpdate(setRecentScripts);
     window.api.getSettings().then((s) =>
       setSettings({
         ...s,
@@ -91,13 +113,23 @@ export default function App() {
       }),
     );
     window.api.getAllNotes().then(setPortNotes);
-    window.api.getMeta().then((meta) => setVersion(meta?.version));
+    window.api
+      .getRecentScripts()
+      .then((items) => {
+        setRecentScripts(items);
+      })
+      .finally(() => setRecentLoaded(true));
+    window.api.getMeta().then((nextMeta) => {
+      setMeta(nextMeta);
+      setVersion(nextMeta?.version);
+    });
     return () => {
       offUpdate?.();
       offError?.();
       offToggle?.();
       offAHK?.();
       offHealth?.();
+      offRecent?.();
     };
   }, []);
 
@@ -106,12 +138,17 @@ export default function App() {
     localStorage.setItem("dashboard:activeTab", activeTab);
   }, [activeTab]);
 
-  // If AHK tab was remembered but no AHK scripts exist, fall back to servers
+  // Keep the script tab available while recent scripts exist.
   useEffect(() => {
-    if (activeTab === "ahk" && ahkItems.length === 0) {
+    if (
+      activeTab === "ahk" &&
+      ahkItems.length === 0 &&
+      recentScripts.length === 0 &&
+      recentLoaded
+    ) {
       setActiveTab("servers");
     }
-  }, [ahkItems, activeTab]);
+  }, [ahkItems, activeTab, recentLoaded, recentScripts.length]);
 
   // Filter by search query and exclude optimistically hidden cards
   const filtered = useMemo(() => {
@@ -170,7 +207,13 @@ export default function App() {
     }, {});
   }, [filtered]);
 
-  const showTabs = ahkItems.length > 0;
+  const showAutomationTab = ahkItems.length > 0 || recentScripts.length > 0;
+  const showTabs = showAutomationTab;
+  const automationTabLabel =
+    meta?.platform === "darwin" ? "Automator Scripts" : "AHK Scripts";
+  const automationEmptyLabel =
+    meta?.platform === "darwin" ? "Automator scripts" : "AutoHotkey scripts";
+  const showRecentButton = activeTab === "ahk" && showAutomationTab;
 
   return (
     <div className="h-screen w-screen bg-night text-gray-900 select-none overflow-hidden">
@@ -206,7 +249,7 @@ export default function App() {
                   onClick={() => setActiveTab("ahk")}
                   count={filteredAHK.length}
                 >
-                  AHK Scripts
+                  {automationTabLabel}
                 </TabButton>
               </>
             ) : (
@@ -217,20 +260,29 @@ export default function App() {
             )}
           </div>
 
-          {/* Kill All button - only on Servers tab */}
-          {activeTab === "servers" && filtered.length > 0 && (
-            <KillAllButton
-              onKillAll={() => {
-                window.api.killAllServers();
-                // Optimistically hide all servers
-                const allKeys = filtered.reduce(
-                  (acc, it) => ({ ...acc, [it.key]: Date.now() }),
-                  {},
-                );
-                setHidden((h) => ({ ...h, ...allKeys }));
-              }}
-            />
-          )}
+          <div className="flex items-center gap-2">
+            {showRecentButton && (
+              <RecentlyUsedButton
+                count={recentScripts.length}
+                onClick={() => setRecentOpen(true)}
+              />
+            )}
+
+            {/* Kill All button - only on Servers tab */}
+            {activeTab === "servers" && filtered.length > 0 && (
+              <KillAllButton
+                onKillAll={() => {
+                  window.api.killAllServers();
+                  // Optimistically hide all servers
+                  const allKeys = filtered.reduce(
+                    (acc, it) => ({ ...acc, [it.key]: Date.now() }),
+                    {},
+                  );
+                  setHidden((h) => ({ ...h, ...allKeys }));
+                }}
+              />
+            )}
+          </div>
         </div>
 
         {/* Server Tab Content */}
@@ -282,8 +334,8 @@ export default function App() {
           <>
             {filteredAHK.length === 0 && (
               <div className="text-gray-600 text-center mt-20">
-                No AutoHotkey scripts detected. Start an AHK script and it will
-                show up here.
+                No {automationEmptyLabel} detected. Use Recently Used to start
+                saved scripts.
               </div>
             )}
 
@@ -325,7 +377,64 @@ export default function App() {
 
       {/* Auto-update notification */}
       <UpdateNotification />
+
+      <RecentScriptsDrawer
+        open={recentOpen}
+        scripts={recentScripts}
+        label={automationTabLabel}
+        onClose={() => setRecentOpen(false)}
+        onStart={async (id) => {
+          const next = await window.api.startRecentScript(id);
+          setRecentScripts(next);
+        }}
+        onReveal={(scriptPath) => window.api.openExplorer(scriptPath)}
+        onDelete={async (id) => {
+          const next = await window.api.deleteRecentScript(id);
+          setRecentScripts(next);
+        }}
+      />
     </div>
+  );
+}
+
+function RecentlyUsedButton({
+  count,
+  onClick,
+}: {
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="h-9 rounded-full bg-gray-200/70 px-3 text-sm font-medium text-gray-800 transition-all duration-200 hover:bg-gray-300 hover:text-gray-900"
+    >
+      <span className="flex items-center gap-2">
+        <ClockIcon />
+        Recently Used
+        <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-celadon-400 px-1.5 text-xs font-semibold text-night-100">
+          {count}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 6v6l3.5 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
   );
 }
 

@@ -31,6 +31,18 @@ export type AHKScriptInfo = {
   memory?: number;
 };
 
+export type RecentScriptType = "ahk" | "automator";
+
+export type RecentScriptInfo = {
+  id: string;
+  type: RecentScriptType;
+  scriptPath: string;
+  scriptName: string;
+  firstSeen: number;
+  lastUsed: number;
+  useCount: number;
+};
+
 export type HealthStatus = {
   key: string;
   url: string;
@@ -100,6 +112,12 @@ export interface Api {
   getNote(port: number | string): Promise<string>;
   setNote(port: number | string, note: string): Promise<Record<string, string>>;
   getAllNotes(): Promise<Record<string, string>>;
+
+  // recent scripts
+  getRecentScripts(): Promise<RecentScriptInfo[]>;
+  onRecentScriptsUpdate(cb: (items: RecentScriptInfo[]) => void): () => void;
+  startRecentScript(id: string): Promise<RecentScriptInfo[]>;
+  deleteRecentScript(id: string): Promise<RecentScriptInfo[]>;
 
   // AHK scripts
   onAHKUpdate(cb: (items: AHKScriptInfo[]) => void): () => void;
