@@ -57,5 +57,17 @@ jobs:
       - name: Build the application
         run: npm run build
 
-      - name: Build and publish universal macOS artifacts
-        run: npx electron-builder --mac --universal --publish always --config.directories.output=release-mac
+      - name: Build universal macOS artifacts
+        run: npx electron-builder --mac --universal --publish never --config.directories.output=release-mac
+
+      - name: Upload macOS artifacts to the existing release
+        shell: bash
+        run: |
+          gh release upload "${{ inputs.tag }}" \
+            release-mac/*.dmg \
+            release-mac/*.dmg.blockmap \
+            release-mac/*.zip \
+            release-mac/*.zip.blockmap \
+            release-mac/latest-mac.yml \
+            --repo Tanjim-Islam/localhost-dashboard \
+            --clobber
