@@ -58,4 +58,4 @@ jobs:
         run: npm run build
 
       - name: Build and publish universal macOS artifacts
-        run: npx electron-builder --mac --universal --publish always
+        run: npx electron-builder --mac --universal --publish always --config.directories.output=release-mac
