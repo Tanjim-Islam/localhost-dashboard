@@ -138,7 +138,7 @@ export default function RecentScriptsDrawer({
             </div>
           )}
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="app-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
             {scripts.length === 0 ? (
               <div className="mt-16 text-center">
                 <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full border border-gray-300 bg-gray-200 text-gray-700">

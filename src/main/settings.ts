@@ -33,6 +33,7 @@ function readDefaultSettingsFromFile(): Partial<AppSettings> | null {
     if (typeof json.scanIntervalMs === 'number') out.scanIntervalMs = json.scanIntervalMs;
     if (Array.isArray(json.ports)) out.ports = json.ports as any;
     if (typeof json.startAtLogin === 'boolean') out.startAtLogin = json.startAtLogin;
+    if (typeof json.openInTrayAtLogin === 'boolean') out.openInTrayAtLogin = json.openInTrayAtLogin;
     if (typeof json.notifyOnStart === 'boolean') out.notifyOnStart = json.notifyOnStart;
     if (typeof json.notifyOnStop === 'boolean') out.notifyOnStop = json.notifyOnStop;
     if (typeof json.scanAllPorts === 'boolean') out.scanAllPorts = json.scanAllPorts;
@@ -47,6 +48,8 @@ export type AppSettings = {
   scanIntervalMs: number;
   ports: (number | [number, number])[]; // numbers and inclusive ranges
   startAtLogin: boolean;
+  // If true, OS login launches stay hidden until opened from the tray.
+  openInTrayAtLogin: boolean;
   // Per-event notification toggles
   notifyOnStart: boolean;
   notifyOnStop: boolean;
@@ -64,6 +67,7 @@ const schema = {
   scanIntervalMs: { type: 'number', default: 5000 },
   ports: { type: 'array', default: [3000, 3001, 3002, [5173, 5199], 8000, 8080, 5000, 4200] },
   startAtLogin: { type: 'boolean', default: false },
+  openInTrayAtLogin: { type: 'boolean', default: true },
   notifyOnStart: { type: 'boolean', default: true },
   notifyOnStop: { type: 'boolean', default: true },
   notifications: { type: 'boolean', default: undefined },
@@ -78,6 +82,7 @@ export const settings = new Store<AppSettings>({
     scanIntervalMs: 5000,
     ports: [3000, 3001, 3002, [5173, 5199], 8000, 8080, 5000, 4200],
     startAtLogin: false,
+    openInTrayAtLogin: true,
     notifyOnStart: true,
     notifyOnStop: true,
     scanAllPorts: false,
@@ -143,6 +148,7 @@ export function seedDefaultsIfNeeded(): { seeded: boolean; path?: string } {
     if (typeof fromFile.scanIntervalMs === 'number') settings.set('scanIntervalMs', fromFile.scanIntervalMs);
     if (Array.isArray(fromFile.ports)) settings.set('ports', fromFile.ports as any);
     if (typeof fromFile.startAtLogin === 'boolean') settings.set('startAtLogin', fromFile.startAtLogin);
+    if (typeof fromFile.openInTrayAtLogin === 'boolean') settings.set('openInTrayAtLogin', fromFile.openInTrayAtLogin);
     if (typeof fromFile.notifyOnStart === 'boolean') settings.set('notifyOnStart', fromFile.notifyOnStart);
     if (typeof fromFile.notifyOnStop === 'boolean') settings.set('notifyOnStop', fromFile.notifyOnStop);
     if (typeof fromFile.scanAllPorts === 'boolean') settings.set('scanAllPorts', fromFile.scanAllPorts);
@@ -168,6 +174,7 @@ export function resetToDefaults(): AppSettings {
     scanIntervalMs: (json?.scanIntervalMs ?? 5000) as number,
     ports: (json?.ports ?? [3000, 3001, 3002, [5173, 5199], 8000, 8080, 5000, 4200]) as any,
     startAtLogin: (json?.startAtLogin ?? false) as boolean,
+    openInTrayAtLogin: (json?.openInTrayAtLogin ?? true) as boolean,
     notifyOnStart: (json?.notifyOnStart ?? true) as boolean,
     notifyOnStop: (json?.notifyOnStop ?? true) as boolean,
     scanAllPorts: (json?.scanAllPorts ?? false) as boolean,
@@ -178,6 +185,7 @@ export function resetToDefaults(): AppSettings {
   settings.set('scanIntervalMs', next.scanIntervalMs);
   settings.set('ports', next.ports);
   settings.set('startAtLogin', next.startAtLogin);
+  settings.set('openInTrayAtLogin', next.openInTrayAtLogin);
   settings.set('notifyOnStart', next.notifyOnStart);
   settings.set('notifyOnStop', next.notifyOnStop);
   settings.set('scanAllPorts', next.scanAllPorts);

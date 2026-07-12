@@ -65,6 +65,7 @@ export type AppSettings = {
   scanIntervalMs: number;
   ports: (number | [number, number])[];
   startAtLogin: boolean;
+  openInTrayAtLogin: boolean;
   notifyOnStart: boolean;
   notifyOnStop: boolean;
   scanAllPorts: boolean;

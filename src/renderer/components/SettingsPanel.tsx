@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
+import { X } from "lucide-react";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   settings: any;
+  platform?: string;
   onSave: (next: any) => void | Promise<void>;
   onReset?: () => void | Promise<void>;
 };
@@ -12,6 +14,7 @@ export default function SettingsPanel({
   open,
   onClose,
   settings,
+  platform,
   onSave,
   onReset,
 }: Props) {
@@ -20,6 +23,7 @@ export default function SettingsPanel({
     "3000-3999, 8000, 8080, 5000, 4200, 5173-5199"
   );
   const [startAtLogin, setStartAtLogin] = useState(false);
+  const [openInTrayAtLogin, setOpenInTrayAtLogin] = useState(true);
   const [notifyOnStart, setNotifyOnStart] = useState(true);
   const [notifyOnStop, setNotifyOnStop] = useState(true);
   const [scanAllPorts, setScanAllPorts] = useState(false);
@@ -28,12 +32,18 @@ export default function SettingsPanel({
   const [recording, setRecording] = useState(false);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+  const supportsTrayStartup = platform === "darwin" || platform === "win32";
 
   useEffect(() => {
     if (settings) {
       setScanIntervalMs(settings.scanIntervalMs ?? 5000);
       setPortsText(settings.portsText ?? portsToString(settings.ports || []));
       setStartAtLogin(Boolean(settings.startAtLogin));
+      setOpenInTrayAtLogin(
+        typeof settings.openInTrayAtLogin === "boolean"
+          ? settings.openInTrayAtLogin
+          : true,
+      );
       setScanAllPorts(Boolean(settings.scanAllPorts));
       setCloseToTray(
         typeof settings.closeToTray === "boolean" ? settings.closeToTray : true
@@ -81,8 +91,19 @@ export default function SettingsPanel({
   if (!open) return null;
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center no-drag">
-      <div className="w-[560px] max-w-[95vw] bg-gray-100 text-gray-900 rounded-lg shadow-soft p-5">
-        <div className="text-lg font-semibold mb-4">Settings</div>
+      <div className="app-scrollbar w-[560px] max-w-[95vw] max-h-[90vh] overflow-y-auto bg-gray-100 text-gray-900 rounded-lg shadow-soft p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="text-lg font-semibold">Settings</div>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close settings"
+            aria-label="Close settings"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-gray-700 transition-colors hover:bg-mimi_pink-300 hover:text-mimi_pink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mimi_pink-400"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
         <div className="space-y-4">
           <label className="block">
             <div className="text-sm text-gray-700 mb-1">Scan interval (ms)</div>
@@ -114,15 +135,42 @@ export default function SettingsPanel({
             />
             <span>Scan all ports (slower)</span>
           </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-night-700"
-              checked={startAtLogin}
-              onChange={(e) => setStartAtLogin(e.target.checked)}
-            />
-            <span>Start at system login</span>
-          </label>
+          <div className="border border-gray-300 rounded-lg p-3 bg-gray-200 text-gray-900">
+            <div className="mb-3 text-sm font-semibold text-gray-900">
+              System startup
+            </div>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 accent-night-700"
+                  checked={startAtLogin}
+                  onChange={(e) => setStartAtLogin(e.target.checked)}
+                />
+                <span className="text-sm font-medium">
+                  Start at system login
+                </span>
+              </label>
+              <label
+                className={`flex items-center gap-3 rounded-md border border-gray-300 px-3 py-2 transition-opacity ${
+                  startAtLogin && supportsTrayStartup
+                    ? "opacity-100"
+                    : "opacity-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 accent-celadon-600"
+                  checked={openInTrayAtLogin}
+                  onChange={(e) => setOpenInTrayAtLogin(e.target.checked)}
+                  disabled={!startAtLogin || !supportsTrayStartup}
+                />
+                <span className="text-sm font-medium">
+                  Open in tray at login
+                </span>
+              </label>
+            </div>
+          </div>
           <div>
             <div className="text-sm text-gray-700 mb-1">On window close</div>
             <div className="flex items-center gap-4">
@@ -257,13 +305,8 @@ export default function SettingsPanel({
 
           {/* Updates */}
           <div className="border border-gray-300 rounded-lg p-3 bg-gray-200 text-gray-900 flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold text-gray-900">
-                Check for updates
-              </div>
-              <div className="text-xs text-gray-700">
-                Manually trigger an update check
-              </div>
+            <div className="text-sm font-semibold text-gray-900">
+              Check for updates
             </div>
             <button
               onClick={async () => {
@@ -292,43 +335,36 @@ export default function SettingsPanel({
           >
             Reset to defaults
           </button>
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                const keysForSave = recording
-                  ? recordedKeys
-                  : parseAccelerator(globalHotkey);
-                if (!isValidHotkey(keysForSave)) {
-                  setHotkeyError("Shortcut must be 2-4 keys.");
-                  return;
-                }
-                const accel = keysToAccelerator(keysForSave);
-                if (!accel) return;
-                onSave({
-                  scanIntervalMs,
-                  portsText,
-                  startAtLogin,
-                  notifyOnStart,
-                  notifyOnStop,
-                  scanAllPorts,
-                  closeToTray,
-                  globalHotkey: accel,
-                });
-                setRecording(false);
-                setGlobalHotkey(accel);
-                setHotkeyError(null);
-              }}
-              className="px-3 py-1.5 rounded-full bg-night-700 text-night-100 hover:bg-night-800"
-            >
-              Save
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              const keysForSave = recording
+                ? recordedKeys
+                : parseAccelerator(globalHotkey);
+              if (!isValidHotkey(keysForSave)) {
+                setHotkeyError("Shortcut must be 2-4 keys.");
+                return;
+              }
+              const accel = keysToAccelerator(keysForSave);
+              if (!accel) return;
+              onSave({
+                scanIntervalMs,
+                portsText,
+                startAtLogin,
+                openInTrayAtLogin,
+                notifyOnStart,
+                notifyOnStop,
+                scanAllPorts,
+                closeToTray,
+                globalHotkey: accel,
+              });
+              setRecording(false);
+              setGlobalHotkey(accel);
+              setHotkeyError(null);
+            }}
+            className="px-3 py-1.5 rounded-full bg-night-700 text-night-100 hover:bg-night-800"
+          >
+            Save
+          </button>
         </div>
       </div>
     </div>

@@ -16,6 +16,7 @@
     "package": "npm run build && electron-builder",
     "publish": "npm run build && electron-builder --publish always",
     "lint": "eslint --ext .ts,.tsx src",
+    "test:startup": "node --experimental-strip-types --test scripts/startup-visibility.test.mts",
     "format": "prettier -w .",
     "start:test-servers": "node scripts/dev-servers.js"
   },

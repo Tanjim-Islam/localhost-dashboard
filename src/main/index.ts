@@ -23,6 +23,7 @@ import { Scanner } from "./scanner";
 import { AHKScanner } from "./ahk-scanner";
 import { HealthChecker } from "./health-checker";
 import { initUpdater } from "./updater";
+import { HIDDEN_LOGIN_ARGUMENT, shouldStartInTray } from "./startup-visibility";
 import { bumpPort, stats as statsStore } from "./stats";
 import { getNote, setNote, getAllNotes } from "./notes";
 import {
@@ -298,7 +299,19 @@ function getTrayImage(): NativeImage {
   return nativeImage.createFromDataURL(dataUrl);
 }
 
-async function createWindow() {
+function showDashboard() {
+  if (!win) return;
+  if (isMac) void app.dock?.show();
+  win.show();
+  win.focus();
+}
+
+function hideDashboard() {
+  win?.hide();
+  if (isMac) app.dock?.hide();
+}
+
+async function createWindow(showWhenReady = true) {
   Menu.setApplicationMenu(null);
 
   const preloadCandidateMjs = path.join(__dirname, "../preload/index.mjs");
@@ -326,13 +339,15 @@ async function createWindow() {
     },
   });
 
-  win.on("ready-to-show", () => win?.show());
+  win.on("ready-to-show", () => {
+    if (showWhenReady) showDashboard();
+  });
   win.on("closed", () => (win = null));
   win.on("close", (e) => {
     try {
       if (!isQuitting && settings.get("closeToTray")) {
         e.preventDefault();
-        win?.hide();
+        hideDashboard();
       }
     } catch {
       // ignore
@@ -383,10 +398,9 @@ function registerGlobalHotkey(acceleratorOverride?: string) {
     globalShortcut.register(accelerator, () => {
       if (!win) return;
       if (win.isVisible() && win.isFocused()) {
-        win.hide();
+        hideDashboard();
       } else {
-        win.show();
-        win.focus();
+        showDashboard();
       }
     });
     currentGlobalHotkey = accelerator;
@@ -398,7 +412,7 @@ function registerGlobalHotkey(acceleratorOverride?: string) {
 function setupTray() {
   tray = new Tray(getTrayImage());
   const context = Menu.buildFromTemplate([
-    { label: "Open Dashboard", click: () => win?.show() },
+    { label: "Open Dashboard", click: showDashboard },
     { type: "separator" },
     {
       label: "Refresh",
@@ -423,34 +437,80 @@ function setupTray() {
   tray.setContextMenu(context);
   tray.on("click", () => {
     if (!win) return;
-    if (win.isVisible()) win.hide();
-    else win.show();
+    if (win.isVisible()) hideDashboard();
+    else showDashboard();
   });
 }
 
-async function setAutoLaunch(enabled: boolean) {
+async function setAutoLaunch(
+  enabled: boolean,
+  openInTrayAtLogin = settings.get("openInTrayAtLogin"),
+) {
   try {
-    if (!autolaunch) {
+    if (process.platform === "win32") {
+      await removeLegacyAutoLaunchRegistration();
+      app.setLoginItemSettings({
+        openAtLogin: enabled,
+        name: "Localhost Dashboard",
+        path: process.execPath,
+        args: enabled && openInTrayAtLogin ? [HIDDEN_LOGIN_ARGUMENT] : [],
+      });
+    } else if (process.platform === "darwin") {
+      await removeLegacyAutoLaunchRegistration();
+      app.setLoginItemSettings({
+        openAtLogin: enabled,
+        openAsHidden: openInTrayAtLogin,
+      });
+    } else {
       autolaunch = new AutoLaunch({
         name: "Localhost Dashboard",
-        isHidden: true,
+        isHidden: false,
       });
+      if (enabled) await autolaunch.enable();
+      else await autolaunch.disable();
     }
-    if (enabled) await autolaunch.enable();
-    else await autolaunch.disable();
     settings.set("startAtLogin", enabled);
+    settings.set("openInTrayAtLogin", openInTrayAtLogin);
   } catch (e) {
-    // fallback to built-in for mac/win
-    if (process.platform === "darwin" || process.platform === "win32") {
-      app.setLoginItemSettings({ openAtLogin: enabled });
-      settings.set("startAtLogin", enabled);
+    console.error("Failed to update system login settings", e);
+    throw e;
+  }
+}
+
+async function removeLegacyAutoLaunchRegistration() {
+  try {
+    const legacyAutoLaunch = new AutoLaunch({
+      name: "Localhost Dashboard",
+      isHidden: true,
+    });
+    if (await legacyAutoLaunch.isEnabled()) {
+      await legacyAutoLaunch.disable();
     }
+  } catch (error) {
+    console.warn("Could not remove the legacy login item", error);
+  }
+}
+
+function wasOpenedAtSystemLogin(): boolean {
+  if (!isMac) return false;
+  try {
+    return app.getLoginItemSettings().wasOpenedAtLogin;
+  } catch {
+    return false;
   }
 }
 
 app.whenReady().then(async () => {
-  await createWindow();
+  const startInTray = shouldStartInTray({
+    platform: process.platform,
+    argv: process.argv,
+    startAtLogin: settings.get("startAtLogin"),
+    openInTrayAtLogin: settings.get("openInTrayAtLogin"),
+    wasOpenedAtLogin: wasOpenedAtSystemLogin(),
+  });
+  await createWindow(!startInTray);
   setupTray();
+  if (startInTray && isMac) app.dock?.hide();
   // First-run seeding from resources/default-settings.json if present
   const seeded = seedDefaultsIfNeeded();
   if (seeded.seeded) {
@@ -473,6 +533,7 @@ app.on("window-all-closed", () => {
 
 app.on("activate", async () => {
   if (BrowserWindow.getAllWindows().length === 0) await createWindow();
+  else showDashboard();
 });
 
 app.on("before-quit", () => {
@@ -641,7 +702,17 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
   if (typeof incoming.scanIntervalMs === "number")
     settings.set("scanIntervalMs", incoming.scanIntervalMs);
   if (typeof incoming.startAtLogin === "boolean")
-    await setAutoLaunch(incoming.startAtLogin);
+    await setAutoLaunch(
+      incoming.startAtLogin,
+      typeof incoming.openInTrayAtLogin === "boolean"
+        ? incoming.openInTrayAtLogin
+        : settings.get("openInTrayAtLogin"),
+    );
+  else if (typeof incoming.openInTrayAtLogin === "boolean")
+    await setAutoLaunch(
+      settings.get("startAtLogin"),
+      incoming.openInTrayAtLogin,
+    );
   if (typeof incoming.notifyOnStart === "boolean")
     settings.set("notifyOnStart", incoming.notifyOnStart);
   if (typeof incoming.notifyOnStop === "boolean")

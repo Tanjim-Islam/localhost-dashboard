@@ -225,7 +225,7 @@ export default function App() {
         version={version}
       />
 
-      <div className="px-6 py-5 overflow-y-auto overflow-x-hidden h-[calc(100vh-48px)]">
+      <div className="app-scrollbar px-6 py-5 overflow-y-auto overflow-x-hidden h-[calc(100vh-48px)]">
         {error && (
           <div className="bg-mimi_pink-700/30 text-mimi_pink-200 border border-mimi_pink-400/40 px-4 py-2 rounded mb-4">
             {error}
@@ -363,6 +363,7 @@ export default function App() {
         open={openSettings}
         onClose={() => setOpenSettings(false)}
         settings={settings}
+        platform={meta?.platform}
         onSave={async (s) => {
           const updated = await window.api.updateSettings(s);
           setSettings(updated);
