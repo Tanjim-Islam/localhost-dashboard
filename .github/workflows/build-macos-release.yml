@@ -60,6 +60,13 @@ jobs:
       - name: Build universal macOS artifacts
         run: npx electron-builder --mac --universal --publish never --config.directories.output=release-mac
 
+      - name: Normalize macOS artifact filenames
+        shell: bash
+        run: |
+          for artifact in release-mac/Localhost\ Dashboard-*; do
+            mv "$artifact" "${artifact// /-}"
+          done
+
       - name: Upload macOS artifacts to the existing release
         shell: bash
         run: |
