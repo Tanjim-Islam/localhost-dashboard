@@ -21,11 +21,20 @@ const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 import { Scanner } from "./scanner";
 import { AHKScanner } from "./ahk-scanner";
+import { AutomatorScanner } from "./automator-scanner";
 import { HealthChecker } from "./health-checker";
 import { initUpdater } from "./updater";
 import { HIDDEN_LOGIN_ARGUMENT, shouldStartInTray } from "./startup-visibility";
 import { bumpPort, stats as statsStore } from "./stats";
 import { getNote, setNote, getAllNotes } from "./notes";
+import { getPlatformFeatures } from "./platform-features";
+import {
+  APP_DISPLAY_NAME,
+  getRendererLoadMode,
+  shouldEnableAutoUpdater,
+  shouldCreateTrayIcon,
+  shouldShowDockForWindowState,
+} from "./app-identity";
 import {
   deleteRecentScript,
   getPlatformRecentScriptType,
@@ -39,6 +48,7 @@ import {
   parsePorts,
   portsToString,
   migrateLegacyNotifications,
+  applyPlatformSettingsDefaults,
   seedDefaultsIfNeeded,
   resetToDefaults,
 } from "./settings";
@@ -49,11 +59,17 @@ let tray: Tray | null = null;
 let autolaunch: AutoLaunch | null = null;
 let currentGlobalHotkey: string | null = null;
 const scanner = new Scanner();
-const ahkScanner = new AHKScanner();
 const healthChecker = new HealthChecker();
 let isQuitting = false;
 
 const isMac = process.platform === "darwin";
+const platformFeatures = getPlatformFeatures(process.platform);
+const ahkScanner = platformFeatures.ahkScripts ? new AHKScanner() : null;
+const automatorScanner = platformFeatures.automatorScripts
+  ? new AutomatorScanner()
+  : null;
+
+app.setName(APP_DISPLAY_NAME);
 
 const ahkExecutablePaths = [
   "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe",
@@ -272,6 +288,7 @@ function isValidHotkey(hotkey: string): boolean {
 
 function resolveResource(rel: string): string | null {
   const candidates = [
+    path.join(process.resourcesPath || "", rel),
     path.join(__dirname, "../../", rel), // dev + packaged (asar)
     path.join(process.cwd(), rel), // fallback in dev
   ];
@@ -284,6 +301,20 @@ function resolveResource(rel: string): string | null {
     }
   }
   return null;
+}
+
+function applyApplicationIdentity() {
+  app.setName(APP_DISPLAY_NAME);
+  app.setAboutPanelOptions({ applicationName: APP_DISPLAY_NAME });
+
+  if (process.platform !== "darwin" || !app.dock) return;
+
+  const iconPath =
+    resolveResource("resources/icon-dock.png") ||
+    resolveResource("resources/icon.png");
+  if (!iconPath) return;
+  const icon = nativeImage.createFromPath(iconPath);
+  if (!icon.isEmpty()) app.dock.setIcon(icon);
 }
 
 function getTrayImage(): NativeImage {
@@ -299,26 +330,15 @@ function getTrayImage(): NativeImage {
   return nativeImage.createFromDataURL(dataUrl);
 }
 
-function showDashboard() {
-  if (!win) return;
-  if (isMac) void app.dock?.show();
-  win.show();
-  win.focus();
-}
-
-function hideDashboard() {
-  win?.hide();
-  if (isMac) app.dock?.hide();
-}
-
 async function createWindow(showWhenReady = true) {
-  Menu.setApplicationMenu(null);
+  configureApplicationMenu();
 
   const preloadCandidateMjs = path.join(__dirname, "../preload/index.mjs");
   const preloadCandidateJs = path.join(__dirname, "../preload/index.js");
   const preloadPath = preloadCandidateMjs;
 
   win = new BrowserWindow({
+    title: APP_DISPLAY_NAME,
     width: 1100,
     height: 720,
     minWidth: 900,
@@ -354,15 +374,62 @@ async function createWindow(showWhenReady = true) {
     }
   });
 
-  if (app.isPackaged) {
+  const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
+  if (getRendererLoadMode(app.isPackaged, devServerUrl) === "file") {
     await win.loadFile(path.join(__dirname, "../../dist/index.html"));
   } else {
-    const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
     await win.loadURL(devServerUrl!);
-    win.webContents.openDevTools({ mode: "detach" });
+    if (process.env["LOCAL_DASHBOARD_OPEN_DEVTOOLS"] === "1") {
+      win.webContents.openDevTools({ mode: "detach" });
+    }
   }
 
   setupShortcuts();
+}
+
+function configureApplicationMenu() {
+  if (process.platform === "darwin") {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        {
+          label: APP_DISPLAY_NAME,
+          submenu: [
+            { role: "about", label: `About ${APP_DISPLAY_NAME}` },
+            { type: "separator" },
+            { role: "hide", label: `Hide ${APP_DISPLAY_NAME}` },
+            { role: "hideOthers" },
+            { role: "unhide" },
+            { type: "separator" },
+            { role: "quit", label: `Quit ${APP_DISPLAY_NAME}` },
+          ],
+        },
+      ]),
+    );
+    return;
+  }
+
+  Menu.setApplicationMenu(null);
+}
+
+async function updateMacDockVisibility(windowVisible: boolean) {
+  if (process.platform !== "darwin" || !app.dock) return;
+
+  if (shouldShowDockForWindowState(process.platform, windowVisible)) {
+    app.dock.show();
+  } else {
+    app.dock.hide();
+  }
+}
+
+function hideDashboard() {
+  win?.hide();
+  void updateMacDockVisibility(false);
+}
+
+function showDashboard() {
+  void updateMacDockVisibility(true);
+  win?.show();
+  win?.focus();
 }
 
 function setupShortcuts() {
@@ -410,6 +477,8 @@ function registerGlobalHotkey(acceleratorOverride?: string) {
 }
 
 function setupTray() {
+  if (!shouldCreateTrayIcon(process.platform)) return;
+
   tray = new Tray(getTrayImage());
   const context = Menu.buildFromTemplate([
     { label: "Open Dashboard", click: showDashboard },
@@ -433,7 +502,7 @@ function setupTray() {
     { type: "separator" },
     { label: "Quit", role: "quit" },
   ]);
-  tray.setToolTip("Localhost Dashboard");
+  tray.setToolTip(APP_DISPLAY_NAME);
   tray.setContextMenu(context);
   tray.on("click", () => {
     if (!win) return;
@@ -463,7 +532,7 @@ async function setAutoLaunch(
       });
     } else {
       autolaunch = new AutoLaunch({
-        name: "Localhost Dashboard",
+        name: APP_DISPLAY_NAME,
         isHidden: false,
       });
       if (enabled) await autolaunch.enable();
@@ -501,6 +570,15 @@ function wasOpenedAtSystemLogin(): boolean {
 }
 
 app.whenReady().then(async () => {
+  applyApplicationIdentity();
+  // First-run seeding from resources/default-settings.json if present
+  const seeded = seedDefaultsIfNeeded();
+  if (seeded.seeded) {
+    // Ensure OS autostart setting reflects seeded startAtLogin value
+    await setAutoLaunch(settings.get("startAtLogin"));
+  }
+  migrateLegacyNotifications();
+  applyPlatformSettingsDefaults();
   const startInTray = shouldStartInTray({
     platform: process.platform,
     argv: process.argv,
@@ -510,20 +588,20 @@ app.whenReady().then(async () => {
   });
   await createWindow(!startInTray);
   setupTray();
-  if (startInTray && isMac) app.dock?.hide();
-  // First-run seeding from resources/default-settings.json if present
-  const seeded = seedDefaultsIfNeeded();
-  if (seeded.seeded) {
-    // Ensure OS autostart setting reflects seeded startAtLogin value
-    await setAutoLaunch(settings.get("startAtLogin"));
-  }
-  migrateLegacyNotifications();
+  if (startInTray) void updateMacDockVisibility(false);
   scanner.start();
-  ahkScanner.start();
+  ahkScanner?.start();
+  automatorScanner?.start();
   healthChecker.start();
   // Initialize auto-updater (IPC handlers registered always, but actual update checking only in packaged app)
   if (win) {
-    initUpdater(win, app.isPackaged);
+    initUpdater(
+      win,
+      shouldEnableAutoUpdater(
+        app.isPackaged,
+        process.env["ELECTRON_RENDERER_URL"],
+      ),
+    );
   }
 });
 
@@ -571,36 +649,71 @@ scanner.on("error", (err) => {
   win?.webContents.send("scanner:error", String(err));
 });
 
-// AHK Scanner events → renderer
-ahkScanner.on("update", (items) => {
-  win?.webContents.send("ahk:update", items);
-});
+// AHK Scanner events, Windows only
+if (ahkScanner) {
+  ahkScanner.on("update", (items) => {
+    win?.webContents.send("ahk:update", items);
+  });
 
-ahkScanner.on("new", (item) => {
-  if (item.scriptPath) {
-    rememberRecentScript("ahk", item.scriptPath, item.scriptName);
-    sendRecentScriptsUpdate();
-  }
-  if (settings.get("notifyOnStart")) {
-    new Notification({
-      title: "AHK Script Started",
-      body: item.scriptName || item.processName || "AutoHotkey script",
-    }).show();
-  }
-});
+  ahkScanner.on("new", (item) => {
+    if (item.scriptPath) {
+      rememberRecentScript("ahk", item.scriptPath, item.scriptName);
+      sendRecentScriptsUpdate();
+    }
+    if (settings.get("notifyOnStart")) {
+      new Notification({
+        title: "AHK Script Started",
+        body: item.scriptName || item.processName || "AutoHotkey script",
+      }).show();
+    }
+  });
 
-ahkScanner.on("stopped", (item) => {
-  if (settings.get("notifyOnStop")) {
-    new Notification({
-      title: "AHK Script Stopped",
-      body: item.scriptName || item.processName || "AutoHotkey script",
-    }).show();
-  }
-});
+  ahkScanner.on("stopped", (item) => {
+    if (settings.get("notifyOnStop")) {
+      new Notification({
+        title: "AHK Script Stopped",
+        body: item.scriptName || item.processName || "AutoHotkey script",
+      }).show();
+    }
+  });
 
-ahkScanner.on("error", (err) => {
-  win?.webContents.send("scanner:error", String(err));
-});
+  ahkScanner.on("error", (err) => {
+    win?.webContents.send("scanner:error", String(err));
+  });
+}
+
+// Automator Scanner events, macOS only
+if (automatorScanner) {
+  automatorScanner.on("update", (items) => {
+    win?.webContents.send("automator:update", items);
+  });
+
+  automatorScanner.on("new", (item) => {
+    if (item.scriptPath) {
+      rememberRecentScript("automator", item.scriptPath, item.scriptName);
+      sendRecentScriptsUpdate();
+    }
+    if (settings.get("notifyOnStart")) {
+      new Notification({
+        title: "Automator Script Started",
+        body: item.scriptName || item.processName || "Automator script",
+      }).show();
+    }
+  });
+
+  automatorScanner.on("stopped", (item) => {
+    if (settings.get("notifyOnStop")) {
+      new Notification({
+        title: "Automator Script Stopped",
+        body: item.scriptName || item.processName || "Automator script",
+      }).show();
+    }
+  });
+
+  automatorScanner.on("error", (err) => {
+    win?.webContents.send("scanner:error", String(err));
+  });
+}
 
 // Health checker events → renderer
 healthChecker.on("update", (results) => {
@@ -608,7 +721,11 @@ healthChecker.on("update", (results) => {
 });
 
 // IPC
-ipcMain.handle("scanner:refresh", async () => scanner.scan());
+ipcMain.handle("scanner:refresh", async () => {
+  await scanner.scan();
+  await ahkScanner?.scan();
+  await automatorScanner?.scan();
+});
 ipcMain.on("app:open-url", (_evt, url: string) => shell.openExternal(url));
 ipcMain.on("app:kill-pid", (_evt, pid: number) => {
   if (process.platform === "win32") {
@@ -740,6 +857,8 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
     settings.set("ports", ports);
   }
   scanner.start();
+  ahkScanner?.start();
+  automatorScanner?.start();
   const payload = {
     ...settings.store,
     portsText: portsToString(settings.get("ports")),
@@ -755,6 +874,8 @@ ipcMain.handle("settings:reset", async () => {
   await setAutoLaunch(next.startAtLogin);
   registerGlobalHotkey();
   scanner.start();
+  ahkScanner?.start();
+  automatorScanner?.start();
   const payload = {
     ...settings.store,
     portsText: portsToString(settings.get("ports")),
@@ -767,6 +888,7 @@ ipcMain.handle("app:get-meta", () => ({
   version: app.getVersion(),
   platform: os.platform(),
   arch: os.arch(),
+  features: platformFeatures,
 }));
 
 // window control handlers
@@ -780,16 +902,16 @@ ipcMain.on("window:close", () => win?.close());
 
 // AHK IPC handlers
 ipcMain.on("ahk:kill", (_evt, pid: number) => {
+  if (process.platform !== "win32") return;
   try {
     process.kill(pid, "SIGTERM");
   } catch {
-    if (process.platform === "win32") {
-      exec(`taskkill /PID ${pid} /T /F`);
-    }
+    exec(`taskkill /PID ${pid} /T /F`);
   }
 });
 
 ipcMain.handle("ahk:restart", async (_evt, scriptPath: string) => {
+  if (process.platform !== "win32") return;
   if (!scriptPath) return;
   try {
     await startAHKScript(scriptPath);
@@ -800,6 +922,7 @@ ipcMain.handle("ahk:restart", async (_evt, scriptPath: string) => {
 });
 
 ipcMain.handle("ahk:edit", async (_evt, scriptPath: string) => {
+  if (process.platform !== "win32") return;
   if (!scriptPath) return;
   try {
     // Open the script file in VSCode explicitly (not with default handler which would run AHK)
@@ -813,6 +936,34 @@ ipcMain.handle("ahk:edit", async (_evt, scriptPath: string) => {
     // Fallback: open containing folder
     shell.showItemInFolder(scriptPath);
   }
+});
+
+// Automator IPC handlers
+ipcMain.handle("automator:refresh", async () => {
+  if (process.platform !== "darwin") return;
+  await automatorScanner?.scan();
+});
+
+ipcMain.on("automator:stop", (_evt, pid: number) => {
+  if (process.platform !== "darwin") return;
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    // ignore, the runner may have already exited
+  }
+});
+
+ipcMain.handle("automator:open", async (_evt, scriptPath: string) => {
+  if (process.platform !== "darwin" || !scriptPath) return;
+  spawn("open", ["-a", "Automator", scriptPath], {
+    detached: true,
+    stdio: "ignore",
+  }).unref();
+});
+
+ipcMain.handle("automator:reveal", async (_evt, targetPath: string) => {
+  if (process.platform !== "darwin" || !targetPath) return;
+  shell.showItemInFolder(targetPath);
 });
 
 ipcMain.handle("app:open-vscode", async (_evt, payload: any) => {

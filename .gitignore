@@ -33,6 +33,7 @@ desktop.ini
 !.vscode/extensions.json
 
 ### Tests / Coverage ###
+.tmp-tests/
 coverage/
 
 ### Env / secrets ###

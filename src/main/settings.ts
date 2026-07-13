@@ -1,6 +1,11 @@
 import Store from 'electron-store';
+import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+import { getDefaultGlobalHotkey } from './platform-features';
+
+const require = createRequire(import.meta.url);
 
 // Resolve a path to the packaged/unpacked default settings JSON.
 function resolveDefaultSettingsPath(): string | null {
@@ -38,6 +43,7 @@ function readDefaultSettingsFromFile(): Partial<AppSettings> | null {
     if (typeof json.notifyOnStop === 'boolean') out.notifyOnStop = json.notifyOnStop;
     if (typeof json.scanAllPorts === 'boolean') out.scanAllPorts = json.scanAllPorts;
     if (typeof json.closeToTray === 'boolean') out.closeToTray = json.closeToTray;
+    if (typeof json.globalHotkey === 'string') out.globalHotkey = json.globalHotkey;
     return out;
   } catch {
     return null;
@@ -63,33 +69,159 @@ export type AppSettings = {
   globalHotkey: string;
 };
 
-const schema = {
-  scanIntervalMs: { type: 'number', default: 5000 },
-  ports: { type: 'array', default: [3000, 3001, 3002, [5173, 5199], 8000, 8080, 5000, 4200] },
-  startAtLogin: { type: 'boolean', default: false },
-  openInTrayAtLogin: { type: 'boolean', default: true },
-  notifyOnStart: { type: 'boolean', default: true },
-  notifyOnStop: { type: 'boolean', default: true },
-  notifications: { type: 'boolean', default: undefined },
-  closeToTray: { type: 'boolean', default: true },
-  globalHotkey: { type: 'string', default: 'Ctrl+Shift+D' }
-} as const;
+const defaultPorts = [3000, 3001, 3002, [5173, 5199], 8000, 8080, 5000, 4200] as (number | [number, number])[];
 
-export const settings = new Store<AppSettings>({
-  name: 'settings',
-  fileExtension: 'json',
-  defaults: {
+function codeDefaults(): AppSettings {
+  return {
     scanIntervalMs: 5000,
-    ports: [3000, 3001, 3002, [5173, 5199], 8000, 8080, 5000, 4200],
+    ports: defaultPorts,
     startAtLogin: false,
     openInTrayAtLogin: true,
     notifyOnStart: true,
     notifyOnStop: true,
     scanAllPorts: false,
     closeToTray: true,
-    globalHotkey: 'Ctrl+Shift+D'
+    globalHotkey: getDefaultGlobalHotkey(process.platform)
+  };
+}
+
+type SettingsStoreLike = {
+  path?: string;
+  store: AppSettings;
+  get<K extends keyof AppSettings>(key: K): AppSettings[K];
+  get(key: string): unknown;
+  set<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void;
+  set(key: string, value: unknown): void;
+  has(key: string): boolean;
+  delete(key: string): void;
+  clear(): void;
+  isEmpty?(): boolean;
+};
+
+class SqliteSettingsStore implements SettingsStoreLike {
+  public readonly path: string;
+  private db: any;
+
+  constructor(
+    private readonly defaults: AppSettings,
+    migrationSource: Store<AppSettings>
+  ) {
+    const userDataPath = resolveUserDataPath();
+    fs.mkdirSync(userDataPath, { recursive: true });
+    this.path = path.join(userDataPath, 'settings.sqlite');
+
+    const { DatabaseSync } = require('node:sqlite') as {
+      DatabaseSync: new (filename: string) => any;
+    };
+    this.db = new DatabaseSync(this.path);
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+
+    this.migrateJsonSettings(migrationSource);
   }
+
+  get store(): AppSettings {
+    const rows = this.db.prepare('SELECT key, value FROM settings').all() as Array<{
+      key: string;
+      value: string;
+    }>;
+    const out: Record<string, unknown> = { ...this.defaults };
+    for (const row of rows) {
+      out[row.key] = safeParse(row.value);
+    }
+    return out as AppSettings;
+  }
+
+  get(key: string): unknown {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined;
+    if (row) return safeParse(row.value);
+    return key in this.defaults ? this.defaults[key as keyof AppSettings] : undefined;
+  }
+
+  set(key: string, value: unknown): void {
+    this.db
+      .prepare(
+        'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ' +
+          'ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+      )
+      .run(key, JSON.stringify(value), Date.now());
+  }
+
+  has(key: string): boolean {
+    const row = this.db.prepare('SELECT 1 AS found FROM settings WHERE key = ?').get(key);
+    return Boolean(row);
+  }
+
+  delete(key: string): void {
+    this.db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+  }
+
+  clear(): void {
+    this.db.exec('DELETE FROM settings');
+  }
+
+  isEmpty(): boolean {
+    const row = this.db.prepare('SELECT COUNT(*) AS count FROM settings').get() as { count: number };
+    return row.count === 0;
+  }
+
+  private migrateJsonSettings(migrationSource: Store<AppSettings>): void {
+    if (!this.isEmpty()) return;
+    const jsonPath = (migrationSource as any).path as string | undefined;
+    if (!jsonPath || !fs.existsSync(jsonPath)) return;
+
+    const existing = migrationSource.store as Record<string, unknown>;
+    for (const [key, value] of Object.entries(existing)) {
+      this.set(key, value);
+    }
+  }
+}
+
+function resolveUserDataPath(): string {
+  try {
+    return app.getPath('userData');
+  } catch {
+    return path.join(osHomedir(), 'Library', 'Application Support', 'local-dashboard');
+  }
+}
+
+function osHomedir(): string {
+  return process.env.HOME || process.cwd();
+}
+
+function safeParse(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+const electronStore = new Store<AppSettings>({
+  name: 'settings',
+  fileExtension: 'json',
+  defaults: codeDefaults()
 });
+
+function createSettingsStore(): SettingsStoreLike {
+  if (process.platform !== 'darwin') return electronStore;
+
+  try {
+    return new SqliteSettingsStore(codeDefaults(), electronStore);
+  } catch (err) {
+    console.error('Failed to initialize SQLite settings store, falling back to JSON:', err);
+    return electronStore;
+  }
+}
+
+export const settings = createSettingsStore();
 
 // One-time migration: if legacy `notifications` exists, copy to both new toggles.
 export function migrateLegacyNotifications() {
@@ -142,7 +274,8 @@ export function seedDefaultsIfNeeded(): { seeded: boolean; path?: string } {
   try {
     const storePath: string | undefined = (settings as any).path;
     const exists = storePath ? fs.existsSync(storePath) : false;
-    if (exists) return { seeded: false };
+    const empty = (settings as any).isEmpty?.() ?? !exists;
+    if (exists && !empty) return { seeded: false };
     const fromFile = readDefaultSettingsFromFile();
     if (!fromFile) return { seeded: false };
     if (typeof fromFile.scanIntervalMs === 'number') settings.set('scanIntervalMs', fromFile.scanIntervalMs);
@@ -153,6 +286,7 @@ export function seedDefaultsIfNeeded(): { seeded: boolean; path?: string } {
     if (typeof fromFile.notifyOnStop === 'boolean') settings.set('notifyOnStop', fromFile.notifyOnStop);
     if (typeof fromFile.scanAllPorts === 'boolean') settings.set('scanAllPorts', fromFile.scanAllPorts);
     if (typeof fromFile.closeToTray === 'boolean') settings.set('closeToTray', fromFile.closeToTray);
+    if (typeof fromFile.globalHotkey === 'string') settings.set('globalHotkey', fromFile.globalHotkey);
     (settings as any).set?.('__seededAt', Date.now());
     return { seeded: true, path: resolveDefaultSettingsPath() || undefined };
   } catch {
@@ -172,14 +306,14 @@ export function resetToDefaults(): AppSettings {
   // Apply JSON or fallback to in-code defaults
   const next: AppSettings = {
     scanIntervalMs: (json?.scanIntervalMs ?? 5000) as number,
-    ports: (json?.ports ?? [3000, 3001, 3002, [5173, 5199], 8000, 8080, 5000, 4200]) as any,
+    ports: (json?.ports ?? defaultPorts) as any,
     startAtLogin: (json?.startAtLogin ?? false) as boolean,
     openInTrayAtLogin: (json?.openInTrayAtLogin ?? true) as boolean,
     notifyOnStart: (json?.notifyOnStart ?? true) as boolean,
     notifyOnStop: (json?.notifyOnStop ?? true) as boolean,
     scanAllPorts: (json?.scanAllPorts ?? false) as boolean,
     closeToTray: (json?.closeToTray ?? true) as boolean,
-    globalHotkey: (json as any)?.globalHotkey || 'Ctrl+Shift+D',
+    globalHotkey: json?.globalHotkey || getDefaultGlobalHotkey(process.platform),
     notifications: undefined
   } satisfies AppSettings;
   settings.set('scanIntervalMs', next.scanIntervalMs);
@@ -192,4 +326,19 @@ export function resetToDefaults(): AppSettings {
   settings.set('closeToTray', next.closeToTray);
   settings.set('globalHotkey', next.globalHotkey);
   return next;
+}
+
+export function applyPlatformSettingsDefaults() {
+  const currentHotkey = settings.get('globalHotkey');
+  const defaultHotkey = getDefaultGlobalHotkey(process.platform);
+  const legacyDefaults = new Set([
+    'Ctrl+Shift+D',
+    'Control+Shift+D',
+    'CommandOrControl+Shift+D',
+    'Control+Alt+Shift+D'
+  ]);
+
+  if (legacyDefaults.has(String(currentHotkey)) && currentHotkey !== defaultHotkey) {
+    settings.set('globalHotkey', defaultHotkey);
+  }
 }

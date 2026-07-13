@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { getTitleBarLayout } from "./titleBarLayout";
 
 type Props = {
   onRefresh: () => void;
@@ -6,6 +7,7 @@ type Props = {
   search: string;
   onSearchChange: (v: string) => void;
   version?: string;
+  platform?: string;
 };
 
 export default function TitleBar({
@@ -14,8 +16,10 @@ export default function TitleBar({
   search,
   onSearchChange,
   version,
+  platform,
 }: Props) {
   const [refreshing, setRefreshing] = useState(false);
+  const layout = getTitleBarLayout(platform);
 
   const handleRefresh = () => {
     if (refreshing) return;
@@ -46,17 +50,21 @@ export default function TitleBar({
   };
   return (
     <div
-      className="flex items-center h-12 bg-gray-100 text-gray-900 px-3 border-b border-gray-300 select-none"
+      className={`flex items-center h-12 bg-gray-100 text-gray-900 pr-3 border-b border-gray-300 select-none ${
+        layout.rootPaddingClass
+      }`}
       style={{ WebkitAppRegion: "drag" as any }}
       onDoubleClick={handleDoubleClick}
     >
       <div className="flex items-center gap-2 shrink-0">
-        <div className="h-2.5 w-2.5 rounded-full bg-night-700"></div>
-        <div className="font-semibold tracking-tight flex items-center gap-2">
+        {layout.showLeadingStatusDot && (
+          <div className="h-2.5 w-2.5 rounded-full bg-night-700"></div>
+        )}
+        <div className="font-semibold tracking-tight flex items-center gap-2 leading-none">
           <span>Localhost Dashboard</span>
           {version && (
             <span
-              className="px-2 py-0.5 rounded-full bg-gray-200 text-xs text-gray-700"
+              className="px-2 py-0.5 rounded-full bg-gray-200 text-xs leading-none text-gray-700"
               style={{ WebkitAppRegion: "no-drag" as any }}
             >
               v{version}
@@ -116,7 +124,7 @@ export default function TitleBar({
         >
           Settings
         </button>
-        <WinButtons />
+        {layout.showWindowControls && <WinButtons />}
       </div>
     </div>
   );
@@ -131,7 +139,7 @@ function WinButtons() {
         style={{ WebkitAppRegion: "no-drag" as any }}
         aria-label="Minimize"
       >
-        –
+        -
       </button>
       <button
         onClick={() => (window as any).windowControls?.maximize()}

@@ -4,6 +4,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import TitleBar from "./components/TitleBar";
 import ServerCard from "./components/ServerCard";
 import AHKCard from "./components/AHKCard";
+import AutomatorCard from "./components/AutomatorCard";
 import SettingsPanel from "./components/SettingsPanel";
 import UpdateNotification from "./components/UpdateNotification";
 import RecentScriptsDrawer from "./components/RecentScriptsDrawer";
@@ -39,12 +40,39 @@ type AHKItem = {
   memory?: number;
 };
 
-type TabType = "servers" | "ahk";
+type PlatformFeatures = {
+  servers: true;
+  ahkScripts: boolean;
+  automatorScripts: boolean;
+};
+
+type AutomatorItem = {
+  key: string;
+  pid?: number;
+  ppid?: number;
+  processName?: string;
+  scriptName: string;
+  sourceKind: string;
+  sourceLabel: string;
+  status: "running" | "installed";
+  firstSeen: number;
+  lastSeen: number;
+  command?: string;
+  scriptPath?: string;
+  processPath?: string;
+  runtimeSeconds?: number;
+  canOpenInAutomator: boolean;
+  cpu?: number;
+  memory?: number;
+};
+
+type TabType = "servers" | "ahk" | "automator";
 
 type AppMeta = {
   version: string;
   platform: string;
   arch: string;
+  features: PlatformFeatures;
 };
 
 type RecentScript = {
@@ -69,6 +97,7 @@ type HealthResult = {
 export default function App() {
   const [items, setItems] = useState<Item[]>([]);
   const [ahkItems, setAHKItems] = useState<AHKItem[]>([]);
+  const [automatorItems, setAutomatorItems] = useState<AutomatorItem[]>([]);
   const [healthResults, setHealthResults] = useState<
     Record<string, HealthResult>
   >({});
@@ -79,15 +108,23 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [hidden, setHidden] = useState<Record<string, number>>({});
   const [ahkHidden, setAHKHidden] = useState<Record<string, number>>({});
+  const [automatorHidden, setAutomatorHidden] = useState<Record<string, number>>(
+    {},
+  );
   const [recentScripts, setRecentScripts] = useState<RecentScript[]>([]);
-  const [recentLoaded, setRecentLoaded] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem("dashboard:activeTab");
-    return saved === "ahk" ? "ahk" : "servers";
+    return saved === "ahk" || saved === "automator" ? saved : "servers";
   });
   const [meta, setMeta] = useState<AppMeta | null>(null);
   const [version, setVersion] = useState<string | undefined>(undefined);
+  const [platform, setPlatform] = useState<string | undefined>(undefined);
+  const [platformFeatures, setPlatformFeatures] = useState<PlatformFeatures>({
+    servers: true,
+    ahkScripts: false,
+    automatorScripts: false,
+  });
 
   useEffect(() => {
     const offUpdate = window.api.onScanUpdate((next) => setItems(next));
@@ -96,6 +133,9 @@ export default function App() {
       setOpenSettings((v) => !v),
     );
     const offAHK = window.api.onAHKUpdate((next) => setAHKItems(next));
+    const offAutomator = window.api.onAutomatorUpdate((next) =>
+      setAutomatorItems(next),
+    );
     const offHealth = window.api.onHealthUpdate((results) => {
       const map: Record<string, HealthResult> = {};
       results.forEach((r: HealthResult) => {
@@ -113,21 +153,20 @@ export default function App() {
       }),
     );
     window.api.getAllNotes().then(setPortNotes);
-    window.api
-      .getRecentScripts()
-      .then((items) => {
-        setRecentScripts(items);
-      })
-      .finally(() => setRecentLoaded(true));
+    window.api.getRecentScripts().then(setRecentScripts);
     window.api.getMeta().then((nextMeta) => {
       setMeta(nextMeta);
       setVersion(nextMeta?.version);
+      setPlatform(nextMeta?.platform);
+      if (nextMeta?.features) setPlatformFeatures(nextMeta.features);
+      window.api.refresh();
     });
     return () => {
       offUpdate?.();
       offError?.();
       offToggle?.();
       offAHK?.();
+      offAutomator?.();
       offHealth?.();
       offRecent?.();
     };
@@ -138,17 +177,19 @@ export default function App() {
     localStorage.setItem("dashboard:activeTab", activeTab);
   }, [activeTab]);
 
-  // Keep the script tab available while recent scripts exist.
+  const supportedTabs = useMemo<TabType[]>(() => {
+    const tabs: TabType[] = ["servers"];
+    if (platformFeatures.ahkScripts) tabs.push("ahk");
+    if (platformFeatures.automatorScripts) tabs.push("automator");
+    return tabs;
+  }, [platformFeatures]);
+
+  // If a tab was remembered from another platform, fall back to servers.
   useEffect(() => {
-    if (
-      activeTab === "ahk" &&
-      ahkItems.length === 0 &&
-      recentScripts.length === 0 &&
-      recentLoaded
-    ) {
+    if (!supportedTabs.includes(activeTab)) {
       setActiveTab("servers");
     }
-  }, [ahkItems, activeTab, recentLoaded, recentScripts.length]);
+  }, [supportedTabs, activeTab]);
 
   // Filter by search query and exclude optimistically hidden cards
   const filtered = useMemo(() => {
@@ -198,6 +239,31 @@ export default function App() {
     });
   }, [ahkItems, ahkHidden, query]);
 
+  const filteredAutomator = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const now = Date.now();
+    const visible = automatorItems.filter((it) => {
+      const hidAt = automatorHidden[it.key];
+      if (hidAt && now - hidAt < 8000) return false;
+      return true;
+    });
+    if (!q) return visible;
+    return visible.filter((it) => {
+      const hay = [
+        it.pid?.toString() ?? "",
+        it.processName ?? "",
+        it.scriptName ?? "",
+        it.scriptPath ?? "",
+        it.processPath ?? "",
+        it.sourceLabel ?? "",
+        it.status ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [automatorItems, automatorHidden, query]);
+
   const grouped = useMemo(() => {
     return filtered.reduce<Record<string, Item[]>>((acc, cur) => {
       const f = cur.framework ?? "Other";
@@ -207,13 +273,19 @@ export default function App() {
     }, {});
   }, [filtered]);
 
-  const showAutomationTab = ahkItems.length > 0 || recentScripts.length > 0;
-  const showTabs = showAutomationTab;
+  const showTabs = supportedTabs.length > 1;
+  const scriptTab = platformFeatures.automatorScripts
+    ? "automator"
+    : platformFeatures.ahkScripts
+      ? "ahk"
+      : null;
   const automationTabLabel =
-    meta?.platform === "darwin" ? "Automator Scripts" : "AHK Scripts";
-  const automationEmptyLabel =
-    meta?.platform === "darwin" ? "Automator scripts" : "AutoHotkey scripts";
-  const showRecentButton = activeTab === "ahk" && showAutomationTab;
+    scriptTab === "automator" ? "Automator Scripts" : "AHK Scripts";
+  const scriptItemCount =
+    scriptTab === "automator" ? automatorItems.length : ahkItems.length;
+  const showRecentButton =
+    activeTab === scriptTab &&
+    (scriptItemCount > 0 || recentScripts.length > 0);
 
   return (
     <div className="h-screen w-screen bg-night text-gray-900 select-none overflow-hidden">
@@ -223,6 +295,7 @@ export default function App() {
         search={query}
         onSearchChange={setQuery}
         version={version}
+        platform={platform}
       />
 
       <div className="app-scrollbar px-6 py-5 overflow-y-auto overflow-x-hidden h-[calc(100vh-48px)]">
@@ -244,13 +317,24 @@ export default function App() {
                 >
                   Servers
                 </TabButton>
-                <TabButton
-                  active={activeTab === "ahk"}
-                  onClick={() => setActiveTab("ahk")}
-                  count={filteredAHK.length}
-                >
-                  {automationTabLabel}
-                </TabButton>
+                {platformFeatures.ahkScripts && (
+                  <TabButton
+                    active={activeTab === "ahk"}
+                    onClick={() => setActiveTab("ahk")}
+                    count={filteredAHK.length}
+                  >
+                    AHK Scripts
+                  </TabButton>
+                )}
+                {platformFeatures.automatorScripts && (
+                  <TabButton
+                    active={activeTab === "automator"}
+                    onClick={() => setActiveTab("automator")}
+                    count={filteredAutomator.length}
+                  >
+                    Automator Scripts
+                  </TabButton>
+                )}
               </>
             ) : (
               <div className="text-gray-600 text-sm font-medium">
@@ -334,8 +418,8 @@ export default function App() {
           <>
             {filteredAHK.length === 0 && (
               <div className="text-gray-600 text-center mt-20">
-                No {automationEmptyLabel} detected. Use Recently Used to start
-                saved scripts.
+                No AutoHotkey scripts detected. Start an AHK script and it will
+                show up here.
               </div>
             )}
 
@@ -351,6 +435,35 @@ export default function App() {
                   item={it}
                   onOptimisticKill={(key) => {
                     setAHKHidden((h) => ({ ...h, [key]: Date.now() }));
+                  }}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Automator Tab Content */}
+        {activeTab === "automator" && (
+          <>
+            {filteredAutomator.length === 0 && (
+              <div className="text-gray-600 text-center mt-20">
+                No Automator scripts detected. Start a workflow or Automator
+                app and it will show up here.
+              </div>
+            )}
+
+            <div
+              className="grid gap-y-5 gap-x-6"
+              style={{
+                gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
+              }}
+            >
+              {filteredAutomator.map((it) => (
+                <AutomatorCard
+                  key={it.key}
+                  item={it}
+                  onOptimisticStop={(key) => {
+                    setAutomatorHidden((h) => ({ ...h, [key]: Date.now() }));
                   }}
                 />
               ))}
