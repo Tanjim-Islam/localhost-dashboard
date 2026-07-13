@@ -55,3 +55,4 @@ resources/icons/*.ico
 resources/icons/*.icns
 *.local
 AGENTS.md
+release-mac/
