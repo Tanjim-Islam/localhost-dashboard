@@ -29,6 +29,12 @@ import { bumpPort, stats as statsStore } from "./stats";
 import { getNote, setNote, getAllNotes } from "./notes";
 import { getPlatformFeatures } from "./platform-features";
 import {
+  deleteEnvironmentVariable,
+  getEnvironmentVariableValue,
+  listEnvironmentVariables,
+  saveEnvironmentVariable,
+} from "./environment-variables";
+import {
   APP_DISPLAY_NAME,
   getRendererLoadMode,
   shouldEnableAutoUpdater,
@@ -175,7 +181,7 @@ const allowedHotkeyModifiers = new Set([
 ]);
 
 const letterHotkeyKeys = Array.from({ length: 26 }, (_, i) =>
-  String.fromCharCode(65 + i)
+  String.fromCharCode(65 + i),
 );
 const numberHotkeyKeys = Array.from({ length: 10 }, (_, i) => `${i}`);
 const functionHotkeyKeys = Array.from({ length: 24 }, (_, i) => `F${i + 1}`);
@@ -257,7 +263,7 @@ const allowedHotkeyKeys = new Set<string>(
     ...numpadHotkeyKeys,
     ...namedHotkeyKeys,
     ...punctuationHotkeyKeys,
-  ].map((key) => key.toLowerCase())
+  ].map((key) => key.toLowerCase()),
 );
 
 function splitHotkeyParts(hotkey: string): string[] {
@@ -278,7 +284,7 @@ function isValidHotkey(hotkey: string): boolean {
   if (!keyPart) return false;
   const modifierParts = parts.slice(0, -1);
   const modifiersValid = modifierParts.every((mod) =>
-    allowedHotkeyModifiers.has(mod.toLowerCase())
+    allowedHotkeyModifiers.has(mod.toLowerCase()),
   );
   if (!modifiersValid) return false;
   const keyPartNormalized = keyPart.toLowerCase();
@@ -811,6 +817,16 @@ ipcMain.handle("scripts:recent:delete", (_evt, id: string) => {
   sendRecentScriptsUpdate();
   return getPlatformRecentScripts();
 });
+ipcMain.handle("environment:list", () => listEnvironmentVariables());
+ipcMain.handle("environment:get-value", (_evt, input: unknown) =>
+  getEnvironmentVariableValue(input),
+);
+ipcMain.handle("environment:save", (_evt, input: unknown) =>
+  saveEnvironmentVariable(input),
+);
+ipcMain.handle("environment:delete", (_evt, input: unknown) =>
+  deleteEnvironmentVariable(input),
+);
 ipcMain.handle("settings:get", () => settings.store);
 ipcMain.handle("stats:get", () => statsStore.store);
 ipcMain.handle("settings:update", async (_evt, incoming: any) => {

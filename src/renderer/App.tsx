@@ -8,6 +8,7 @@ import AutomatorCard from "./components/AutomatorCard";
 import SettingsPanel from "./components/SettingsPanel";
 import UpdateNotification from "./components/UpdateNotification";
 import RecentScriptsDrawer from "./components/RecentScriptsDrawer";
+import EnvironmentKeysTab from "./components/EnvironmentKeysTab";
 
 dayjs.extend(relativeTime);
 
@@ -44,6 +45,7 @@ type PlatformFeatures = {
   servers: true;
   ahkScripts: boolean;
   automatorScripts: boolean;
+  environmentKeys: boolean;
 };
 
 type AutomatorItem = {
@@ -66,7 +68,7 @@ type AutomatorItem = {
   memory?: number;
 };
 
-type TabType = "servers" | "ahk" | "automator";
+type TabType = "servers" | "ahk" | "automator" | "environment";
 
 type AppMeta = {
   version: string;
@@ -108,14 +110,17 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [hidden, setHidden] = useState<Record<string, number>>({});
   const [ahkHidden, setAHKHidden] = useState<Record<string, number>>({});
-  const [automatorHidden, setAutomatorHidden] = useState<Record<string, number>>(
-    {},
-  );
+  const [automatorHidden, setAutomatorHidden] = useState<
+    Record<string, number>
+  >({});
   const [recentScripts, setRecentScripts] = useState<RecentScript[]>([]);
   const [recentOpen, setRecentOpen] = useState(false);
+  const [environmentKeyCount, setEnvironmentKeyCount] = useState(0);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem("dashboard:activeTab");
-    return saved === "ahk" || saved === "automator" ? saved : "servers";
+    return saved === "ahk" || saved === "automator" || saved === "environment"
+      ? saved
+      : "servers";
   });
   const [meta, setMeta] = useState<AppMeta | null>(null);
   const [version, setVersion] = useState<string | undefined>(undefined);
@@ -124,6 +129,7 @@ export default function App() {
     servers: true,
     ahkScripts: false,
     automatorScripts: false,
+    environmentKeys: false,
   });
 
   useEffect(() => {
@@ -181,15 +187,17 @@ export default function App() {
     const tabs: TabType[] = ["servers"];
     if (platformFeatures.ahkScripts) tabs.push("ahk");
     if (platformFeatures.automatorScripts) tabs.push("automator");
+    if (platformFeatures.environmentKeys) tabs.push("environment");
     return tabs;
   }, [platformFeatures]);
 
   // If a tab was remembered from another platform, fall back to servers.
   useEffect(() => {
+    if (!meta) return;
     if (!supportedTabs.includes(activeTab)) {
       setActiveTab("servers");
     }
-  }, [supportedTabs, activeTab]);
+  }, [supportedTabs, activeTab, meta]);
 
   // Filter by search query and exclude optimistically hidden cards
   const filtered = useMemo(() => {
@@ -294,6 +302,11 @@ export default function App() {
         onSettings={() => setOpenSettings(true)}
         search={query}
         onSearchChange={setQuery}
+        searchPlaceholder={
+          activeTab === "environment"
+            ? "Search ENV key names."
+            : "Search ports, PID, names."
+        }
         version={version}
         platform={platform}
       />
@@ -333,6 +346,15 @@ export default function App() {
                     count={filteredAutomator.length}
                   >
                     Automator Scripts
+                  </TabButton>
+                )}
+                {platformFeatures.environmentKeys && (
+                  <TabButton
+                    active={activeTab === "environment"}
+                    onClick={() => setActiveTab("environment")}
+                    count={environmentKeyCount}
+                  >
+                    ENV Keys
                   </TabButton>
                 )}
               </>
@@ -447,8 +469,8 @@ export default function App() {
           <>
             {filteredAutomator.length === 0 && (
               <div className="text-gray-600 text-center mt-20">
-                No Automator scripts detected. Start a workflow or Automator
-                app and it will show up here.
+                No Automator scripts detected. Start a workflow or Automator app
+                and it will show up here.
               </div>
             )}
 
@@ -469,6 +491,14 @@ export default function App() {
               ))}
             </div>
           </>
+        )}
+
+        {platformFeatures.environmentKeys && (
+          <EnvironmentKeysTab
+            active={activeTab === "environment"}
+            query={query}
+            onCountChange={setEnvironmentKeyCount}
+          />
         )}
       </div>
 

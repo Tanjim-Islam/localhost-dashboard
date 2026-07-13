@@ -2,13 +2,17 @@ export type PlatformFeatures = {
   servers: true;
   ahkScripts: boolean;
   automatorScripts: boolean;
+  environmentKeys: boolean;
 };
 
-export function getPlatformFeatures(platform: NodeJS.Platform): PlatformFeatures {
+export function getPlatformFeatures(
+  platform: NodeJS.Platform,
+): PlatformFeatures {
   return {
     servers: true,
     ahkScripts: platform === "win32",
     automatorScripts: platform === "darwin",
+    environmentKeys: platform === "win32",
   };
 }
 

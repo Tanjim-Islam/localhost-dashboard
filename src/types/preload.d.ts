@@ -47,6 +47,27 @@ export type PlatformFeatures = {
   servers: true;
   ahkScripts: boolean;
   automatorScripts: boolean;
+  environmentKeys: boolean;
+};
+
+export type EnvironmentVariableScope = "user" | "machine";
+
+export type EnvironmentVariableSummary = {
+  id: string;
+  name: string;
+  scope: EnvironmentVariableScope;
+  valueLength: number;
+  sessionStatus: "active" | "restart-required" | "shadowed";
+};
+
+export type EnvironmentVariableRef = {
+  name: string;
+  scope: EnvironmentVariableScope;
+};
+
+export type SaveEnvironmentVariableInput = EnvironmentVariableRef & {
+  value: string;
+  original?: EnvironmentVariableRef;
 };
 
 export type AutomatorScriptInfo = {
@@ -90,7 +111,12 @@ export type UpdateStatus =
   | { state: "checking" }
   | { state: "available"; version: string; releaseNotes?: string }
   | { state: "not-available"; version: string }
-  | { state: "downloading"; percent: number; transferred: number; total: number }
+  | {
+      state: "downloading";
+      percent: number;
+      transferred: number;
+      total: number;
+    }
   | { state: "downloaded"; version: string }
   | { state: "error"; message: string };
 
@@ -165,6 +191,16 @@ export interface Api {
   stopAutomator(pid: number): void;
   openAutomator(scriptPath: string): Promise<void>;
   revealAutomator(targetPath: string): Promise<void>;
+
+  // Windows environment keys
+  getEnvironmentKeys(): Promise<EnvironmentVariableSummary[]>;
+  getEnvironmentKeyValue(input: EnvironmentVariableRef): Promise<string>;
+  saveEnvironmentKey(
+    input: SaveEnvironmentVariableInput,
+  ): Promise<EnvironmentVariableSummary[]>;
+  deleteEnvironmentKey(
+    input: EnvironmentVariableRef,
+  ): Promise<EnvironmentVariableSummary[]>;
 
   // meta / ui
   onToggleSettings(cb: () => void): () => void;

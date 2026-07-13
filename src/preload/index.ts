@@ -7,6 +7,72 @@ const requireString = (value: unknown, label: string): string => {
   return value;
 };
 
+type EnvironmentVariableScope = "user" | "machine";
+
+type EnvironmentVariableRef = {
+  name: string;
+  scope: EnvironmentVariableScope;
+};
+
+type SaveEnvironmentVariableInput = EnvironmentVariableRef & {
+  value: string;
+  original?: EnvironmentVariableRef;
+};
+
+const requireEnvironmentVariableScope = (
+  value: unknown,
+): EnvironmentVariableScope => {
+  if (value !== "user" && value !== "machine") {
+    throw new Error("Environment variable scope must be user or machine.");
+  }
+  return value;
+};
+
+const requireEnvironmentVariableName = (value: unknown): string => {
+  const name = requireString(value, "Environment variable name")
+    .trim()
+    .toUpperCase();
+  if (name.length > 128 || !/^[A-Z_][A-Z0-9_]*$/.test(name)) {
+    throw new Error("Environment variable name is invalid.");
+  }
+  return name;
+};
+
+const requireEnvironmentVariableRef = (
+  value: unknown,
+): EnvironmentVariableRef => {
+  if (!value || typeof value !== "object") {
+    throw new Error("Environment variable details are required.");
+  }
+  const input = value as Record<string, unknown>;
+  return {
+    name: requireEnvironmentVariableName(input.name),
+    scope: requireEnvironmentVariableScope(input.scope),
+  };
+};
+
+const requireSaveEnvironmentVariableInput = (
+  value: unknown,
+): SaveEnvironmentVariableInput => {
+  const target = requireEnvironmentVariableRef(value);
+  const input = value as Record<string, unknown>;
+  if (
+    typeof input.value !== "string" ||
+    input.value.length === 0 ||
+    input.value.length > 8192 ||
+    input.value.includes("\0")
+  ) {
+    throw new Error("Environment variable value is invalid.");
+  }
+  return {
+    ...target,
+    value: input.value,
+    ...(input.original
+      ? { original: requireEnvironmentVariableRef(input.original) }
+      : {}),
+  };
+};
+
 contextBridge.exposeInMainWorld("api", {
   // scanning
   onScanUpdate: (cb: (items: any[]) => void) => {
@@ -89,6 +155,23 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("automator:open", scriptPath),
   revealAutomator: (targetPath: string) =>
     ipcRenderer.invoke("automator:reveal", targetPath),
+  // Windows environment keys
+  getEnvironmentKeys: () => ipcRenderer.invoke("environment:list"),
+  getEnvironmentKeyValue: (input: EnvironmentVariableRef) =>
+    ipcRenderer.invoke(
+      "environment:get-value",
+      requireEnvironmentVariableRef(input),
+    ),
+  saveEnvironmentKey: (input: SaveEnvironmentVariableInput) =>
+    ipcRenderer.invoke(
+      "environment:save",
+      requireSaveEnvironmentVariableInput(input),
+    ),
+  deleteEnvironmentKey: (input: EnvironmentVariableRef) =>
+    ipcRenderer.invoke(
+      "environment:delete",
+      requireEnvironmentVariableRef(input),
+    ),
   // UI events from main
   onToggleSettings: (cb: () => void) => {
     const listener = () => cb();

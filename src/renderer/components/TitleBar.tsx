@@ -6,6 +6,7 @@ type Props = {
   onSettings: () => void;
   search: string;
   onSearchChange: (v: string) => void;
+  searchPlaceholder?: string;
   version?: string;
   platform?: string;
 };
@@ -15,6 +16,7 @@ export default function TitleBar({
   onSettings,
   search,
   onSearchChange,
+  searchPlaceholder = "Search ports, PID, names.",
   version,
   platform,
 }: Props) {
@@ -79,7 +81,7 @@ export default function TitleBar({
         <input
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search ports, PID, names."
+          placeholder={searchPlaceholder}
           className="w-[44vw] max-w-[560px] min-w-[220px] px-4 py-1.5 rounded-full bg-gray-200/80 text-gray-900 placeholder-gray-700/60 ring-1 ring-transparent focus:ring-night-700/40 outline-none transition-all duration-200 focus:bg-gray-200"
           style={{ WebkitAppRegion: "no-drag" as any }}
           data-nodrag="true"

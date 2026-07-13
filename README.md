@@ -15,6 +15,7 @@ A simple Electron app that shows all my running local dev servers in one place. 
 - Project actions: open terminal, explorer, or VS Code at project directory
 - Health monitoring with response time indicators
 - AutoHotkey script detection (Windows) with kill/restart/edit
+- Windows ENV key management with masked reveal, copy, edit, rename, and confirmed deletion
 - Global hotkey `Ctrl+Shift+Alt+D` to toggle visibility
 - Runs in system tray
 
@@ -104,6 +105,10 @@ Detects running AHK scripts and shows them in a separate tab. You can:
 
 Press `Ctrl+Shift+Alt+D` from anywhere to show/hide the dashboard.
 
+### ENV Keys (Windows)
+
+Shows persistent credential-like variables whose names include `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL`, or `PAT`. Values stay masked until explicitly revealed, copied, or edited. User and machine scopes are supported, and machine-level changes may require administrator access.
+
 ## Tech Stack
 
 - Electron + electron-vite + electron-builder
@@ -136,3 +141,4 @@ src/
 - Killing Windows services (like PostgreSQL) requires running as admin
 - Framework detection is heuristic-based, might not catch everything
 - AHK features only work on Windows
+- ENV key management only works on Windows
