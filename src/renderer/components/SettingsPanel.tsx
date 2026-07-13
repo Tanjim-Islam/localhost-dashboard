@@ -33,6 +33,7 @@ export default function SettingsPanel({
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const supportsTrayStartup = platform === "darwin" || platform === "win32";
+  const minimizedLocation = platform === "darwin" ? "background" : "tray";
 
   useEffect(() => {
     if (settings) {
@@ -166,7 +167,7 @@ export default function SettingsPanel({
                   disabled={!startAtLogin || !supportsTrayStartup}
                 />
                 <span className="text-sm font-medium">
-                  Open in tray at login
+                  Open in {minimizedLocation} at login
                 </span>
               </label>
             </div>
@@ -182,7 +183,7 @@ export default function SettingsPanel({
                   checked={closeToTray}
                   onChange={() => setCloseToTray(true)}
                 />
-                <span>Minimize to tray (default)</span>
+                <span>Minimize to {minimizedLocation} (default)</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
