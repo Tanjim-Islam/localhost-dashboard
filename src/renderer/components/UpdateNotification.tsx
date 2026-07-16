@@ -83,7 +83,7 @@ export default function UpdateNotification() {
       `}
     >
       <div
-        className="rounded-2xl shadow-soft overflow-hidden min-w-[320px] max-w-[380px] bg-gray-100 border border-gray-300"
+        className="app-dialog rounded-2xl shadow-soft overflow-hidden min-w-[320px] max-w-[380px] bg-gray-100 border border-gray-300"
       >
         {/* Header */}
         <div

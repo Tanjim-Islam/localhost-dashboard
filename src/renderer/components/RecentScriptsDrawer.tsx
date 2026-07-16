@@ -92,7 +92,7 @@ export default function RecentScriptsDrawer({
     >
       <div
         className={cx(
-          "absolute inset-0 bg-night-100/70 transition-opacity duration-200",
+          "absolute inset-0 bg-black/55 transition-opacity duration-200 backdrop-blur-[2px]",
           open ? "opacity-100" : "opacity-0",
         )}
         onClick={onClose}
@@ -100,7 +100,7 @@ export default function RecentScriptsDrawer({
 
       <aside
         className={cx(
-          "absolute right-0 top-0 h-full w-[390px] max-w-[calc(100vw-24px)] border-l border-gray-300 bg-gray-100 shadow-2xl transition-transform duration-300",
+          "app-dialog absolute right-0 top-0 h-full w-[390px] max-w-[calc(100vw-24px)] overflow-hidden border-l border-gray-300 bg-gray-100 shadow-soft transition-transform duration-300",
           open ? "translate-x-0" : "translate-x-full",
         )}
         role="dialog"
@@ -162,7 +162,7 @@ export default function RecentScriptsDrawer({
                   return (
                     <div
                       key={script.id}
-                      className="rounded-lg border border-gray-300 bg-gray-200/70 p-3"
+                      className="app-card rounded-lg border border-gray-300 bg-gray-200/70 p-3"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">

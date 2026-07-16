@@ -1,4 +1,7 @@
-@import "@fontsource-variable/geist/index.css";
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource-variable/noto-sans-bengali/index.css";
+@import "@fontsource-variable/manrope/index.css";
+@import "@fontsource-variable/plus-jakarta-sans/index.css";
 @import "@fontsource-variable/geist-mono/index.css";
 
 @tailwind base;
@@ -10,19 +13,128 @@ body,
 #root {
   height: 100%;
 }
+
+:root {
+  --background: #121212ff;
+  --background-rgb: 18 18 18;
+  --foreground: #f4f2efff;
+  --foreground-rgb: 244 242 239;
+  --card: #1c1c1cff;
+  --card-rgb: 28 28 28;
+  --card-foreground: #f4f2efff;
+  --card-foreground-rgb: 244 242 239;
+  --primary: #404040ff;
+  --primary-rgb: 64 64 64;
+  --primary-foreground: #ffffffff;
+  --primary-foreground-rgb: 255 255 255;
+  --border: #303030ff;
+  --border-rgb: 48 48 48;
+  --border-strong: #404040ff;
+  --border-strong-rgb: 64 64 64;
+  --muted: #262626ff;
+  --muted-rgb: 38 38 38;
+  --muted-foreground: #bbb7b2ff;
+  --muted-foreground-rgb: 187 183 178;
+  --accent: #363636ff;
+  --accent-rgb: 54 54 54;
+  --accent-foreground: #ffffffff;
+  --accent-foreground-rgb: 255 255 255;
+  --highlight: #2b2b2bff;
+  --highlight-rgb: 43 43 43;
+  --glow: #404040ff;
+  --glow-rgb: 64 64 64;
+  --danger: #a14f55ff;
+  --danger-rgb: 161 79 85;
+  --danger-foreground: #ffffffff;
+  --danger-foreground-rgb: 255 255 255;
+  --font-ui: "Inter Variable", "Inter", system-ui, sans-serif;
+  background: var(--background);
+}
+
 body {
-  font-family:
-    "Geist Variable",
-    system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    Helvetica,
-    Arial,
-    "Apple Color Emoji",
-    "Segoe UI Emoji",
-    "Segoe UI Symbol",
-    sans-serif;
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  text-rendering: optimizeLegibility;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button.rounded-full,
+button.rounded-xl,
+button.rounded-2xl {
+  border-radius: 12px;
+}
+
+.app-card {
+  border-radius: 20px;
+  box-shadow:
+    0 18px 52px rgb(var(--glow-rgb) / 0.07),
+    0 1px 0 rgb(var(--foreground-rgb) / 0.025);
+}
+
+.app-dialog {
+  border-radius: 24px;
+}
+
+.settings-section {
+  border: 1px solid rgb(var(--border-rgb) / 0.82);
+  border-radius: 20px;
+  background: rgb(var(--muted-rgb) / 0.72);
+  box-shadow: inset 0 1px 0 rgb(var(--foreground-rgb) / 0.025);
+}
+
+.app-shell {
+  isolation: isolate;
+  position: relative;
+}
+
+.app-shell::before {
+  position: absolute;
+  z-index: 0;
+  inset: -20%;
+  content: "";
+  pointer-events: none;
+  background:
+    radial-gradient(
+      circle at 14% 18%,
+      rgb(var(--glow-rgb) / 0.11),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 86% 78%,
+      rgb(var(--highlight-rgb) / 0.1),
+      transparent 30%
+    );
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1.02);
+  transition: opacity 220ms ease;
+  animation: ambient-drift 18s ease-in-out infinite alternate;
+}
+
+.title-bar,
+.dashboard-content {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes ambient-drift {
+  0% {
+    transform: translate3d(-1.5%, -1%, 0) scale(1.02);
+  }
+  100% {
+    transform: translate3d(1.5%, 1%, 0) scale(1.08);
+  }
 }
 
 /* custom title bar drag region helpers */
@@ -33,9 +145,9 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Shared dark scrollbar for Electron on Windows and macOS. */
+/* Shared themed scrollbar for Electron on Windows and macOS. */
 .app-scrollbar {
-  scrollbar-color: #5b8c5a #181819;
+  scrollbar-color: rgb(var(--accent-rgb) / 0.85) rgb(var(--card-rgb) / 0.7);
   scrollbar-gutter: stable;
   scrollbar-width: thin;
 }
@@ -46,23 +158,23 @@ body {
 }
 
 .app-scrollbar::-webkit-scrollbar-track {
-  background: #181819;
+  background: rgb(var(--card-rgb) / 0.7);
   border-radius: 999px;
 }
 
 .app-scrollbar::-webkit-scrollbar-thumb {
   min-height: 40px;
-  background: #5b8c5a;
-  border: 2px solid #181819;
+  background: rgb(var(--accent-rgb) / 0.85);
+  border: 2px solid rgb(var(--card-rgb) / 0.7);
   border-radius: 999px;
 }
 
 .app-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #84af83;
+  background: var(--accent);
 }
 
 .app-scrollbar::-webkit-scrollbar-corner {
-  background: #181819;
+  background: var(--card);
 }
 
 /* shimmer animation for progress bar */
@@ -122,6 +234,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .app-shell::before,
   .env-modal-backdrop,
   .env-modal-panel,
   .env-status-enter {

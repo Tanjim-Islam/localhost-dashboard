@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import AppearanceSettings from "./AppearanceSettings";
+import { useThemePreferences } from "../theme/ThemeProvider";
 
 type Props = {
   open: boolean;
@@ -18,6 +20,7 @@ export default function SettingsPanel({
   onSave,
   onReset,
 }: Props) {
+  const { resetPreferences } = useThemePreferences();
   const [scanIntervalMs, setScanIntervalMs] = useState(5000);
   const [portsText, setPortsText] = useState(
     "3000-3999, 8000, 8080, 5000, 4200, 5173-5199"
@@ -91,283 +94,320 @@ export default function SettingsPanel({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center no-drag">
-      <div className="app-scrollbar w-[560px] max-w-[95vw] max-h-[90vh] overflow-y-auto bg-gray-100 text-gray-900 rounded-lg shadow-soft p-5">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="text-lg font-semibold">Settings</div>
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4 no-drag backdrop-blur-[2px]"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        className="app-dialog flex max-h-[calc(100dvh-2rem)] w-[720px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden border border-gray-300 bg-gray-100 text-gray-900 shadow-soft"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-300 px-4 py-3.5">
+          <div>
+            <h2 id="settings-title" className="text-base font-semibold">
+              Settings
+            </h2>
+            <div className="mt-0.5 text-[11px] text-gray-600">
+              Tune the dashboard without leaving your workspace.
+            </div>
+          </div>
           <button
             type="button"
             onClick={onClose}
             title="Close settings"
             aria-label="Close settings"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-gray-700 transition-colors hover:bg-mimi_pink-300 hover:text-mimi_pink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mimi_pink-400"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-gray-700 transition-colors hover:bg-mimi_pink-300 hover:text-mimi_pink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mimi_pink-400"
           >
             <X className="h-4 w-4" />
           </button>
-        </div>
-        <div className="space-y-4">
-          <label className="block">
-            <div className="text-sm text-gray-700 mb-1">Scan interval (ms)</div>
-            <input
-              type="number"
-              value={scanIntervalMs}
-              onChange={(e) =>
-                setScanIntervalMs(parseInt(e.target.value || "0", 10))
-              }
-              className="w-full rounded bg-gray-200 px-3 py-2 outline-none focus:ring-2 ring-night-700"
-            />
-          </label>
-          <label className="block">
-            <div className="text-sm text-gray-700 mb-1">
-              Ports (comma separated, allow ranges like 3000-3999)
-            </div>
-            <input
-              value={portsText}
-              onChange={(e) => setPortsText(e.target.value)}
-              className="w-full rounded bg-gray-200 px-3 py-2 outline-none focus:ring-2 ring-night-700"
-            />
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-night-700"
-              checked={scanAllPorts}
-              onChange={(e) => setScanAllPorts(e.target.checked)}
-            />
-            <span>Scan all ports (slower)</span>
-          </label>
-          <div className="border border-gray-300 rounded-lg p-3 bg-gray-200 text-gray-900">
-            <div className="mb-3 text-sm font-semibold text-gray-900">
-              System startup
-            </div>
-            <div className="space-y-3">
-              <label className="flex items-center gap-3">
+        </header>
+
+        <div className="settings-scroll app-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
+          <div className="space-y-4 pt-4">
+            <AppearanceSettings />
+
+            <section aria-label="Server scanning" className="space-y-3.5">
+              <label className="block space-y-1.5 pb-1">
+                <span className="block text-sm text-gray-700">
+                  Scan interval (ms)
+                </span>
+                <input
+                  type="number"
+                  value={scanIntervalMs}
+                  onChange={(e) =>
+                    setScanIntervalMs(parseInt(e.target.value || "0", 10))
+                  }
+                  className="w-full rounded-xl bg-gray-200 px-3 py-2 outline-none ring-night-700 focus:ring-2"
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="block text-sm text-gray-700">
+                  Ports (comma separated, allow ranges like 3000-3999)
+                </span>
+                <input
+                  value={portsText}
+                  onChange={(e) => setPortsText(e.target.value)}
+                  className="w-full rounded-xl bg-gray-200 px-3 py-2 outline-none ring-night-700 focus:ring-2"
+                />
+              </label>
+              <label className="flex items-center gap-2.5 pt-0.5">
                 <input
                   type="checkbox"
                   className="h-5 w-5 accent-night-700"
-                  checked={startAtLogin}
-                  onChange={(e) => setStartAtLogin(e.target.checked)}
+                  checked={scanAllPorts}
+                  onChange={(e) => setScanAllPorts(e.target.checked)}
                 />
-                <span className="text-sm font-medium">
-                  Start at system login
-                </span>
+                <span>Scan all ports (slower)</span>
               </label>
-              <label
-                className={`flex items-center gap-3 rounded-md border border-gray-300 px-3 py-2 transition-opacity ${
-                  startAtLogin && supportsTrayStartup
-                    ? "opacity-100"
-                    : "opacity-50"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 accent-celadon-600"
-                  checked={openInTrayAtLogin}
-                  onChange={(e) => setOpenInTrayAtLogin(e.target.checked)}
-                  disabled={!startAtLogin || !supportsTrayStartup}
-                />
-                <span className="text-sm font-medium">
-                  Open in {minimizedLocation} at login
-                </span>
-              </label>
-            </div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-700 mb-1">On window close</div>
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="closeBehavior"
-                  className="h-4 w-4 accent-night-700"
-                  checked={closeToTray}
-                  onChange={() => setCloseToTray(true)}
-                />
-                <span>Minimize to {minimizedLocation} (default)</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="closeBehavior"
-                  className="h-4 w-4 accent-night-700"
-                  checked={!closeToTray}
-                  onChange={() => setCloseToTray(false)}
-                />
-                <span>Quit the application</span>
-              </label>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                className="h-5 w-5 accent-night-700"
-                checked={notifyOnStart}
-                onChange={(e) => setNotifyOnStart(e.target.checked)}
-              />
-              <span>Notify when server starts</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                className="h-5 w-5 accent-night-700"
-                checked={notifyOnStop}
-                onChange={(e) => setNotifyOnStop(e.target.checked)}
-              />
-              <span>Notify when server stops</span>
-            </label>
-          </div>
+            </section>
 
-          {/* Global hotkey recorder */}
-          <div className="border border-gray-300 rounded-lg p-3 bg-gray-200 text-gray-900">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <div className="text-sm font-semibold text-gray-900">
-                  Global hotkey
-                </div>
-                <div className="text-xs text-gray-700">
-                  Toggle the dashboard from anywhere
+            <section className="settings-section p-3.5 text-gray-900">
+              <div className="mb-3 text-sm font-semibold text-gray-900">
+                System startup
+              </div>
+              <div className="space-y-3">
+                <label className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 accent-night-700"
+                    checked={startAtLogin}
+                    onChange={(e) => setStartAtLogin(e.target.checked)}
+                  />
+                  <span className="text-sm font-medium">
+                    Start at system login
+                  </span>
+                </label>
+                <label
+                  className={`flex items-center gap-3 rounded-xl border border-gray-300 px-3 py-2 transition-opacity ${
+                    startAtLogin && supportsTrayStartup
+                      ? "opacity-100"
+                      : "opacity-50"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 accent-celadon-600"
+                    checked={openInTrayAtLogin}
+                    onChange={(e) => setOpenInTrayAtLogin(e.target.checked)}
+                    disabled={!startAtLogin || !supportsTrayStartup}
+                  />
+                  <span className="text-sm font-medium">
+                    Open in {minimizedLocation} at login
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            <section className="space-y-3.5" aria-label="Window behavior">
+              <div className="space-y-2">
+                <div className="text-sm text-gray-700">On window close</div>
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="closeBehavior"
+                      className="h-4 w-4 accent-night-700"
+                      checked={closeToTray}
+                      onChange={() => setCloseToTray(true)}
+                    />
+                    <span>Minimize to {minimizedLocation} (default)</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="closeBehavior"
+                      className="h-4 w-4 accent-night-700"
+                      checked={!closeToTray}
+                      onChange={() => setCloseToTray(false)}
+                    />
+                    <span>Quit the application</span>
+                  </label>
                 </div>
               </div>
-              <div className="flex gap-2">
-                {!recording && (
-                  <button
-                    onClick={() => {
-                      setRecording(true);
-                      setRecordedKeys([]);
-                      setHotkeyError(null);
-                    }}
-                    className="px-3 py-1.5 rounded-full bg-gray-300 hover:bg-gray-400 text-sm text-gray-900"
-                  >
-                    Edit
-                  </button>
+
+              <div className="flex flex-wrap items-center gap-x-7 gap-y-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 accent-night-700"
+                    checked={notifyOnStart}
+                    onChange={(e) => setNotifyOnStart(e.target.checked)}
+                  />
+                  <span>Notify when server starts</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 accent-night-700"
+                    checked={notifyOnStop}
+                    onChange={(e) => setNotifyOnStop(e.target.checked)}
+                  />
+                  <span>Notify when server stops</span>
+                </label>
+              </div>
+            </section>
+
+            <section className="settings-section p-3.5 text-gray-900">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">
+                    Global hotkey
+                  </div>
+                  <div className="text-xs text-gray-700">
+                    Toggle the dashboard from anywhere
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {!recording && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecording(true);
+                        setRecordedKeys([]);
+                        setHotkeyError(null);
+                      }}
+                      className="rounded-full bg-gray-300 px-3 py-1.5 text-sm text-gray-900 hover:bg-gray-400"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {recording && (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRecordedKeys([]);
+                          setRecording(false);
+                          setHotkeyError(null);
+                        }}
+                        className="rounded-full bg-gray-300 px-3 py-1.5 text-sm text-gray-900 hover:bg-gray-400"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!isValidHotkey(recordedKeys)) {
+                            setHotkeyError("Shortcut must be 2-4 keys.");
+                            return;
+                          }
+                          const accel = keysToAccelerator(recordedKeys);
+                          if (!accel) return;
+                          setGlobalHotkey(accel);
+                          setRecording(false);
+                          setHotkeyError(null);
+                        }}
+                        disabled={!isValidHotkey(recordedKeys)}
+                        className={`rounded-full px-3 py-1.5 text-sm ${
+                          !isValidHotkey(recordedKeys)
+                            ? "cursor-not-allowed bg-gray-300 text-gray-600"
+                            : "bg-night-700 text-night-100 hover:bg-night-800"
+                        }`}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex min-h-[36px] flex-wrap items-center gap-2">
+                {renderKeys(
+                  recording
+                    ? recordedKeys
+                    : parseAccelerator(globalHotkey || "Ctrl+Shift+D"),
                 )}
                 {recording && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setRecordedKeys([]);
-                        setRecording(false);
-                        setHotkeyError(null);
-                      }}
-                      className="px-3 py-1.5 rounded-full bg-gray-300 hover:bg-gray-400 text-sm text-gray-900"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!isValidHotkey(recordedKeys)) {
-                          setHotkeyError("Shortcut must be 2-4 keys.");
-                          return;
-                        }
-                        const accel = keysToAccelerator(recordedKeys);
-                        if (!accel) return;
-                        setGlobalHotkey(accel);
-                        setRecording(false);
-                        setHotkeyError(null);
-                      }}
-                      disabled={!isValidHotkey(recordedKeys)}
-                      className={`px-3 py-1.5 rounded-full text-sm ${
-                        !isValidHotkey(recordedKeys)
-                          ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                          : "bg-night-700 text-night-100 hover:bg-night-800"
-                      }`}
-                    >
-                      Save
-                    </button>
-                  </div>
+                  <span className="flex items-center gap-1 text-xs text-mimi_pink-700 animate-pulse">
+                    <span className="h-2 w-2 rounded-full bg-mimi_pink-500"></span>
+                    Recording...
+                  </span>
                 )}
               </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap min-h-[36px]">
-              {renderKeys(
-                recording
-                  ? recordedKeys
-                  : parseAccelerator(globalHotkey || "Ctrl+Shift+D")
+              {recording && recordedKeys.length === 0 && (
+                <div className="mt-2 text-xs text-gray-700">
+                  Press 2-4 keys (e.g., Ctrl, Shift, D)
+                </div>
               )}
-              {recording && (
-                <span className="text-xs text-mimi_pink-700 flex items-center gap-1 animate-pulse">
-                  <span className="w-2 h-2 rounded-full bg-mimi_pink-500"></span>
-                  Recording...
-                </span>
+              {hotkeyError && (
+                <div className="mt-2 text-xs text-mimi_pink-700">
+                  {hotkeyError}
+                </div>
               )}
-            </div>
-            {recording && recordedKeys.length === 0 && (
-              <div className="text-xs text-gray-700 mt-2">
-                Press 2-4 keys (e.g., Ctrl, Shift, D)
+            </section>
+
+            <section className="settings-section flex items-center justify-between gap-3 p-3.5 text-gray-900">
+              <div className="text-sm font-semibold text-gray-900">
+                Check for updates
               </div>
-            )}
-            {hotkeyError && (
-              <div className="text-xs text-mimi_pink-700 mt-2">
-                {hotkeyError}
-              </div>
-            )}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await window.api.checkForUpdates();
+                  } catch (err) {
+                    console.error("Failed to check for updates:", err);
+                  }
+                }}
+                className="rounded-full bg-gray-300 px-3 py-1.5 text-sm text-gray-900 hover:bg-gray-400"
+              >
+                Check now
+              </button>
+            </section>
           </div>
 
-          {/* Updates */}
-          <div className="border border-gray-300 rounded-lg p-3 bg-gray-200 text-gray-900 flex items-center justify-between">
-            <div className="text-sm font-semibold text-gray-900">
-              Check for updates
-            </div>
+          <footer className="mt-4 flex items-center justify-between gap-2 border-t border-gray-300 pt-4">
             <button
+              type="button"
               onClick={async () => {
-                try {
-                  await window.api.checkForUpdates();
-                } catch (err) {
-                  console.error("Failed to check for updates:", err);
-                  // Optionally show user-facing error message
+                if (!onReset) return;
+                if (window.confirm("Reset all settings to defaults?")) {
+                  resetPreferences();
+                  await onReset();
                 }
               }}
-              className="px-3 py-1.5 rounded-full bg-gray-300 hover:bg-gray-400 text-sm text-gray-900"
+              className="rounded-full bg-mimi_pink-600/20 px-3 py-1.5 text-mimi_pink-800 hover:bg-mimi_pink-600/30"
             >
-              Check now
+              Reset to defaults
             </button>
-          </div>
+            <button
+              type="button"
+              onClick={() => {
+                const keysForSave = recording
+                  ? recordedKeys
+                  : parseAccelerator(globalHotkey);
+                if (!isValidHotkey(keysForSave)) {
+                  setHotkeyError("Shortcut must be 2-4 keys.");
+                  return;
+                }
+                const accel = keysToAccelerator(keysForSave);
+                if (!accel) return;
+                onSave({
+                  scanIntervalMs,
+                  portsText,
+                  startAtLogin,
+                  openInTrayAtLogin,
+                  notifyOnStart,
+                  notifyOnStop,
+                  scanAllPorts,
+                  closeToTray,
+                  globalHotkey: accel,
+                });
+                setRecording(false);
+                setGlobalHotkey(accel);
+                setHotkeyError(null);
+              }}
+              className="rounded-full bg-night-700 px-3 py-1.5 text-night-100 hover:bg-night-800"
+            >
+              Save
+            </button>
+          </footer>
         </div>
-        <div className="flex justify-between items-center gap-2 mt-5">
-          <button
-            onClick={async () => {
-              if (!onReset) return;
-              if (window.confirm("Reset all settings to defaults?")) {
-                await onReset();
-              }
-            }}
-            className="px-3 py-1.5 rounded-full bg-mimi_pink-600/20 text-mimi_pink-800 hover:bg-mimi_pink-600/30"
-          >
-            Reset to defaults
-          </button>
-          <button
-            onClick={() => {
-              const keysForSave = recording
-                ? recordedKeys
-                : parseAccelerator(globalHotkey);
-              if (!isValidHotkey(keysForSave)) {
-                setHotkeyError("Shortcut must be 2-4 keys.");
-                return;
-              }
-              const accel = keysToAccelerator(keysForSave);
-              if (!accel) return;
-              onSave({
-                scanIntervalMs,
-                portsText,
-                startAtLogin,
-                openInTrayAtLogin,
-                notifyOnStart,
-                notifyOnStop,
-                scanAllPorts,
-                closeToTray,
-                globalHotkey: accel,
-              });
-              setRecording(false);
-              setGlobalHotkey(accel);
-              setHotkeyError(null);
-            }}
-            className="px-3 py-1.5 rounded-full bg-night-700 text-night-100 hover:bg-night-800"
-          >
-            Save
-          </button>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

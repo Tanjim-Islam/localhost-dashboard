@@ -139,7 +139,7 @@ export default function ServerCard({
     <div
       ref={ref}
       className={cx(
-        "rounded-xl border border-gray-300/40 bg-gray-100 p-4 shadow-soft transition-all duration-300 will-change-transform border-l-4",
+        "app-card rounded-xl border border-gray-300/40 bg-gray-100/94 p-4 shadow-soft transition-all duration-300 will-change-transform border-l-4",
         exiting === "left" && "-translate-x-[120%] opacity-0",
         exiting === "right" && "translate-x-[120%] opacity-0"
       )}
@@ -261,18 +261,19 @@ export default function ServerCard({
         <span className="opacity-50">•</span>
         <span>Up {uptime}</span>
       </div>
-      <div className="mt-4 flex items-center gap-4 justify-between">
-        <div className="flex items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Open Button */}
           <button
+            type="button"
             onClick={open}
             disabled={openState !== "idle"}
             className={cx(
-              "h-12 px-5 rounded-full text-sm font-medium transition-all duration-200 transform",
+              "h-10 min-w-[76px] rounded-xl px-4 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-night-700/35 disabled:cursor-wait",
               openState === "idle" &&
-                "bg-night-700 text-night-100 hover:bg-night-800 hover:scale-105 active:scale-95",
-              openState === "active" && "bg-night-800 text-night-100 scale-95",
-              openState === "done" && "bg-night-600 text-celadon-300 scale-100"
+                "bg-night-700 text-night-100 hover:-translate-y-0.5 hover:bg-night-800 active:translate-y-0",
+              openState === "active" && "bg-night-800 text-night-100",
+              openState === "done" && "bg-night-600 text-night-100",
             )}
           >
             <span className="flex items-center gap-1.5">
@@ -306,14 +307,15 @@ export default function ServerCard({
 
           {/* Copy URL Button */}
           <button
+            type="button"
             onClick={copy}
             disabled={copyState !== "idle"}
             className={cx(
-              "h-12 px-5 rounded-full text-sm font-medium transition-all duration-200 transform",
+              "h-10 min-w-[104px] rounded-xl px-4 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-night-700/25 disabled:cursor-wait",
               copyState === "idle" &&
-                "bg-gray-200 text-gray-900 hover:bg-gray-300 hover:scale-105 active:scale-95",
-              copyState === "active" && "bg-gray-300 text-gray-900 scale-110",
-              copyState === "done" && "bg-celadon-400 text-white scale-100"
+                "bg-gray-200 text-gray-900 hover:-translate-y-0.5 hover:bg-gray-300 active:translate-y-0",
+              copyState === "active" && "bg-gray-300 text-gray-900",
+              copyState === "done" && "bg-celadon-400 text-celadon-100",
             )}
           >
             <span className="flex items-center gap-1.5 min-w-[72px] justify-center">
@@ -345,8 +347,9 @@ export default function ServerCard({
 
         {/* Kill Button */}
         <button
+          type="button"
           onClick={kill}
-          className="h-12 px-5 rounded-full bg-mimi_pink-300 text-mimi_pink-100 hover:bg-mimi_pink-200 hover:scale-105 active:scale-95 transition-all duration-200 transform text-sm font-medium"
+          className="h-10 min-w-[68px] rounded-xl bg-mimi_pink-300 px-4 text-sm font-medium text-mimi_pink-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-mimi_pink-300/85 hover:text-mimi_pink-100 active:translate-y-0 active:bg-mimi_pink-300 active:text-mimi_pink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mimi_pink-400/45 disabled:cursor-not-allowed disabled:bg-mimi_pink-300/55 disabled:text-mimi_pink-100 disabled:opacity-70"
         >
           Kill
         </button>

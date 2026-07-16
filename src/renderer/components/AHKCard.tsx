@@ -2,6 +2,7 @@ import React from "react";
 import cx from "classnames";
 import dayjs from "dayjs";
 import { Copy, Folder, RotateCcw, SquarePen, X } from "lucide-react";
+import { ScriptDestructiveButton } from "./ScriptDestructiveButton";
 
 type AHKItem = {
   key: string;
@@ -32,8 +33,7 @@ export default function AHKCard({
   const ref = React.useRef<HTMLDivElement>(null);
   const [exiting, setExiting] = React.useState<null | "left" | "right">(null);
   const [copyState, setCopyState] = React.useState<ButtonState>("idle");
-  const [restartState, setRestartState] =
-    React.useState<ButtonState>("idle");
+  const [restartState, setRestartState] = React.useState<ButtonState>("idle");
   const [editState, setEditState] = React.useState<ButtonState>("idle");
 
   const kill = () => {
@@ -93,7 +93,7 @@ export default function AHKCard({
     <div
       ref={ref}
       className={cx(
-        "rounded-xl border border-pale_dogwood-400/40 bg-gray-100 p-4 shadow-soft transition-all duration-300 will-change-transform",
+        "app-card rounded-xl border border-pale_dogwood-400/40 bg-gray-100/94 p-4 shadow-soft transition-all duration-300 will-change-transform",
         exiting === "left" && "-translate-x-[120%] opacity-0",
         exiting === "right" && "translate-x-[120%] opacity-0",
       )}
@@ -155,9 +155,7 @@ export default function AHKCard({
                 {editState === "active" && (
                   <Spinner className="border-night-100" />
                 )}
-                {editState === "done" && (
-                  <SquarePen className="h-3.5 w-3.5" />
-                )}
+                {editState === "done" && <SquarePen className="h-3.5 w-3.5" />}
               </button>
 
               <button
@@ -227,14 +225,16 @@ export default function AHKCard({
           </button>
         </div>
 
-        <button
+        <ScriptDestructiveButton
           onClick={kill}
-          className="ml-auto flex h-8 w-[54px] shrink-0 items-center justify-center gap-1 rounded-full bg-mimi_pink-300 text-xs font-semibold text-mimi_pink-100 transition-all duration-200 hover:bg-mimi_pink-200 active:scale-95"
+          disabled={Boolean(exiting)}
+          aria-busy={Boolean(exiting)}
+          className="ml-auto h-8 w-[54px] gap-1 text-xs font-semibold"
           title="Kill script"
         >
           <X className="h-3.5 w-3.5" />
           Kill
-        </button>
+        </ScriptDestructiveButton>
       </div>
     </div>
   );

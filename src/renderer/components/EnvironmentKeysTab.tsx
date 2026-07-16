@@ -130,7 +130,7 @@ export default function EnvironmentKeysTab({
 
   return (
     <section className="space-y-5" aria-label="Windows environment keys">
-      <div className="relative overflow-hidden rounded-2xl border border-gray-300 bg-gray-100 px-5 py-5 shadow-soft">
+      <div className="app-card relative overflow-hidden rounded-2xl border border-gray-300 bg-gray-100/94 px-5 py-5 shadow-soft">
         <div className="pointer-events-none absolute inset-y-0 right-0 w-48 bg-gradient-to-l from-night-600/20 to-transparent" />
         <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3.5">
@@ -381,7 +381,7 @@ function EnvironmentKeyCard({
   }`;
 
   return (
-    <article className="group relative overflow-hidden rounded-2xl border border-gray-300 bg-gray-200/75 p-5 shadow-soft transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-400">
+    <article className="app-card group relative overflow-hidden rounded-2xl border border-gray-300 bg-gray-200/75 p-5 shadow-soft transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-400">
       <div className="absolute inset-y-0 left-0 w-1 bg-celadon-400/80" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -581,7 +581,7 @@ function EnvironmentKeyEditor({
     >
       <form
         onSubmit={submit}
-        className="env-modal-panel w-full max-w-[520px] rounded-2xl border border-gray-300 bg-gray-100 p-5 text-gray-900 shadow-soft"
+        className="app-dialog env-modal-panel w-full max-w-[520px] rounded-2xl border border-gray-300 bg-gray-100 p-5 text-gray-900 shadow-soft"
         role="dialog"
         aria-modal="true"
         aria-labelledby="environment-key-editor-title"
@@ -771,7 +771,7 @@ function DeleteEnvironmentKeyDialog({
       }}
     >
       <div
-        className="env-modal-panel w-full max-w-[430px] rounded-2xl border border-gray-300 bg-gray-100 p-5 text-gray-900 shadow-soft"
+        className="app-dialog env-modal-panel w-full max-w-[430px] rounded-2xl border border-gray-300 bg-gray-100 p-5 text-gray-900 shadow-soft"
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="delete-environment-key-title"

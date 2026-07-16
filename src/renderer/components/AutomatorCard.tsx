@@ -1,6 +1,7 @@
 import React from "react";
 import cx from "classnames";
 import dayjs from "dayjs";
+import { ScriptDestructiveButton } from "./ScriptDestructiveButton";
 
 type AutomatorItem = {
   key: string;
@@ -43,7 +44,8 @@ export default function AutomatorCard({
       ? readableDuration(item.runtimeSeconds)
       : dayjs(item.lastSeen).from(item.firstSeen, true);
   const cpu = typeof item.cpu === "number" ? `${item.cpu.toFixed(1)}%` : "n/a";
-  const mem = typeof item.memory === "number" ? readableBytes(item.memory) : "n/a";
+  const mem =
+    typeof item.memory === "number" ? readableBytes(item.memory) : "n/a";
   const isRunning = item.status === "running" && typeof item.pid === "number";
 
   const stop = () => {
@@ -77,7 +79,8 @@ export default function AutomatorCard({
   };
 
   const openInAutomator = async () => {
-    if (!item.scriptPath || !item.canOpenInAutomator || openState !== "idle") return;
+    if (!item.scriptPath || !item.canOpenInAutomator || openState !== "idle")
+      return;
     setOpenState("active");
     await window.api.openAutomator(item.scriptPath);
     setTimeout(() => {
@@ -90,7 +93,7 @@ export default function AutomatorCard({
     <div
       ref={ref}
       className={cx(
-        "rounded-xl border border-gray-300/40 bg-gray-100 p-4 shadow-soft transition-all duration-300 will-change-transform border-l-4 border-l-celadon-400",
+        "app-card rounded-xl border border-gray-300/40 bg-gray-100/94 p-4 shadow-soft transition-all duration-300 will-change-transform border-l-4 border-l-celadon-400",
         !isRunning && "border-l-gray-400",
         exiting === "left" && "-translate-x-[120%] opacity-0",
         exiting === "right" && "translate-x-[120%] opacity-0",
@@ -123,7 +126,9 @@ export default function AutomatorCard({
             </span>
             {typeof item.pid === "number" && <span>PID {item.pid}</span>}
             <span className="opacity-50">•</span>
-            <span>{isRunning ? "Runtime" : "First seen"} {runtime}</span>
+            <span>
+              {isRunning ? "Runtime" : "First seen"} {runtime}
+            </span>
           </div>
         </div>
         <div className="text-xs text-gray-600 whitespace-nowrap">
@@ -186,12 +191,15 @@ export default function AutomatorCard({
         />
 
         {isRunning && (
-          <button
+          <ScriptDestructiveButton
             onClick={stop}
-            className="ml-auto h-10 px-4 rounded-full bg-mimi_pink-300 text-mimi_pink-100 hover:bg-mimi_pink-200 hover:scale-105 active:scale-95 transition-all duration-200 transform text-sm font-medium"
+            disabled={Boolean(exiting)}
+            aria-busy={Boolean(exiting)}
+            className="ml-auto h-10 px-4 text-sm font-medium"
+            title="Stop script"
           >
             Stop
-          </button>
+          </ScriptDestructiveButton>
         )}
       </div>
     </div>
