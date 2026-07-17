@@ -1,6 +1,6 @@
 {
   "name": "local-dashboard",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "An Electron dashboard that discovers and manages local dev servers.",
   "type": "module",
   "main": "out/main/index.js",

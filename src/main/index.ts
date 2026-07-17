@@ -24,7 +24,12 @@ import { AHKScanner } from "./ahk-scanner";
 import { AutomatorScanner } from "./automator-scanner";
 import { HealthChecker } from "./health-checker";
 import { initUpdater } from "./updater";
-import { HIDDEN_LOGIN_ARGUMENT, shouldStartInTray } from "./startup-visibility";
+import {
+  getElectronLoginItemSettings,
+  shouldManageSystemLoginItem,
+  shouldSynchronizeSystemLoginItemAtLaunch,
+  shouldStartInTray,
+} from "./startup-visibility";
 import { bumpPort, stats as statsStore } from "./stats";
 import { getNote, setNote, getAllNotes } from "./notes";
 import { getPlatformFeatures } from "./platform-features";
@@ -521,21 +526,24 @@ async function setAutoLaunch(
   enabled: boolean,
   openInTrayAtLogin = settings.get("openInTrayAtLogin"),
 ) {
+  if (!shouldManageSystemLoginItem(app.isPackaged)) {
+    settings.set("startAtLogin", enabled);
+    settings.set("openInTrayAtLogin", openInTrayAtLogin);
+    return;
+  }
+
   try {
-    if (process.platform === "win32") {
+    const electronLoginItemSettings = getElectronLoginItemSettings({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      enabled,
+      openInTrayAtLogin,
+      executablePath: process.execPath,
+    });
+
+    if (electronLoginItemSettings) {
       await removeLegacyAutoLaunchRegistration();
-      app.setLoginItemSettings({
-        openAtLogin: enabled,
-        name: "Localhost Dashboard",
-        path: process.execPath,
-        args: enabled && openInTrayAtLogin ? [HIDDEN_LOGIN_ARGUMENT] : [],
-      });
-    } else if (process.platform === "darwin") {
-      await removeLegacyAutoLaunchRegistration();
-      app.setLoginItemSettings({
-        openAtLogin: enabled,
-        openAsHidden: openInTrayAtLogin,
-      });
+      app.setLoginItemSettings(electronLoginItemSettings);
     } else {
       autolaunch = new AutoLaunch({
         name: APP_DISPLAY_NAME,
@@ -579,12 +587,22 @@ app.whenReady().then(async () => {
   applyApplicationIdentity();
   // First-run seeding from resources/default-settings.json if present
   const seeded = seedDefaultsIfNeeded();
-  if (seeded.seeded) {
-    // Ensure OS autostart setting reflects seeded startAtLogin value
-    await setAutoLaunch(settings.get("startAtLogin"));
-  }
   migrateLegacyNotifications();
   applyPlatformSettingsDefaults();
+  if (
+    shouldSynchronizeSystemLoginItemAtLaunch({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      settingsWereSeeded: seeded.seeded,
+    })
+  ) {
+    // Repair stale Windows development registrations. Other packaged platforms
+    // retain their existing first-run login-item synchronization.
+    await setAutoLaunch(
+      settings.get("startAtLogin"),
+      settings.get("openInTrayAtLogin"),
+    );
+  }
   const startInTray = shouldStartInTray({
     platform: process.platform,
     argv: process.argv,
