@@ -7,6 +7,7 @@ type Props = {
   search: string;
   onSearchChange: (v: string) => void;
   searchPlaceholder?: string;
+  showSearch?: boolean;
   version?: string;
   platform?: string;
 };
@@ -17,6 +18,7 @@ export default function TitleBar({
   search,
   onSearchChange,
   searchPlaceholder = "Search ports, PID, names.",
+  showSearch = true,
   version,
   platform,
 }: Props) {
@@ -78,14 +80,16 @@ export default function TitleBar({
         className="flex-1 flex justify-center px-3"
         style={{ WebkitAppRegion: "drag" as any }}
       >
-        <input
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={searchPlaceholder}
-          className="w-[44vw] max-w-[560px] min-w-[220px] px-4 py-1.5 rounded-full bg-gray-200/80 text-gray-900 placeholder-gray-700/60 ring-1 ring-transparent focus:ring-night-700/40 outline-none transition-all duration-200 focus:bg-gray-200"
-          style={{ WebkitAppRegion: "no-drag" as any }}
-          data-nodrag="true"
-        />
+        {showSearch && (
+          <input
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder={searchPlaceholder}
+            className="w-[44vw] max-w-[560px] min-w-[220px] px-4 py-1.5 rounded-full bg-gray-200/80 text-gray-900 placeholder-gray-700/60 ring-1 ring-transparent focus:ring-night-700/40 outline-none transition-all duration-200 focus:bg-gray-200"
+            style={{ WebkitAppRegion: "no-drag" as any }}
+            data-nodrag="true"
+          />
+        )}
       </div>
       <div
         className="flex items-center gap-2 shrink-0"

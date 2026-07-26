@@ -1,4 +1,11 @@
 import { contextBridge, ipcRenderer, clipboard } from "electron";
+import {
+  validateCleanerPreferences,
+  validateCleanerSessionId,
+  validateCleanCleanerFindingsInput,
+  validateStartCleanerScanInput,
+  validateUpdateCleanerExclusionsInput,
+} from "../main/cleaner/ipc-validation";
 
 const requireString = (value: unknown, label: string): string => {
   if (typeof value !== "string" || !value.trim()) {
@@ -172,6 +179,73 @@ contextBridge.exposeInMainWorld("api", {
       "environment:delete",
       requireEnvironmentVariableRef(input),
     ),
+  // Windows Cleaner. Main process rejects every operation on unsupported platforms.
+  startCleanerScan: (input: unknown) =>
+    ipcRenderer.invoke(
+      "cleaner:scan-start",
+      validateStartCleanerScanInput(input),
+    ),
+  cancelCleanerScan: (scanSessionId: unknown) =>
+    ipcRenderer.invoke(
+      "cleaner:scan-cancel",
+      validateCleanerSessionId(scanSessionId),
+    ),
+  getCleanerScanState: () => ipcRenderer.invoke("cleaner:scan-state"),
+  refreshCleanerFreeSpace: (scanSessionId: unknown) =>
+    ipcRenderer.invoke(
+      "cleaner:free-space-refresh",
+      validateCleanerSessionId(scanSessionId),
+    ),
+  cleanCleanerFindings: (input: unknown) =>
+    ipcRenderer.invoke(
+      "cleaner:cleanup",
+      validateCleanCleanerFindingsInput(input),
+    ),
+  getCleanerExclusions: () => ipcRenderer.invoke("cleaner:exclusions-get"),
+  updateCleanerExclusions: (input: unknown) =>
+    ipcRenderer.invoke(
+      "cleaner:exclusions-update",
+      validateUpdateCleanerExclusionsInput(input),
+    ),
+  getCleanerHistory: () => ipcRenderer.invoke("cleaner:history-get"),
+  getCleanerPreferences: () => ipcRenderer.invoke("cleaner:preferences-get"),
+  updateCleanerPreferences: (input: unknown) =>
+    ipcRenderer.invoke(
+      "cleaner:preferences-update",
+      validateCleanerPreferences(input),
+    ),
+  onCleanerScanProgress: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("cleaner:scan-progress", listener);
+    return () => ipcRenderer.removeListener("cleaner:scan-progress", listener);
+  },
+  onCleanerScanComplete: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("cleaner:scan-complete", listener);
+    return () => ipcRenderer.removeListener("cleaner:scan-complete", listener);
+  },
+  onCleanerScanError: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("cleaner:scan-error", listener);
+    return () => ipcRenderer.removeListener("cleaner:scan-error", listener);
+  },
+  onCleanerCleanupProgress: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("cleaner:cleanup-progress", listener);
+    return () =>
+      ipcRenderer.removeListener("cleaner:cleanup-progress", listener);
+  },
+  onCleanerCleanupComplete: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("cleaner:cleanup-complete", listener);
+    return () =>
+      ipcRenderer.removeListener("cleaner:cleanup-complete", listener);
+  },
+  onCleanerHistoryUpdate: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("cleaner:history-update", listener);
+    return () => ipcRenderer.removeListener("cleaner:history-update", listener);
+  },
   // UI events from main
   onToggleSettings: (cb: () => void) => {
     const listener = () => cb();

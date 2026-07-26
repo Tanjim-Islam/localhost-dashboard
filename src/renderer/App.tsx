@@ -9,6 +9,7 @@ import SettingsPanel from "./components/SettingsPanel";
 import UpdateNotification from "./components/UpdateNotification";
 import RecentScriptsDrawer from "./components/RecentScriptsDrawer";
 import EnvironmentKeysTab from "./components/EnvironmentKeysTab";
+import CleanerTab from "./components/CleanerTab";
 
 dayjs.extend(relativeTime);
 
@@ -46,6 +47,7 @@ type PlatformFeatures = {
   ahkScripts: boolean;
   automatorScripts: boolean;
   environmentKeys: boolean;
+  cleaner: boolean;
 };
 
 type AutomatorItem = {
@@ -68,13 +70,14 @@ type AutomatorItem = {
   memory?: number;
 };
 
-type TabType = "servers" | "ahk" | "automator" | "environment";
+type TabType = "servers" | "ahk" | "automator" | "environment" | "cleaner";
 
 type AppMeta = {
   version: string;
   platform: string;
   arch: string;
   features: PlatformFeatures;
+  cleanerTestMode: boolean;
 };
 
 type RecentScript = {
@@ -118,7 +121,10 @@ export default function App() {
   const [environmentKeyCount, setEnvironmentKeyCount] = useState(0);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem("dashboard:activeTab");
-    return saved === "ahk" || saved === "automator" || saved === "environment"
+    return saved === "ahk" ||
+      saved === "automator" ||
+      saved === "environment" ||
+      saved === "cleaner"
       ? saved
       : "servers";
   });
@@ -130,6 +136,7 @@ export default function App() {
     ahkScripts: false,
     automatorScripts: false,
     environmentKeys: false,
+    cleaner: false,
   });
 
   useEffect(() => {
@@ -188,6 +195,7 @@ export default function App() {
     if (platformFeatures.ahkScripts) tabs.push("ahk");
     if (platformFeatures.automatorScripts) tabs.push("automator");
     if (platformFeatures.environmentKeys) tabs.push("environment");
+    if (platformFeatures.cleaner) tabs.push("cleaner");
     return tabs;
   }, [platformFeatures]);
 
@@ -298,7 +306,13 @@ export default function App() {
   return (
     <div className="app-shell h-screen w-screen bg-night text-gray-900 select-none overflow-hidden">
       <TitleBar
-        onRefresh={() => window.api.refresh()}
+        onRefresh={() => {
+          if (activeTab === "cleaner") {
+            window.dispatchEvent(new Event("dashboard:cleaner-rescan"));
+          } else {
+            window.api.refresh();
+          }
+        }}
         onSettings={() => setOpenSettings(true)}
         search={query}
         onSearchChange={setQuery}
@@ -307,6 +321,7 @@ export default function App() {
             ? "Search ENV key names."
             : "Search ports, PID, names."
         }
+        showSearch={activeTab !== "cleaner"}
         version={version}
         platform={platform}
       />
@@ -355,6 +370,14 @@ export default function App() {
                     count={environmentKeyCount}
                   >
                     ENV Keys
+                  </TabButton>
+                )}
+                {platformFeatures.cleaner && (
+                  <TabButton
+                    active={activeTab === "cleaner"}
+                    onClick={() => setActiveTab("cleaner")}
+                  >
+                    Cleaner
                   </TabButton>
                 )}
               </>
@@ -498,6 +521,15 @@ export default function App() {
             active={activeTab === "environment"}
             query={query}
             onCountChange={setEnvironmentKeyCount}
+          />
+        )}
+
+        {platformFeatures.cleaner && (
+          <CleanerTab
+            active={activeTab === "cleaner"}
+            testMode={Boolean(meta?.cleanerTestMode)}
+            query={query}
+            onQueryChange={setQuery}
           />
         )}
       </div>

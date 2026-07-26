@@ -11,6 +11,7 @@ test("enables Automator only on macOS", () => {
     ahkScripts: false,
     automatorScripts: true,
     environmentKeys: false,
+    cleaner: false,
   });
 });
 
@@ -20,6 +21,7 @@ test("keeps AHK support Windows-only", () => {
     ahkScripts: true,
     automatorScripts: false,
     environmentKeys: true,
+    cleaner: true,
   });
 });
 
@@ -29,6 +31,7 @@ test("unsupported platforms expose only working shared features", () => {
     ahkScripts: false,
     automatorScripts: false,
     environmentKeys: false,
+    cleaner: false,
   });
 });
 

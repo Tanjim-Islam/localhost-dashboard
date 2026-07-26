@@ -48,7 +48,34 @@ export type PlatformFeatures = {
   ahkScripts: boolean;
   automatorScripts: boolean;
   environmentKeys: boolean;
+  cleaner: boolean;
 };
+
+export type CleanerScanMode = import("../main/cleaner/types").CleanerScanMode;
+export type CleanerSafety = import("../main/cleaner/types").CleanerSafety;
+export type CleanerRecommendation =
+  import("../main/cleaner/types").CleanerRecommendation;
+export type CleanerFinding = import("../main/cleaner/types").CleanerFinding;
+export type CleanerScanProgress =
+  import("../main/cleaner/types").CleanerScanProgress;
+export type CleanerScanResult =
+  import("../main/cleaner/types").CleanerScanResult;
+export type CleanerScanState = import("../main/cleaner/types").CleanerScanState;
+export type StartCleanerScanInput =
+  import("../main/cleaner/types").StartCleanerScanInput;
+export type CleanCleanerFindingsInput =
+  import("../main/cleaner/types").CleanCleanerFindingsInput;
+export type CleanerCleanupProgress =
+  import("../main/cleaner/types").CleanerCleanupProgress;
+export type CleanerCleanupResult =
+  import("../main/cleaner/types").CleanerCleanupResult;
+export type CleanerExclusion = import("../main/cleaner/types").CleanerExclusion;
+export type UpdateCleanerExclusionsInput =
+  import("../main/cleaner/types").UpdateCleanerExclusionsInput;
+export type CleanerHistorySnapshot =
+  import("../main/cleaner/types").CleanerHistorySnapshot;
+export type CleanerPreferences =
+  import("../main/cleaner/types").CleanerPreferences;
 
 export type EnvironmentVariableScope = "user" | "machine";
 
@@ -202,6 +229,38 @@ export interface Api {
     input: EnvironmentVariableRef,
   ): Promise<EnvironmentVariableSummary[]>;
 
+  // Windows Cleaner
+  startCleanerScan(input: StartCleanerScanInput): Promise<CleanerScanState>;
+  cancelCleanerScan(scanSessionId: string): Promise<CleanerScanState>;
+  getCleanerScanState(): Promise<CleanerScanState>;
+  refreshCleanerFreeSpace(scanSessionId: string): Promise<CleanerScanResult>;
+  cleanCleanerFindings(
+    input: CleanCleanerFindingsInput,
+  ): Promise<CleanerCleanupResult>;
+  getCleanerExclusions(): Promise<CleanerExclusion[]>;
+  updateCleanerExclusions(
+    input: UpdateCleanerExclusionsInput,
+  ): Promise<CleanerExclusion[]>;
+  getCleanerHistory(): Promise<CleanerHistorySnapshot>;
+  getCleanerPreferences(): Promise<CleanerPreferences>;
+  updateCleanerPreferences(
+    input: CleanerPreferences,
+  ): Promise<CleanerPreferences>;
+  onCleanerScanProgress(cb: (payload: CleanerScanProgress) => void): () => void;
+  onCleanerScanComplete(cb: (payload: CleanerScanResult) => void): () => void;
+  onCleanerScanError(
+    cb: (payload: { scanSessionId?: string; message: string }) => void,
+  ): () => void;
+  onCleanerCleanupProgress(
+    cb: (payload: CleanerCleanupProgress) => void,
+  ): () => void;
+  onCleanerCleanupComplete(
+    cb: (payload: CleanerCleanupResult) => void,
+  ): () => void;
+  onCleanerHistoryUpdate(
+    cb: (payload: CleanerHistorySnapshot) => void,
+  ): () => void;
+
   // meta / ui
   onToggleSettings(cb: () => void): () => void;
   getMeta(): Promise<{
@@ -209,6 +268,7 @@ export interface Api {
     platform: string;
     arch: string;
     features: PlatformFeatures;
+    cleanerTestMode: boolean;
   }>;
 
   // auto-updater

@@ -9,6 +9,7 @@ import {
   isFontPreset,
   isThemePaletteForMode,
 } from "./themeRegistry";
+import { CLEANER_SEMANTIC_TOKENS_BY_MODE } from "../cleaner-theme-tokens";
 
 const LEGACY_THEME_STORAGE_KEYS = [
   "dashboard:compactMode",
@@ -89,6 +90,16 @@ export function applyThemePreferences(
     );
     setColorVariable(root, cssName, value);
   });
+
+  Object.entries(CLEANER_SEMANTIC_TOKENS_BY_MODE[resolvedMode]).forEach(
+    ([name, value]) => {
+      const cssName = `cleaner-${name.replace(
+        /[A-Z]/g,
+        (letter) => `-${letter.toLowerCase()}`,
+      )}`;
+      setColorVariable(root, cssName, value);
+    },
+  );
 
   root.dataset.theme = resolvedMode;
   root.dataset.themePreference = preferences.mode;
