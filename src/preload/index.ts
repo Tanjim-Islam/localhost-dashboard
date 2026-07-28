@@ -8,6 +8,11 @@ import {
   validateStartCleanerScanInput,
   validateUpdateCleanerExclusionsInput,
 } from "../main/cleaner/ipc-validation";
+import {
+  validateCliInstallationRef,
+  validateCliSessionId,
+  validateCliUninstallRequest,
+} from "../main/clis/ipc-validation";
 
 const requireString = (value: unknown, label: string): string => {
   if (typeof value !== "string" || !value.trim()) {
@@ -257,6 +262,59 @@ contextBridge.exposeInMainWorld("api", {
     const listener = (_event: unknown, payload: unknown) => cb(payload);
     ipcRenderer.on("cleaner:history-update", listener);
     return () => ipcRenderer.removeListener("cleaner:history-update", listener);
+  },
+  // Windows and macOS CLIs. Main repeats all validation.
+  getCliInventory: () => ipcRenderer.invoke("clis:inventory-get"),
+  startCliScan: () => ipcRenderer.invoke("clis:scan-start"),
+  cancelCliScan: (scanSessionId: unknown) =>
+    ipcRenderer.invoke("clis:scan-cancel", validateCliSessionId(scanSessionId)),
+  getCliScanState: () => ipcRenderer.invoke("clis:scan-state"),
+  verifyCliInstallation: (input: unknown) =>
+    ipcRenderer.invoke(
+      "clis:installation-verify",
+      validateCliInstallationRef(input),
+    ),
+  revealCliInstallation: (input: unknown) =>
+    ipcRenderer.invoke(
+      "clis:installation-reveal",
+      validateCliInstallationRef(input),
+    ),
+  getCliUninstallPreview: (input: unknown) =>
+    ipcRenderer.invoke(
+      "clis:uninstall-preview",
+      validateCliInstallationRef(input),
+    ),
+  uninstallCliInstallation: (input: unknown) =>
+    ipcRenderer.invoke("clis:uninstall", validateCliUninstallRequest(input)),
+  onCliScanProgress: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("clis:scan-progress", listener);
+    return () => ipcRenderer.removeListener("clis:scan-progress", listener);
+  },
+  onCliScanComplete: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("clis:scan-complete", listener);
+    return () => ipcRenderer.removeListener("clis:scan-complete", listener);
+  },
+  onCliScanError: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("clis:scan-error", listener);
+    return () => ipcRenderer.removeListener("clis:scan-error", listener);
+  },
+  onCliInventoryChanged: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("clis:inventory-changed", listener);
+    return () => ipcRenderer.removeListener("clis:inventory-changed", listener);
+  },
+  onCliUninstallProgress: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("clis:uninstall-progress", listener);
+    return () => ipcRenderer.removeListener("clis:uninstall-progress", listener);
+  },
+  onCliUninstallComplete: (cb: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("clis:uninstall-complete", listener);
+    return () => ipcRenderer.removeListener("clis:uninstall-complete", listener);
   },
   // UI events from main
   onToggleSettings: (cb: () => void) => {

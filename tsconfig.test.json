@@ -18,10 +18,17 @@
     "src/main/platform-features.ts",
     "src/main/server-detection.ts",
     "src/main/cleaner/**/*.ts",
+    "src/main/clis/**/*.ts",
     "src/renderer/cleaner-*.ts",
+    "src/renderer/cli-*.ts",
     "src/renderer/theme/themeRegistry.ts",
     "src/renderer/components/titleBarLayout.ts",
     "tests/**/*.ts"
   ],
-  "exclude": ["src/main/cleaner/cleaner-store.ts", "src/main/cleaner/index.ts"]
+  "exclude": [
+    "src/main/cleaner/cleaner-store.ts",
+    "src/main/cleaner/index.ts",
+    "src/main/clis/electron-store.ts",
+    "src/main/clis/index.ts"
+  ]
 }

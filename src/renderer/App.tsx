@@ -10,6 +10,7 @@ import UpdateNotification from "./components/UpdateNotification";
 import RecentScriptsDrawer from "./components/RecentScriptsDrawer";
 import EnvironmentKeysTab from "./components/EnvironmentKeysTab";
 import CleanerTab from "./components/CleanerTab";
+import ClisTab from "./components/ClisTab";
 
 dayjs.extend(relativeTime);
 
@@ -48,6 +49,7 @@ type PlatformFeatures = {
   automatorScripts: boolean;
   environmentKeys: boolean;
   cleaner: boolean;
+  clis: boolean;
 };
 
 type AutomatorItem = {
@@ -70,7 +72,13 @@ type AutomatorItem = {
   memory?: number;
 };
 
-type TabType = "servers" | "ahk" | "automator" | "environment" | "cleaner";
+type TabType =
+  | "servers"
+  | "clis"
+  | "ahk"
+  | "automator"
+  | "environment"
+  | "cleaner";
 
 type AppMeta = {
   version: string;
@@ -78,6 +86,7 @@ type AppMeta = {
   arch: string;
   features: PlatformFeatures;
   cleanerTestMode: boolean;
+  clisTestMode: boolean;
 };
 
 type RecentScript = {
@@ -119,9 +128,11 @@ export default function App() {
   const [recentScripts, setRecentScripts] = useState<RecentScript[]>([]);
   const [recentOpen, setRecentOpen] = useState(false);
   const [environmentKeyCount, setEnvironmentKeyCount] = useState(0);
+  const [cliCount, setCliCount] = useState(0);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem("dashboard:activeTab");
-    return saved === "ahk" ||
+    return saved === "clis" ||
+      saved === "ahk" ||
       saved === "automator" ||
       saved === "environment" ||
       saved === "cleaner"
@@ -137,6 +148,7 @@ export default function App() {
     automatorScripts: false,
     environmentKeys: false,
     cleaner: false,
+    clis: false,
   });
 
   useEffect(() => {
@@ -192,6 +204,7 @@ export default function App() {
 
   const supportedTabs = useMemo<TabType[]>(() => {
     const tabs: TabType[] = ["servers"];
+    if (platformFeatures.clis) tabs.push("clis");
     if (platformFeatures.ahkScripts) tabs.push("ahk");
     if (platformFeatures.automatorScripts) tabs.push("automator");
     if (platformFeatures.environmentKeys) tabs.push("environment");
@@ -321,7 +334,8 @@ export default function App() {
             ? "Search ENV key names."
             : "Search ports, PID, names."
         }
-        showSearch={activeTab !== "cleaner"}
+        showSearch={activeTab !== "cleaner" && activeTab !== "clis"}
+        showRefresh={activeTab !== "clis"}
         version={version}
         platform={platform}
       />
@@ -345,6 +359,15 @@ export default function App() {
                 >
                   Servers
                 </TabButton>
+                {platformFeatures.clis && (
+                  <TabButton
+                    active={activeTab === "clis"}
+                    onClick={() => setActiveTab("clis")}
+                    count={cliCount}
+                  >
+                    CLIs
+                  </TabButton>
+                )}
                 {platformFeatures.ahkScripts && (
                   <TabButton
                     active={activeTab === "ahk"}
@@ -521,6 +544,14 @@ export default function App() {
             active={activeTab === "environment"}
             query={query}
             onCountChange={setEnvironmentKeyCount}
+          />
+        )}
+
+        {platformFeatures.clis && (
+          <ClisTab
+            active={activeTab === "clis"}
+            testMode={Boolean(meta?.clisTestMode)}
+            onCountChange={setCliCount}
           />
         )}
 

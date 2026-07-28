@@ -4,6 +4,7 @@ export type PlatformFeatures = {
   automatorScripts: boolean;
   environmentKeys: boolean;
   cleaner: boolean;
+  clis: boolean;
 };
 
 export function getPlatformFeatures(
@@ -15,6 +16,7 @@ export function getPlatformFeatures(
     automatorScripts: platform === "darwin",
     environmentKeys: platform === "win32",
     cleaner: platform === "win32",
+    clis: platform === "win32" || platform === "darwin",
   };
 }
 

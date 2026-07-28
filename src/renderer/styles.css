@@ -354,7 +354,10 @@ button.rounded-2xl {
 
   .cleaner-motion-root *,
   .cleaner-motion-root *::before,
-  .cleaner-motion-root *::after {
+  .cleaner-motion-root *::after,
+  .clis-motion-root *,
+  .clis-motion-root *::before,
+  .clis-motion-root *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

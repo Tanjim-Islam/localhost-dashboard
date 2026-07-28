@@ -49,7 +49,23 @@ export type PlatformFeatures = {
   automatorScripts: boolean;
   environmentKeys: boolean;
   cleaner: boolean;
+  clis: boolean;
 };
+
+export type CliInventorySnapshot =
+  import("../main/clis/types").CliInventorySnapshot;
+export type CliScanSession = import("../main/clis/types").CliScanSession;
+export type CliScanProgress = import("../main/clis/types").CliScanProgress;
+export type CliInstallationRef =
+  import("../main/clis/types").CliInstallationRef;
+export type CliUninstallPreview =
+  import("../main/clis/types").CliUninstallPreview;
+export type CliUninstallRequest =
+  import("../main/clis/types").CliUninstallRequest;
+export type CliUninstallProgress =
+  import("../main/clis/types").CliUninstallProgress;
+export type CliUninstallResult =
+  import("../main/clis/types").CliUninstallResult;
 
 export type CleanerScanMode = import("../main/cleaner/types").CleanerScanMode;
 export type CleanerSafety = import("../main/cleaner/types").CleanerSafety;
@@ -269,6 +285,24 @@ export interface Api {
     cb: (payload: CleanerHistorySnapshot) => void,
   ): () => void;
 
+  // Windows and macOS CLIs
+  getCliInventory(): Promise<CliInventorySnapshot | null>;
+  startCliScan(): Promise<CliScanSession>;
+  cancelCliScan(scanSessionId: string): Promise<CliScanSession>;
+  getCliScanState(): Promise<CliScanSession>;
+  verifyCliInstallation(input: CliInstallationRef): Promise<CliInventorySnapshot>;
+  revealCliInstallation(input: CliInstallationRef): Promise<void>;
+  getCliUninstallPreview(input: CliInstallationRef): Promise<CliUninstallPreview>;
+  uninstallCliInstallation(input: CliUninstallRequest): Promise<CliUninstallResult>;
+  onCliScanProgress(cb: (payload: CliScanProgress) => void): () => void;
+  onCliScanComplete(cb: (payload: CliInventorySnapshot) => void): () => void;
+  onCliScanError(
+    cb: (payload: { scanSessionId?: string; status: "failed" | "cancelled"; message: string }) => void,
+  ): () => void;
+  onCliInventoryChanged(cb: (payload: CliInventorySnapshot) => void): () => void;
+  onCliUninstallProgress(cb: (payload: CliUninstallProgress) => void): () => void;
+  onCliUninstallComplete(cb: (payload: CliUninstallResult) => void): () => void;
+
   // meta / ui
   onToggleSettings(cb: () => void): () => void;
   getMeta(): Promise<{
@@ -277,6 +311,7 @@ export interface Api {
     arch: string;
     features: PlatformFeatures;
     cleanerTestMode: boolean;
+    clisTestMode: boolean;
   }>;
 
   // auto-updater
