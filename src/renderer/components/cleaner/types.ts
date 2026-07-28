@@ -14,12 +14,12 @@ export type CleanerCleanupResult = Awaited<
 >;
 
 export type CleanerCleanupReceipt = Awaited<
-  ReturnType<Window["api"]["getCleanerHistory"]>
->["cleanupReceipts"][number];
+  ReturnType<Window["api"]["cleanCleanerFindings"]>
+>;
 
-export type CleanerLegacyCleanupEvent = Awaited<
+export type CleanerCleanupHistoryEntry = Awaited<
   ReturnType<Window["api"]["getCleanerHistory"]>
->["cleanupEvents"][number];
+>["cleanupHistory"][number];
 
 export type CleanerExclusion = Awaited<
   ReturnType<Window["api"]["getCleanerExclusions"]>

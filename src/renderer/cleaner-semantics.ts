@@ -138,7 +138,8 @@ export const CLEANER_TONE_STYLES: Record<
     badge:
       "border-cleaner-review-border bg-cleaner-review-surface text-cleaner-review-text",
     selectedRing: "ring-cleaner-review-border",
-    checkbox: "accent-cleaner-review",
+    checkbox:
+      "border-cleaner-review bg-gray-100 text-cleaner-review-contrast peer-checked:bg-cleaner-review",
     button:
       "bg-cleaner-review text-cleaner-review-contrast hover:bg-cleaner-review/90",
   },

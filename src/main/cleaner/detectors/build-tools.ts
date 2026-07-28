@@ -45,6 +45,7 @@ export class BuildToolCacheDetector implements CleanerDetector {
         path.join(home, "go", "pkg", "mod"),
         ["go", "gopls"],
         "Downloaded modules will be fetched again.",
+        ["go-build"],
       ),
       conditional(
         "dev.cargo-registry",
@@ -53,6 +54,7 @@ export class BuildToolCacheDetector implements CleanerDetector {
         path.join(home, ".cargo", "registry"),
         ["cargo", "rustc"],
         "Crates and registry metadata will be downloaded again.",
+        ["cargo-operation"],
       ),
       candidate({
         detectorId: "dev.rust-toolchains",
@@ -78,6 +80,7 @@ export class BuildToolCacheDetector implements CleanerDetector {
         path.join(home, ".gradle", "caches"),
         ["java", "gradle", "gradlew"],
         "Dependencies will download again and builds will recompute outputs.",
+        ["gradle-operation"],
       ),
       conditional(
         "dev.gradle-wrapper",
@@ -86,6 +89,7 @@ export class BuildToolCacheDetector implements CleanerDetector {
         path.join(home, ".gradle", "wrapper", "dists"),
         ["java", "gradle", "gradlew"],
         "Gradle distributions will download again.",
+        ["gradle-operation"],
       ),
       conditional(
         "dev.maven-cache",
@@ -94,6 +98,7 @@ export class BuildToolCacheDetector implements CleanerDetector {
         path.join(home, ".m2", "repository"),
         ["java", "mvn"],
         "Dependencies will download again. Locally installed unpublished artifacts may not be recoverable.",
+        ["maven-operation"],
       ),
       conditional(
         "dev.nuget-cache",
@@ -102,6 +107,7 @@ export class BuildToolCacheDetector implements CleanerDetector {
         path.join(home, ".nuget", "packages"),
         ["dotnet", "nuget", "msbuild"],
         "NuGet packages will be restored again.",
+        ["nuget-operation"],
       ),
       candidate({
         detectorId: "sdk.android",
@@ -131,6 +137,7 @@ function conditional(
   targetPath: string,
   relatedProcessNames: string[],
   consequence: string,
+  commandCategories: import("../types").CleanerProcessCommandCategory[],
 ) {
   return candidate({
     detectorId,
@@ -145,6 +152,13 @@ function conditional(
     relatedProcessNames,
     dataKind: "shared-dependency-store",
     ownershipStatus: "shared",
+    processMatchRules: [
+      {
+        commandCategories,
+        allowReferencedTarget: true,
+        weakNameWarnings: relatedProcessNames,
+      },
+    ],
     canDelete: true,
   });
 }

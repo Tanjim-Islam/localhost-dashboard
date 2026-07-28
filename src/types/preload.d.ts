@@ -65,6 +65,10 @@ export type StartCleanerScanInput =
   import("../main/cleaner/types").StartCleanerScanInput;
 export type CleanCleanerFindingsInput =
   import("../main/cleaner/types").CleanCleanerFindingsInput;
+export type PrepareCleanerCleanupInput =
+  import("../main/cleaner/types").PrepareCleanerCleanupInput;
+export type CleanerCleanupUsageCheck =
+  import("../main/cleaner/types").CleanerCleanupUsageCheck;
 export type CleanerCleanupProgress =
   import("../main/cleaner/types").CleanerCleanupProgress;
 export type CleanerCleanupResult =
@@ -237,11 +241,15 @@ export interface Api {
   cleanCleanerFindings(
     input: CleanCleanerFindingsInput,
   ): Promise<CleanerCleanupResult>;
+  prepareCleanerCleanup(
+    input: PrepareCleanerCleanupInput,
+  ): Promise<CleanerCleanupUsageCheck>;
   getCleanerExclusions(): Promise<CleanerExclusion[]>;
   updateCleanerExclusions(
     input: UpdateCleanerExclusionsInput,
   ): Promise<CleanerExclusion[]>;
   getCleanerHistory(): Promise<CleanerHistorySnapshot>;
+  dismissCleanerCleanupReceipt(cleanupRequestId: string): Promise<boolean>;
   getCleanerPreferences(): Promise<CleanerPreferences>;
   updateCleanerPreferences(
     input: CleanerPreferences,

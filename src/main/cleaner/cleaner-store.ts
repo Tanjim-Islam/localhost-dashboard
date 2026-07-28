@@ -3,6 +3,7 @@ import { app } from "electron";
 import type { CleanerPersistence, CleanerStoreSchema } from "./types";
 import { MAX_CLEANER_EVENTS, pruneCleanerHistory } from "./history";
 import {
+  MAX_CLEANER_HISTORY_ENTRIES,
   MAX_CLEANER_RECEIPTS,
   recoverInterruptedCleanupReceipts,
 } from "./cleanup-receipts";
@@ -18,6 +19,7 @@ export const DEFAULT_CLEANER_STORE: CleanerStoreSchema = {
   itemHistory: {},
   cleanupEvents: [],
   cleanupReceipts: [],
+  cleanupHistory: [],
   applicationObservations: {},
   migrationNotices: [],
   preferences: {
@@ -67,6 +69,37 @@ const schema: Schema<CleanerStoreSchema> = {
     maxItems: MAX_CLEANER_RECEIPTS,
     default: [],
     items: { type: "object", additionalProperties: true },
+  },
+  cleanupHistory: {
+    type: "array",
+    maxItems: MAX_CLEANER_HISTORY_ENTRIES,
+    default: [],
+    items: {
+      type: "object",
+      required: [
+        "id",
+        "completedAt",
+        "mode",
+        "freeSpaceBeforeBytes",
+        "freeSpaceAfterBytes",
+        "recoveredBytes",
+        "deletedTargetNames",
+      ],
+      additionalProperties: false,
+      properties: {
+        id: { type: "string", maxLength: 64 },
+        completedAt: { type: "number" },
+        mode: { type: "string", enum: ["standard", "deep"] },
+        freeSpaceBeforeBytes: { type: ["number", "null"] },
+        freeSpaceAfterBytes: { type: ["number", "null"] },
+        recoveredBytes: { type: ["number", "null"] },
+        deletedTargetNames: {
+          type: "array",
+          maxItems: 200,
+          items: { type: "string", maxLength: 256 },
+        },
+      },
+    },
   },
   applicationObservations: {
     type: "object",
@@ -124,6 +157,7 @@ export class ElectronCleanerPersistence implements CleanerPersistence {
       itemHistory: structuredClone(this.store.get("itemHistory")),
       cleanupEvents: structuredClone(this.store.get("cleanupEvents")),
       cleanupReceipts: structuredClone(this.store.get("cleanupReceipts")),
+      cleanupHistory: structuredClone(this.store.get("cleanupHistory")),
       applicationObservations: structuredClone(
         this.store.get("applicationObservations"),
       ),
@@ -132,6 +166,10 @@ export class ElectronCleanerPersistence implements CleanerPersistence {
     });
     next.cleanupEvents = next.cleanupEvents.slice(0, MAX_CLEANER_EVENTS);
     next.cleanupReceipts = next.cleanupReceipts.slice(0, MAX_CLEANER_RECEIPTS);
+    next.cleanupHistory = next.cleanupHistory.slice(
+      0,
+      MAX_CLEANER_HISTORY_ENTRIES,
+    );
     pruneCleanerHistory(next);
     pruneCleanerApplicationObservations(next, Date.now());
     return next;
@@ -143,6 +181,10 @@ export class ElectronCleanerPersistence implements CleanerPersistence {
     bounded.cleanupReceipts = bounded.cleanupReceipts.slice(
       0,
       MAX_CLEANER_RECEIPTS,
+    );
+    bounded.cleanupHistory = bounded.cleanupHistory.slice(
+      0,
+      MAX_CLEANER_HISTORY_ENTRIES,
     );
     pruneCleanerHistory(bounded);
     pruneCleanerApplicationObservations(bounded, Date.now());

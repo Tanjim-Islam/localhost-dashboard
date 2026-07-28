@@ -66,9 +66,11 @@ import {
 import AutoLaunch from "auto-launch";
 import { createCleanerController, type CleanerController } from "./cleaner";
 import {
+  validateCleanerCleanupRequestId,
   validateCleanerPreferences,
   validateCleanerSessionId,
   validateCleanCleanerFindingsInput,
+  validatePrepareCleanerCleanupInput,
   validateStartCleanerScanInput,
   validateUpdateCleanerExclusionsInput,
 } from "./cleaner/ipc-validation";
@@ -991,6 +993,11 @@ ipcMain.handle("cleaner:cleanup", (_event, input: unknown) =>
     validateCleanCleanerFindingsInput(input),
   ),
 );
+ipcMain.handle("cleaner:cleanup-prepare", (_event, input: unknown) =>
+  requireCleanerController().prepareCleanup(
+    validatePrepareCleanerCleanupInput(input),
+  ),
+);
 ipcMain.handle("cleaner:exclusions-get", () =>
   requireCleanerController().getExclusions(),
 );
@@ -1001,6 +1008,11 @@ ipcMain.handle("cleaner:exclusions-update", (_event, input: unknown) =>
 );
 ipcMain.handle("cleaner:history-get", () =>
   requireCleanerController().getHistory(),
+);
+ipcMain.handle("cleaner:receipt-dismiss", (_event, cleanupRequestId: unknown) =>
+  requireCleanerController().dismissCleanupReceipt(
+    validateCleanerCleanupRequestId(cleanupRequestId),
+  ),
 );
 ipcMain.handle("cleaner:preferences-get", () =>
   requireCleanerController().getPreferences(),

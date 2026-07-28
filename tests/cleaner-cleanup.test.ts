@@ -148,6 +148,158 @@ test("protected, manual-review, and excluded findings are rejected", async () =>
   }
 });
 
+test("manual-review cleanup requires exact approval and keeps main-process safety checks", async () => {
+  const root = await createCleanerFixture();
+  try {
+    const harness = await scanFixture(root, "standard");
+    const manual = harness.result.findings.find(
+      (finding) => finding.detectorId === "windows.user-temp",
+    )!;
+    assert.equal(manual.safety, "manual-review");
+    assert.equal(manual.manualApprovalAllowed, true);
+    assert.equal(manual.measurementCompleteness, "complete");
+    assert.equal(typeof manual.estimatedReclaimableBytes, "number");
+
+    await assert.rejects(
+      () =>
+        harness.cleanupExecutor.clean(
+          harness.session,
+          {
+            scanSessionId: harness.session.id,
+            findingIds: [manual.id],
+            confirmation: "manual-review",
+          },
+          harness.environment,
+          () => undefined,
+        ),
+      /explicitly approved/i,
+    );
+    assert.equal(await fs.stat(manual.path).then(() => true), true);
+
+    const result = await harness.cleanupExecutor.clean(
+      harness.session,
+      {
+        scanSessionId: harness.session.id,
+        findingIds: [manual.id],
+        confirmation: "manual-review",
+        approvedManualReviewFindingIds: [manual.id],
+      },
+      harness.environment,
+      () => undefined,
+    );
+    assert.equal(result.requestedConfirmation, "manual-review");
+    assert.equal(result.items[0].preCleanupSafety, "manual-review");
+    assert.equal(result.items[0].status, "deleted");
+    await assert.rejects(() => fs.access(manual.path));
+  } finally {
+    await removeCleanerFixture(root);
+  }
+});
+
+test("manual-review approval does not bypass protected-marker revalidation", async () => {
+  const root = await createCleanerFixture();
+  try {
+    const harness = await scanFixture(root, "standard");
+    const manual = harness.result.findings.find(
+      (finding) => finding.detectorId === "windows.user-temp",
+    )!;
+    assert.equal(manual.manualApprovalAllowed, true);
+    const protectedState = path.join(manual.path, "History");
+    await fs.mkdir(protectedState, { recursive: true });
+    await fs.writeFile(path.join(protectedState, "state.json"), "{}\n");
+    const changedStat = await harness.filesystem.lstat(manual.path);
+    manual.fingerprint.modifiedMs = changedStat.modifiedMs;
+
+    const result = await harness.cleanupExecutor.clean(
+      harness.session,
+      {
+        scanSessionId: harness.session.id,
+        findingIds: [manual.id],
+        confirmation: "manual-review",
+        approvedManualReviewFindingIds: [manual.id],
+      },
+      harness.environment,
+      () => undefined,
+    );
+    assert.equal(result.items[0].status, "skipped");
+    assert.deepEqual(result.items[0].failureCategories, ["state-changed"]);
+    assert.match(result.items[0].message, /protected or mixed-state/i);
+    assert.equal(
+      await fs
+        .readFile(path.join(protectedState, "state.json"), "utf8")
+        .then((value) => value),
+      "{}\n",
+    );
+  } finally {
+    await removeCleanerFixture(root);
+  }
+});
+
+test("manual-review cleanup remains available when physical recovery size is unknown", async () => {
+  const root = await createCleanerFixture();
+  try {
+    const harness = await scanFixture(root, "standard");
+    const manual = harness.result.findings.find(
+      (finding) => finding.detectorId === "dev.gradle-cache",
+    )!;
+    assert.equal(manual.safety, "manual-review");
+    assert.equal(manual.estimatedReclaimableBytes, null);
+    assert.equal(manual.logicalTraversalComplete, true);
+    assert.equal(manual.manualApprovalAllowed, true);
+
+    const result = await harness.cleanupExecutor.clean(
+      harness.session,
+      {
+        scanSessionId: harness.session.id,
+        findingIds: [manual.id],
+        confirmation: "manual-review",
+        approvedManualReviewFindingIds: [manual.id],
+      },
+      harness.environment,
+      () => undefined,
+    );
+
+    assert.equal(result.items[0].status, "deleted");
+    await assert.rejects(() => fs.access(manual.path));
+  } finally {
+    await removeCleanerFixture(root);
+  }
+});
+
+test("Gemini Antigravity extension storage requires approval and keeps protected editor stores blocked", async () => {
+  const root = await createCleanerFixture();
+  try {
+    const harness = await scanFixture(root, "deep");
+    const antigravity = harness.result.findings.find(
+      (finding) => finding.detectorId === "editor.antigravity.extensions",
+    )!;
+    const vscode = harness.result.findings.find(
+      (finding) => finding.detectorId === "editor.vscode.extensions",
+    )!;
+    assert.equal(antigravity.safety, "manual-review");
+    assert.equal(antigravity.manualApprovalAllowed, true);
+    assert.equal(vscode.safety, "protected");
+    assert.equal(vscode.manualApprovalAllowed, false);
+
+    const result = await harness.cleanupExecutor.clean(
+      harness.session,
+      {
+        scanSessionId: harness.session.id,
+        findingIds: [antigravity.id],
+        confirmation: "manual-review",
+        approvedManualReviewFindingIds: [antigravity.id],
+      },
+      harness.environment,
+      () => undefined,
+    );
+    assert.equal(result.items[0].status, "deleted");
+    await assert.rejects(() => fs.access(antigravity.path));
+    assert.equal(await fs.stat(vscode.path).then(() => true), true);
+  } finally {
+    await removeCleanerFixture(root);
+  }
+});
+
 test("Jupyter runtime as the first requested finding fails as protected, never from malformed drive-root configuration", async () => {
   const root = await createCleanerFixture();
   try {
@@ -207,6 +359,60 @@ test("safe-after-close is skipped while its related process is running", async (
   }
 });
 
+test("an explicit in-use confirmation permits best-effort cleanup after a fresh process check", async () => {
+  const root = await createCleanerFixture();
+  try {
+    const npmPath = path.join(
+      root,
+      "User",
+      "AppData",
+      "Local",
+      "npm-cache",
+      "_cacache",
+    );
+    await updateFixtureManifest(root, (manifest) => {
+      manifest.evidence.processes.push({
+        name: "npm.cmd",
+        pid: 4900,
+        executablePath: path.join(root, "Tools", "npm.cmd"),
+        createdAt: Date.now(),
+        commandCategory: "npm-cache-operation",
+        referencedPaths: [normalizeWindowsPath(npmPath)],
+      });
+    });
+    const harness = await scanFixture(root, "standard");
+    const npm = harness.result.findings.find(
+      (finding) => finding.detectorId === "dev.npm-cache",
+    )!;
+    const usage = await harness.cleanupExecutor.inspectUsage(
+      harness.session,
+      {
+        scanSessionId: harness.session.id,
+        findingIds: [npm.id],
+      },
+      harness.environment,
+    );
+    assert.equal(usage.findings[0].findingId, npm.id);
+    assert.equal(usage.findings[0].processes[0].name, "npm.cmd");
+
+    const result = await harness.cleanupExecutor.clean(
+      harness.session,
+      {
+        scanSessionId: harness.session.id,
+        findingIds: [npm.id],
+        confirmation: "safe",
+        approvedInUseFindingIds: [npm.id],
+      },
+      harness.environment,
+      () => undefined,
+    );
+    assert.equal(result.items[0].status, "deleted");
+    await assert.rejects(() => fs.access(npm.path));
+  } finally {
+    await removeCleanerFixture(root);
+  }
+});
+
 test("cleanup revalidation skips a target whose root identity changed", async () => {
   const root = await createCleanerFixture();
   try {
@@ -250,6 +456,7 @@ test("cleanup reports a partial result when a fixture file is locked", async () 
       "_cacache",
     );
     const lockedPath = path.join(npmPath, "fixture.bin");
+    const lockedSize = (await fs.stat(lockedPath)).size;
     await fs.writeFile(path.join(npmPath, "removable.bin"), "remove me\n");
     await updateFixtureManifest(root, (manifest) => {
       delete manifest.sizeOverrides[normalizeWindowsPath(npmPath)];
@@ -268,7 +475,11 @@ test("cleanup reports a partial result when a fixture file is locked", async () 
       getSizeOverride: (target) => base.getSizeOverride(target),
       unlink: (target) =>
         normalizeWindowsPath(target) === normalizeWindowsPath(lockedPath)
-          ? Promise.reject(new Error("Simulated fixture lock"))
+          ? Promise.reject(
+              Object.assign(new Error("Simulated fixture lock"), {
+                code: "EBUSY",
+              }),
+            )
           : base.unlink(target),
       removeReparsePoint: (target) => base.removeReparsePoint(target),
       removeDirectory: (target) => base.removeDirectory(target),
@@ -297,7 +508,9 @@ test("cleanup reports a partial result when a fixture file is locked", async () 
     );
 
     assert.equal(result.items[0].status, "partial");
-    assert.equal(result.items[0].failedEntryCount > 0, true);
+    assert.equal(result.items[0].failedEntryCount, 0);
+    assert.equal(result.items[0].lockedBytesSkipped, lockedSize);
+    assert.equal(result.items[0].skippedEntryCount > 0, true);
     assert.equal(result.items[0].remainingBytes > 0, true);
     assert.equal(
       await fs.readFile(lockedPath, "utf8"),

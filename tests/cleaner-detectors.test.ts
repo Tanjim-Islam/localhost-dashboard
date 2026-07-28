@@ -30,6 +30,7 @@ test("Cleaner standard detectors classify known data conservatively", async () =
       null,
     );
     assert.equal(byDetector.get("dev.uv-cache")?.canDelete, false);
+    assert.equal(byDetector.get("dev.uv-cache")?.manualApprovalAllowed, false);
     assert.match(
       byDetector.get("dev.uv-cache")?.reason ?? "",
       /Run Deep Audit for complete accounting/i,
@@ -66,6 +67,15 @@ test("Cleaner standard detectors classify known data conservatively", async () =
     assert.equal(byDetector.get("models.huggingface")?.safety, "protected");
     assert.equal(byDetector.get("dev.go-build-cache")?.safety, "safe-now");
     assert.equal(byDetector.get("dev.go-module-cache")?.safety, "conditional");
+    assert.equal(byDetector.get("dev.gradle-cache")?.safety, "manual-review");
+    assert.equal(
+      byDetector.get("dev.gradle-cache")?.estimatedReclaimableBytes,
+      null,
+    );
+    assert.equal(
+      byDetector.get("dev.gradle-cache")?.manualApprovalAllowed,
+      true,
+    );
     assert.equal(byDetector.get("dev.rust-toolchains")?.safety, "protected");
     assert.equal(byDetector.get("sdk.android")?.safety, "protected");
     assert.equal(byDetector.get("browser.brave.profile")?.safety, "protected");
@@ -86,6 +96,14 @@ test("Cleaner standard detectors classify known data conservatively", async () =
     );
     assert.equal(byDetector.get("database.postgresql")?.canDelete, false);
     assert.equal(byDetector.get("windows.user-temp")?.safety, "manual-review");
+    assert.equal(
+      byDetector.get("windows.user-temp")?.manualApprovalAllowed,
+      true,
+    );
+    assert.equal(
+      byDetector.get("browser.brave.profile")?.manualApprovalAllowed,
+      false,
+    );
     assert.equal(byDetector.get("windows.winsxs")?.canDelete, false);
     assert.equal(byDetector.get("windows.installer")?.canDelete, false);
     assert.ok(result.summary.estimatedRecoverableBytes > 0);
@@ -131,6 +149,15 @@ test("Cleaner deep audit finds bounded project artifacts and editor leftovers", 
       /recoverable state/i,
     );
     assert.equal(find("manual.profile-cache")?.safety, "manual-review");
+    assert.equal(find("manual.profile-cache")?.manualApprovalAllowed, true);
+    assert.equal(
+      find("editor.antigravity.extensions")?.safety,
+      "manual-review",
+    );
+    assert.equal(
+      find("editor.antigravity.extensions")?.manualApprovalAllowed,
+      true,
+    );
     const uv = find("dev.uv-cache");
     assert.equal(uv?.measurementCompleteness, "complete");
     assert.equal(uv?.logicalTraversalComplete, true);

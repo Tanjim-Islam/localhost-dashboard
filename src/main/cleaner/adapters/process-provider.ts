@@ -103,6 +103,31 @@ export function categorizeCleanerProcessCommand(
     return "node-gyp-operation";
   if (basename === "go.exe" || basename === "go") return "go-build";
   if (
+    basename === "cargo.exe" ||
+    basename === "cargo" ||
+    basename === "rustc.exe" ||
+    basename === "rustc"
+  ) {
+    return "cargo-operation";
+  }
+  if (
+    /^(gradle|gradlew)(\.exe|\.cmd|\.bat)?$/.test(basename) ||
+    ((basename === "java.exe" || basename === "java") &&
+      /\b(?:org\.gradle|gradle-launcher|gradlew?)\b/.test(normalized))
+  ) {
+    return "gradle-operation";
+  }
+  if (
+    /^(mvn|mvnw)(\.exe|\.cmd|\.bat)?$/.test(basename) ||
+    ((basename === "java.exe" || basename === "java") &&
+      /\b(?:maven|plexus|mvnw?)\b/.test(normalized))
+  ) {
+    return "maven-operation";
+  }
+  if (/^(dotnet|nuget|msbuild)(\.exe)?$/.test(basename)) {
+    return "nuget-operation";
+  }
+  if (
     /\b_npx\b/.test(normalized) ||
     /(?:^|\s)npx(?:\.cmd|\.exe)?(?:\s|$)/.test(normalized)
   ) {

@@ -5,6 +5,7 @@ import {
   Check,
   Eraser,
   FolderSearch,
+  History,
   Info,
   RefreshCw,
   ScanSearch,
@@ -16,6 +17,7 @@ import {
 import {
   calculateCleanerSummaryMetrics,
   calculateSelectedRecoverableBytes,
+  canSelectCleanerFinding,
   conditionalConfirmationRequired,
   filterCleanerFindings,
   getCleanerSelectionTone,
@@ -35,7 +37,9 @@ import {
 } from "./cleaner/CleanerConfirmationDialog";
 import { CleanerExclusionsDrawer } from "./cleaner/CleanerExclusionsDrawer";
 import { CleanerFindingCard } from "./cleaner/CleanerFindingCard";
+import { CleanerHistoryDrawer } from "./cleaner/CleanerHistoryDrawer";
 import { CleanerInfoDialog } from "./cleaner/CleanerInfoDialog";
+import { CleanerManualReviewDialog } from "./cleaner/CleanerManualReviewDialog";
 import {
   CleanerSelect,
   type CleanerSelectOption,
@@ -43,9 +47,9 @@ import {
 import { CleanerSummary } from "./cleaner/CleanerSummary";
 import type {
   CleanerCleanupReceipt,
+  CleanerCleanupHistoryEntry,
   CleanerExclusion,
   CleanerFinding,
-  CleanerLegacyCleanupEvent,
   CleanerPreferences,
   CleanerSafetyFilter,
   CleanerScanResult,
@@ -62,7 +66,12 @@ type CleanerTabProps = {
 
 type ConfirmationSelection = {
   findingIds: string[];
-  conditional: boolean;
+  level: "safe" | "conditional" | "manual-review";
+  approvedManualReviewFindingIds: string[];
+  approvedInUseFindingIds: string[];
+  inUseFindings: Awaited<
+    ReturnType<Window["api"]["prepareCleanerCleanup"]>
+  >["findings"];
 } | null;
 
 const CLEANER_MIGRATION_ACK_KEY =
@@ -124,12 +133,21 @@ export default function CleanerTab({
     showExcluded: false,
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [approvedManualReviewIds, setApprovedManualReviewIds] = useState<
+    Set<string>
+  >(new Set());
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [safetyFilter, setSafetyFilter] = useState<CleanerSafetyFilter>("all");
   const [sort, setSort] = useState<CleanerSort>("recommended");
   const [exclusions, setExclusions] = useState<CleanerExclusion[]>([]);
   const [exclusionsOpen, setExclusionsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [cleanupHistory, setCleanupHistory] = useState<
+    CleanerCleanupHistoryEntry[]
+  >([]);
   const [confirmation, setConfirmation] = useState<ConfirmationSelection>(null);
+  const [manualReviewFinding, setManualReviewFinding] =
+    useState<CleanerFinding | null>(null);
   const [confirmationText, setConfirmationText] = useState("");
   const [cleanupProgress, setCleanupProgress] = useState<{
     completedItems: number;
@@ -138,17 +156,12 @@ export default function CleanerTab({
   } | null>(null);
   const [cleanupResult, setCleanupResult] =
     useState<CleanerCleanupReceipt | null>(null);
-  const [cleanupReceipts, setCleanupReceipts] = useState<
-    CleanerCleanupReceipt[]
-  >([]);
-  const [legacyCleanupEvents, setLegacyCleanupEvents] = useState<
-    CleanerLegacyCleanupEvent[]
-  >([]);
   const [message, setMessage] = useState<string | null>(null);
   const [migrationNotices, setMigrationNotices] = useState<string[]>([]);
   const [migrationNoticeAcknowledged, setMigrationNoticeAcknowledged] =
     useState(true);
   const exclusionsButtonRef = useRef<HTMLButtonElement>(null);
+  const historyButtonRef = useRef<HTMLButtonElement>(null);
 
   const syncMigrationNotices = useCallback((notices: string[]) => {
     setMigrationNotices(notices);
@@ -190,9 +203,7 @@ export default function CleanerTab({
       setExclusions(nextExclusions);
       setPreferences(nextPreferences);
       syncMigrationNotices(history.migrationNotices);
-      setCleanupReceipts(history.cleanupReceipts);
-      setLegacyCleanupEvents(history.cleanupEvents);
-      setCleanupResult(history.cleanupReceipts[0] ?? null);
+      setCleanupHistory(history.cleanupHistory);
       if (nextState.status === "complete") setResult(nextState.result);
     });
 
@@ -203,6 +214,7 @@ export default function CleanerTab({
       setResult(nextResult);
       setScanState({ status: "complete", testMode, result: nextResult });
       setSelectedIds(new Set());
+      setApprovedManualReviewIds(new Set());
       setMessage(null);
     });
     const offError = window.api.onCleanerScanError((error) => {
@@ -222,6 +234,7 @@ export default function CleanerTab({
         setCleanupResult(nextResult);
         setCleanupProgress(null);
         setSelectedIds(new Set());
+        setApprovedManualReviewIds(new Set());
         void window.api.getCleanerScanState().then((nextState) => {
           setScanState(nextState);
           setResult(nextState.status === "complete" ? nextState.result : null);
@@ -230,9 +243,7 @@ export default function CleanerTab({
     );
     const offHistoryUpdate = window.api.onCleanerHistoryUpdate((history) => {
       syncMigrationNotices(history.migrationNotices);
-      setCleanupReceipts(history.cleanupReceipts);
-      setLegacyCleanupEvents(history.cleanupEvents);
-      setCleanupResult(history.cleanupReceipts[0] ?? null);
+      setCleanupHistory(history.cleanupHistory);
     });
     return () => {
       offProgress();
@@ -244,11 +255,54 @@ export default function CleanerTab({
     };
   }, [active, syncMigrationNotices, testMode]);
 
+  useEffect(() => {
+    if (active) return;
+    setCleanupResult(null);
+    setHistoryOpen(false);
+    setExclusionsOpen(false);
+  }, [active]);
+
+  const dismissCleanupResult = useCallback(async () => {
+    if (!cleanupResult) return;
+    try {
+      await window.api.dismissCleanerCleanupReceipt(
+        cleanupResult.cleanupRequestId,
+      );
+      setCleanupResult((current) =>
+        current?.cleanupRequestId === cleanupResult.cleanupRequestId
+          ? null
+          : current,
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "The cleanup receipt could not be dismissed.",
+      );
+    }
+  }, [cleanupResult]);
+
   const startScan = useCallback(
     async (mode: "standard" | "deep") => {
       setMessage(null);
+      if (cleanupResult) {
+        try {
+          await window.api.dismissCleanerCleanupReceipt(
+            cleanupResult.cleanupRequestId,
+          );
+        } catch (error) {
+          setMessage(
+            error instanceof Error
+              ? error.message
+              : "The cleanup receipt could not be dismissed.",
+          );
+          return;
+        }
+        setCleanupResult(null);
+      }
       setResult(null);
       setSelectedIds(new Set());
+      setApprovedManualReviewIds(new Set());
       setSafetyFilter("all");
       const nextPreferences = { ...preferences, defaultScanMode: mode };
       setPreferences(nextPreferences);
@@ -263,7 +317,7 @@ export default function CleanerTab({
         );
       }
     },
-    [preferences],
+    [cleanupResult, preferences],
   );
 
   useEffect(() => {
@@ -317,19 +371,47 @@ export default function CleanerTab({
       sort,
     ],
   );
+  const effectiveSelectedIds = useMemo(
+    () =>
+      new Set(
+        (result?.findings ?? [])
+          .filter(
+            (finding) =>
+              selectedIds.has(finding.id) &&
+              canSelectCleanerFinding(
+                finding,
+                approvedManualReviewIds.has(finding.id),
+              ),
+          )
+          .map((finding) => finding.id),
+      ),
+    [approvedManualReviewIds, result, selectedIds],
+  );
   const selectedFindings = useMemo(
     () =>
-      (result?.findings ?? []).filter((finding) => selectedIds.has(finding.id)),
-    [result, selectedIds],
+      (result?.findings ?? []).filter((finding) =>
+        effectiveSelectedIds.has(finding.id),
+      ),
+    [effectiveSelectedIds, result],
   );
   const selectedBytes = useMemo(
     () =>
-      calculateSelectedRecoverableBytes(result?.findings ?? [], selectedIds),
-    [result, selectedIds],
+      calculateSelectedRecoverableBytes(
+        result?.findings ?? [],
+        effectiveSelectedIds,
+      ),
+    [effectiveSelectedIds, result],
+  );
+  const selectedSizeUnknown = useMemo(
+    () =>
+      selectedFindings.some(
+        (finding) => finding.estimatedReclaimableBytes === null,
+      ),
+    [selectedFindings],
   );
   const selectionTone = useMemo(
-    () => getCleanerSelectionTone(result?.findings ?? [], selectedIds),
-    [result, selectedIds],
+    () => getCleanerSelectionTone(result?.findings ?? [], effectiveSelectedIds),
+    [effectiveSelectedIds, result],
   );
   const summaryMetrics = useMemo(
     () => calculateCleanerSummaryMetrics(result?.findings ?? []),
@@ -341,7 +423,8 @@ export default function CleanerTab({
       findings: result.findings.filter((finding) =>
         confirmation.findingIds.includes(finding.id),
       ),
-      conditional: confirmation.conditional,
+      level: confirmation.level,
+      inUseFindings: confirmation.inUseFindings,
     };
   }, [confirmation, result]);
 
@@ -391,7 +474,37 @@ export default function CleanerTab({
     }
   };
 
-  const openSafeConfirmation = () => {
+  const prepareConfirmation = async (
+    findingIds: string[],
+    level: NonNullable<ConfirmationSelection>["level"],
+    approvedManualReviewFindingIds: string[],
+  ) => {
+    if (!result) return;
+    try {
+      const usage = await window.api.prepareCleanerCleanup({
+        scanSessionId: result.scanSessionId,
+        findingIds,
+      });
+      setConfirmation({
+        findingIds,
+        level,
+        approvedManualReviewFindingIds,
+        approvedInUseFindingIds: usage.findings.map(
+          (finding) => finding.findingId,
+        ),
+        inUseFindings: usage.findings,
+      });
+      setMessage(null);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Cleanup usage could not be checked.",
+      );
+    }
+  };
+
+  const openSafeConfirmation = async () => {
     if (!result) return;
     const findingIds = selectAllSafeNow(result.findings);
     setSelectedIds(new Set(findingIds));
@@ -399,18 +512,35 @@ export default function CleanerTab({
       setMessage("No currently safe, non-excluded findings are available.");
       return;
     }
-    setConfirmation({ findingIds, conditional: false });
+    await prepareConfirmation(findingIds, "safe", []);
   };
 
-  const openSelectedConfirmation = () => {
+  const openSelectedConfirmation = async () => {
     if (!result || selectedIds.size === 0) return;
-    setConfirmation({
-      findingIds: [...selectedIds],
-      conditional: conditionalConfirmationRequired(
-        result.findings,
-        selectedIds,
-      ),
-    });
+    const selectedFindings = result.findings.filter(
+      (finding) =>
+        selectedIds.has(finding.id) &&
+        canSelectCleanerFinding(
+          finding,
+          approvedManualReviewIds.has(finding.id),
+        ),
+    );
+    if (selectedFindings.length === 0) return;
+    const findingIds = selectedFindings.map((finding) => finding.id);
+    const approvedManualReviewFindingIds = selectedFindings
+      .filter((finding) => finding.safety === "manual-review")
+      .map((finding) => finding.id);
+    const level =
+      approvedManualReviewFindingIds.length > 0
+        ? "manual-review"
+        : conditionalConfirmationRequired(result.findings, new Set(findingIds))
+          ? "conditional"
+          : "safe";
+    await prepareConfirmation(
+      findingIds,
+      level,
+      approvedManualReviewFindingIds,
+    );
   };
 
   const closeConfirmation = useCallback(() => {
@@ -433,7 +563,18 @@ export default function CleanerTab({
       await window.api.cleanCleanerFindings({
         scanSessionId: result.scanSessionId,
         findingIds: cleanupSelection.findingIds,
-        confirmation: cleanupSelection.conditional ? "conditional" : "safe",
+        confirmation: cleanupSelection.level,
+        ...(cleanupSelection.approvedManualReviewFindingIds.length > 0
+          ? {
+              approvedManualReviewFindingIds:
+                cleanupSelection.approvedManualReviewFindingIds,
+            }
+          : {}),
+        ...(cleanupSelection.approvedInUseFindingIds.length > 0
+          ? {
+              approvedInUseFindingIds: cleanupSelection.approvedInUseFindingIds,
+            }
+          : {}),
       });
     } catch (error) {
       setCleanupProgress(null);
@@ -469,6 +610,11 @@ export default function CleanerTab({
       }),
     );
     setSelectedIds((current) => {
+      const next = new Set(current);
+      next.delete(finding.id);
+      return next;
+    });
+    setApprovedManualReviewIds((current) => {
       const next = new Set(current);
       next.delete(finding.id);
       return next;
@@ -528,6 +674,9 @@ export default function CleanerTab({
             void window.api.updateCleanerPreferences(next);
           }}
           onScan={() => startScan(preferences.defaultScanMode)}
+          historyCount={cleanupHistory.length}
+          historyButtonRef={historyButtonRef}
+          onOpenHistory={() => setHistoryOpen(true)}
         />
       )}
 
@@ -535,16 +684,8 @@ export default function CleanerTab({
         <CleanupResultPanel
           result={cleanupResult}
           onRescan={() => startScan(preferences.defaultScanMode)}
-          onDismiss={() => setCleanupResult(null)}
+          onDismiss={() => void dismissCleanupResult()}
         />
-      )}
-
-      {cleanupReceipts.length > 1 && (
-        <CleanupReceiptHistory receipts={cleanupReceipts.slice(1)} />
-      )}
-
-      {legacyCleanupEvents.length > 0 && (
-        <LegacyCleanupHistory events={legacyCleanupEvents} />
       )}
 
       {result && scanState.status !== "scanning" && (
@@ -613,9 +754,12 @@ export default function CleanerTab({
               mode={result.mode}
               selectedCount={selectedFindings.length}
               selectedBytes={selectedBytes}
+              selectedSizeUnknown={selectedSizeUnknown}
               selectionTone={selectionTone}
               safeRecoverableBytes={result.summary.estimatedRecoverableBytes}
               exclusionCount={exclusions.length}
+              historyCount={cleanupHistory.length}
+              historyButtonRef={historyButtonRef}
               onSelectSafe={() =>
                 setSelectedIds(new Set(selectAllSafeNow(result.findings)))
               }
@@ -625,6 +769,7 @@ export default function CleanerTab({
                 startScan(result.mode === "standard" ? "deep" : "standard")
               }
               onOpenExclusions={() => setExclusionsOpen(true)}
+              onOpenHistory={() => setHistoryOpen(true)}
               onCleanSafe={openSafeConfirmation}
               onCleanSelected={openSelectedConfirmation}
             />
@@ -646,7 +791,10 @@ export default function CleanerTab({
                     <CleanerFindingCard
                       key={finding.id}
                       finding={finding}
-                      selected={selectedIds.has(finding.id)}
+                      selected={effectiveSelectedIds.has(finding.id)}
+                      manualReviewApproved={approvedManualReviewIds.has(
+                        finding.id,
+                      )}
                       onSelect={(selected) =>
                         setSelectedIds((current) => {
                           const next = new Set(current);
@@ -655,6 +803,7 @@ export default function CleanerTab({
                           return next;
                         })
                       }
+                      onReview={() => setManualReviewFinding(finding)}
                       onExclude={(scope) => excludeFinding(finding, scope)}
                       onManageExclusions={() => setExclusionsOpen(true)}
                     />
@@ -682,12 +831,39 @@ export default function CleanerTab({
         </>
       )}
 
+      <CleanerHistoryDrawer
+        open={historyOpen}
+        entries={cleanupHistory}
+        returnFocusRef={historyButtonRef}
+        onClose={() => setHistoryOpen(false)}
+      />
+
       <CleanerConfirmationDialog
         state={confirmationState}
         confirmationText={confirmationText}
         onConfirmationTextChange={setConfirmationText}
         onCancel={closeConfirmation}
         onConfirm={runCleanup}
+      />
+
+      <CleanerManualReviewDialog
+        finding={manualReviewFinding}
+        onCancel={() => setManualReviewFinding(null)}
+        onApprove={() => {
+          if (!manualReviewFinding) return;
+          const findingId = manualReviewFinding.id;
+          setApprovedManualReviewIds((current) => {
+            const next = new Set(current);
+            next.add(findingId);
+            return next;
+          });
+          setSelectedIds((current) => {
+            const next = new Set(current);
+            next.add(findingId);
+            return next;
+          });
+          setManualReviewFinding(null);
+        }}
       />
 
       {cleanupProgress && <CleanupProgressOverlay progress={cleanupProgress} />}
@@ -787,10 +963,16 @@ function EmptyState({
   selectedMode,
   onSelectMode,
   onScan,
+  historyCount,
+  historyButtonRef,
+  onOpenHistory,
 }: {
   selectedMode: "standard" | "deep";
   onSelectMode(mode: "standard" | "deep"): void;
   onScan(): void;
+  historyCount: number;
+  historyButtonRef: React.RefObject<HTMLButtonElement | null>;
+  onOpenHistory(): void;
 }) {
   return (
     <div className="mx-auto max-w-5xl py-6">
@@ -830,16 +1012,27 @@ function EmptyState({
         <div className="relative mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-300 pt-5">
           <div className="flex items-center gap-2 text-xs text-gray-700">
             <Info className="h-4 w-4" aria-hidden="true" /> Scanning is
-            read-only. Scan findings stay in this session. Cleanup receipts
-            persist for audit.
+            read-only. Scan findings stay in this session. Cleanup history keeps
+            only compact summaries.
           </div>
-          <button
-            type="button"
-            onClick={onScan}
-            className="rounded-xl bg-cleaner-safe px-5 py-2.5 font-semibold text-cleaner-safe-contrast shadow-soft outline-none transition hover:bg-cleaner-safe/90 focus-visible:ring-2 focus-visible:ring-cleaner-safe-border focus-visible:ring-offset-2 focus-visible:ring-offset-night"
-          >
-            Full Scan
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              ref={historyButtonRef}
+              type="button"
+              onClick={onOpenHistory}
+              className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-gray-300 bg-gray-200 px-4 text-sm font-medium text-gray-800 outline-none hover:bg-gray-300 focus-visible:ring-2 focus-visible:ring-cleaner-review-border"
+            >
+              <History className="h-4 w-4" aria-hidden="true" />
+              History ({historyCount})
+            </button>
+            <button
+              type="button"
+              onClick={onScan}
+              className="rounded-xl bg-cleaner-safe px-5 py-2.5 font-semibold text-cleaner-safe-contrast shadow-soft outline-none transition hover:bg-cleaner-safe/90 focus-visible:ring-2 focus-visible:ring-cleaner-safe-border focus-visible:ring-offset-2 focus-visible:ring-offset-night"
+            >
+              Full Scan
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1004,6 +1197,10 @@ function CleanupResultPanel({
 }) {
   const counts = countReceiptStatuses(result);
   const tone = receiptTone(result.status);
+  const lockedBytesSkipped = result.findings.reduce(
+    (total, item) => total + item.lockedBytesSkipped,
+    0,
+  );
   return (
     <div className="mx-auto max-w-4xl py-6">
       <div
@@ -1044,6 +1241,11 @@ function CleanupResultPanel({
             </button>
           </div>
         </div>
+        {lockedBytesSkipped > 0 && (
+          <p className="mt-3 rounded-xl border border-cleaner-blocked-border bg-cleaner-blocked-surface p-3 text-sm font-medium text-cleaner-blocked-text">
+            Locked files skipped: {formatCleanerBytes(lockedBytesSkipped)}
+          </p>
+        )}
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Metric
             label="Logical bytes removed"
@@ -1191,6 +1393,10 @@ function CleanupResultPanel({
                       {item.reparseObjectsSuccessfullyRemoved}
                     </div>
                     <div>Skipped entries: {item.skippedEntryCount}</div>
+                    <div>
+                      Locked file size skipped:{" "}
+                      {formatCleanerBytes(item.lockedBytesSkipped)}
+                    </div>
                     <div>Failed entries: {item.failedEntryCount}</div>
                     <div>
                       Root after cleanup:{" "}
@@ -1225,121 +1431,6 @@ function CleanupResultPanel({
         </div>
       </div>
     </div>
-  );
-}
-
-function CleanupReceiptHistory({
-  receipts,
-}: {
-  receipts: CleanerCleanupReceipt[];
-}) {
-  return (
-    <section className="mx-auto mb-6 max-w-4xl rounded-2xl border border-gray-300 bg-gray-100/72 p-4">
-      <h2 className="font-semibold text-gray-900">Earlier cleanup receipts</h2>
-      <div className="mt-3 space-y-2">
-        {receipts.map((receipt) => {
-          const counts = countReceiptStatuses(receipt);
-          return (
-            <details
-              key={receipt.cleanupRequestId}
-              className="rounded-xl border border-gray-300 bg-gray-200/45 p-3 text-sm"
-            >
-              <summary className="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-cleaner-review-border">
-                {formatCleanerDate(receipt.createdAt)},{" "}
-                {humanizeCleanerValue(receipt.status)},{" "}
-                {receipt.selectedFindingIds.length} requested
-              </summary>
-              <div className="mt-2 space-y-1 text-xs leading-5 text-gray-700">
-                <div>
-                  {counts.deleted} deleted, {counts.partial} partial,{" "}
-                  {counts.skipped} skipped, {counts.failed} failed
-                </div>
-                <div>
-                  Logical removed:{" "}
-                  {formatCleanerBytes(receipt.aggregateLogicalBytesRemoved)}
-                </div>
-                <div>
-                  Observed drive change:{" "}
-                  {receipt.signedFreeSpaceDeltaBytes === undefined
-                    ? "Unavailable"
-                    : formatCleanerSignedBytes(
-                        receipt.signedFreeSpaceDeltaBytes,
-                      )}
-                </div>
-                <div>
-                  Verification:{" "}
-                  {receipt.postCleanupVerificationCompleted
-                    ? "Completed"
-                    : "Incomplete"}
-                </div>
-                <div>
-                  Free space before:{" "}
-                  {receipt.freeSpaceBefore
-                    ? `${formatCleanerBytes(receipt.freeSpaceBefore.freeBytes)} at ${formatCleanerDate(receipt.freeSpaceBefore.measuredAt)}`
-                    : "Unavailable"}
-                </div>
-                <div>
-                  Free space after:{" "}
-                  {receipt.freeSpaceAfter
-                    ? `${formatCleanerBytes(receipt.freeSpaceAfter.freeBytes)} at ${formatCleanerDate(receipt.freeSpaceAfter.measuredAt)}`
-                    : "Unavailable"}
-                </div>
-                {receipt.interruptionReason && (
-                  <div className="text-cleaner-danger-text">
-                    {receipt.interruptionReason}
-                  </div>
-                )}
-                <ul className="mt-2 list-disc pl-4">
-                  {receipt.findings.map((finding) => (
-                    <li key={finding.findingId}>
-                      {finding.displayName}:{" "}
-                      {humanizeCleanerValue(finding.attemptStatus)},{" "}
-                      {formatCleanerBytes(finding.logicalBytesRemoved)} logical
-                      removed,{" "}
-                      {finding.postCleanupLogicalBytes === null
-                        ? "remaining unknown"
-                        : `${formatCleanerBytes(finding.postCleanupLogicalBytes)} remaining`}
-                      , {finding.filesSuccessfullyUnlinked} files removed,{" "}
-                      {finding.skippedEntryCount} skipped,{" "}
-                      {finding.failedEntryCount} failed
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </details>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function LegacyCleanupHistory({
-  events,
-}: {
-  events: CleanerLegacyCleanupEvent[];
-}) {
-  return (
-    <details className="mx-auto mb-6 max-w-4xl rounded-2xl border border-cleaner-review-border bg-cleaner-review-surface/45 p-4 text-sm">
-      <summary className="cursor-pointer font-semibold text-cleaner-review-text outline-none focus-visible:ring-2 focus-visible:ring-cleaner-review-border">
-        Legacy cleanup history, {events.length} records
-      </summary>
-      <p className="mt-2 text-xs leading-5 text-gray-700">
-        These records predate cleanup receipts. They preserve aggregate logical
-        values, but they cannot prove individual file removal or observed drive
-        recovery.
-      </p>
-      <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-gray-700">
-        {events.map((event) => (
-          <li key={event.id}>
-            {formatCleanerDate(event.cleanedAt)}, {event.applicationName},{" "}
-            {humanizeCleanerValue(event.result)},{" "}
-            {formatCleanerBytes(event.logicalBytesDeleted)} logical removed,{" "}
-            {formatCleanerBytes(event.remainingBytes)} recorded remaining
-          </li>
-        ))}
-      </ul>
-    </details>
   );
 }
 

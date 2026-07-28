@@ -28,6 +28,7 @@ import {
   resolveCleanerLeftoverCacheStatus,
 } from "../src/main/cleaner/applications/ownership-resolver";
 import { findRelatedCleanerProcesses } from "../src/main/cleaner/process-checker";
+import { categorizeCleanerProcessCommand } from "../src/main/cleaner/adapters/process-provider";
 import {
   CLEANER_APPLICATION_OBSERVATION_MAX_AGE_MS,
   MAX_CLEANER_APPLICATION_OBSERVATIONS,
@@ -703,6 +704,41 @@ test("process association blocks strong cache consumers and keeps generic names 
       [],
     );
   }
+});
+
+test("developer build processes are categorized without exposing raw commands", () => {
+  assert.equal(
+    categorizeCleanerProcessCommand(
+      "java.exe",
+      "C:\\Java\\bin\\java.exe",
+      "java org.gradle.launcher.daemon.bootstrap.GradleDaemon",
+    ),
+    "gradle-operation",
+  );
+  assert.equal(
+    categorizeCleanerProcessCommand(
+      "cargo.exe",
+      "C:\\Rust\\cargo.exe",
+      "cargo build",
+    ),
+    "cargo-operation",
+  );
+  assert.equal(
+    categorizeCleanerProcessCommand(
+      "java.exe",
+      "C:\\Java\\bin\\java.exe",
+      "java org.codehaus.plexus.classworlds.launcher.Launcher",
+    ),
+    "maven-operation",
+  );
+  assert.equal(
+    categorizeCleanerProcessCommand(
+      "dotnet.exe",
+      "C:\\Program Files\\dotnet\\dotnet.exe",
+      "dotnet restore",
+    ),
+    "nuget-operation",
+  );
 });
 
 test("npx and Electron download evidence is specific, duplicate names remain distinct, and PID reuse does not inherit ownership", () => {

@@ -406,27 +406,31 @@ export class CleanerScanner {
           item.protectedMarkerScope === "root-children"
             ? measured.rootProtectedMarkers
             : measured.protectedMarkers;
-        const markerScan = item.canDelete
-          ? session.mode === "deep"
-            ? {
-                markers: measuredProtectedMarkers,
-                internalReparsePoints: measured.internalReparsePointCount,
-                inaccessibleEntries: measured.inaccessibleEntryCount,
-                complete: measured.logicalTraversalComplete,
-              }
-            : await scanCleanerProtectedMarkers(
-                filesystem,
-                item.path,
-                item.protectedMarkerScope === "root-children"
-                  ? { ...STANDARD_PROTECTED_MARKER_LIMITS, maxDepth: 1 }
-                  : STANDARD_PROTECTED_MARKER_LIMITS,
-              )
-          : {
-              markers: [],
-              internalReparsePoints: 0,
-              inaccessibleEntries: 0,
-              complete: true,
-            };
+        const markerScan =
+          item.canDelete ||
+          item.manualApprovalEligible === true ||
+          item.baseSafety === "manual-review" ||
+          item.dataKind === "unknown"
+            ? session.mode === "deep"
+              ? {
+                  markers: measuredProtectedMarkers,
+                  internalReparsePoints: measured.internalReparsePointCount,
+                  inaccessibleEntries: measured.inaccessibleEntryCount,
+                  complete: measured.logicalTraversalComplete,
+                }
+              : await scanCleanerProtectedMarkers(
+                  filesystem,
+                  item.path,
+                  item.protectedMarkerScope === "root-children"
+                    ? { ...STANDARD_PROTECTED_MARKER_LIMITS, maxDepth: 1 }
+                    : STANDARD_PROTECTED_MARKER_LIMITS,
+                )
+            : {
+                markers: [],
+                internalReparsePoints: 0,
+                inaccessibleEntries: 0,
+                complete: true,
+              };
         const ownership = resolveCleanerCandidateOwnership(item, applications);
         const ownerApplications = ownership.ownerApplicationIds
           .map((ownerId) =>
@@ -499,6 +503,13 @@ export class CleanerScanner {
         }
         if (safety === "protected" || safety === "manual-review")
           canDelete = false;
+        const manualApprovalAllowed = canManuallyApproveCleanerCandidate({
+          candidate: item,
+          safety,
+          rootIsReparsePoint: stat.isSymbolicLink || stat.isReparsePoint,
+          protectedMarkerCount: markerScan.markers.length,
+          markerInspectionComplete: markerScan.complete,
+        });
 
         const normalizedPath = normalizeWindowsPath(item.path);
         const id = createFindingId(item.detectorId, normalizedPath);
@@ -622,6 +633,7 @@ export class CleanerScanner {
           excluded: false,
           selected: false,
           canDelete,
+          manualApprovalAllowed,
           requiresExplicitConfirmation:
             item.requiresExplicitConfirmation || safety === "conditional",
           reparsePointStatus:
@@ -726,7 +738,7 @@ export class CleanerScanner {
   }
 }
 
-function applyOwnedDataPolicy(input: {
+export function applyOwnedDataPolicy(input: {
   candidate: CleanerDetectorCandidate;
   safety: CleanerSafety;
   canDelete: boolean;
@@ -734,20 +746,7 @@ function applyOwnedDataPolicy(input: {
   ownershipStatus: CleanerOwnershipStatus;
   leftoverCacheStatus: CleanerLeftoverCacheStatus;
 }): { safety: CleanerSafety; canDelete: boolean; reason?: string } {
-  const protectedKinds = new Set([
-    "settings",
-    "session-state",
-    "workspace-state",
-    "history",
-    "backup",
-    "database",
-    "local-storage",
-    "indexed-db",
-    "project-data",
-    "model-data",
-    "installed-runtime",
-  ]);
-  if (protectedKinds.has(input.candidate.dataKind)) {
+  if (PROTECTED_CLEANER_DATA_KINDS.has(input.candidate.dataKind)) {
     return {
       safety:
         input.candidate.baseSafety === "manual-review"
@@ -792,18 +791,36 @@ function applyOwnedDataPolicy(input: {
         input.application?.installState === "confirmed-uninstalled") &&
       input.application.currentAuditComplete &&
       input.application.unavailableEvidenceSources.length === 0;
-    return canBeConditional
+    if (canBeConditional) {
+      return {
+        safety: "conditional",
+        canDelete: input.canDelete,
+        reason:
+          "The current complete audit did not find the exclusively owning application. Extensions still require explicit confirmation.",
+      };
+    }
+    const canBeManuallyApproved =
+      input.candidate.manualApprovalEligible === true &&
+      input.candidate.exactDataRoot &&
+      input.ownershipStatus === "exclusive" &&
+      Boolean(
+        input.application &&
+        (input.application.installState === "confirmed-installed" ||
+          input.application.installState === "probably-installed" ||
+          input.application.installState === "portable-detected"),
+      );
+    return canBeManuallyApproved
       ? {
-          safety: "conditional",
-          canDelete: input.canDelete,
+          safety: "manual-review",
+          canDelete: false,
           reason:
-            "The current complete audit did not find the exclusively owning application. Extensions still require explicit confirmation.",
+            "This exact extension store can be cleaned only after explicit manual approval.",
         }
       : {
           safety: "protected",
           canDelete: false,
           reason:
-            "Extension stores stay protected while installation evidence is present, incomplete, or ambiguous.",
+            "Extension stores stay protected while installation evidence is incomplete, ambiguous, or protected by product policy.",
         };
   }
   if (
@@ -833,6 +850,40 @@ function applyOwnedDataPolicy(input: {
     };
   }
   return { safety: input.safety, canDelete: input.canDelete };
+}
+
+const PROTECTED_CLEANER_DATA_KINDS = new Set<
+  CleanerDetectorCandidate["dataKind"]
+>([
+  "settings",
+  "session-state",
+  "workspace-state",
+  "history",
+  "backup",
+  "database",
+  "local-storage",
+  "indexed-db",
+  "project-data",
+  "model-data",
+  "installed-runtime",
+]);
+
+export function canManuallyApproveCleanerCandidate(input: {
+  candidate: CleanerDetectorCandidate;
+  safety: CleanerSafety;
+  rootIsReparsePoint: boolean;
+  protectedMarkerCount: number;
+  markerInspectionComplete: boolean;
+}): boolean {
+  return (
+    input.safety === "manual-review" &&
+    (input.candidate.baseSafety !== "protected" ||
+      input.candidate.manualApprovalEligible === true) &&
+    !PROTECTED_CLEANER_DATA_KINDS.has(input.candidate.dataKind) &&
+    !input.rootIsReparsePoint &&
+    input.protectedMarkerCount === 0 &&
+    input.markerInspectionComplete
+  );
 }
 
 function buildStatusExplanation(

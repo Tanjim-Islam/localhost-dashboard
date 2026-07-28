@@ -172,6 +172,10 @@ export type CleanerProcessCommandCategory =
   | "jupyter-operation"
   | "conda-operation"
   | "go-build"
+  | "cargo-operation"
+  | "gradle-operation"
+  | "maven-operation"
+  | "nuget-operation"
   | "browser"
   | "editor"
   | "updater"
@@ -305,6 +309,7 @@ export interface CleanerFinding {
   excluded: boolean;
   selected: boolean;
   canDelete: boolean;
+  manualApprovalAllowed: boolean;
   requiresExplicitConfirmation: boolean;
   reparsePointStatus: CleanerReparsePointStatus;
   overlapGroup?: string;
@@ -397,7 +402,29 @@ export type StartCleanerScanInput = {
 export type CleanCleanerFindingsInput = {
   scanSessionId: string;
   findingIds: string[];
-  confirmation: "safe" | "conditional";
+  confirmation: "safe" | "conditional" | "manual-review";
+  approvedManualReviewFindingIds?: string[];
+  approvedInUseFindingIds?: string[];
+};
+
+export type PrepareCleanerCleanupInput = {
+  scanSessionId: string;
+  findingIds: string[];
+};
+
+export type CleanerCleanupUsageFinding = {
+  findingId: string;
+  displayName: string;
+  processes: Array<{
+    name: string;
+    pid?: number;
+  }>;
+};
+
+export type CleanerCleanupUsageCheck = {
+  scanSessionId: string;
+  checkedAt: number;
+  findings: CleanerCleanupUsageFinding[];
 };
 
 export type CleanerCleanupItemStatus =
@@ -452,6 +479,7 @@ export type CleanerCleanupReceiptFinding = {
   directoriesSuccessfullyRemoved: number;
   reparseObjectsSuccessfullyRemoved: number;
   skippedEntryCount: number;
+  lockedBytesSkipped: number;
   failedEntryCount: number;
   logicalBytesRemoved: number;
   estimatedAllocatedBytesAddressed: number | null;
@@ -492,6 +520,7 @@ export type CleanerCleanupReceipt = {
   createdAt: number;
   startedAt?: number;
   completedAt?: number;
+  dismissedAt?: number;
   status: CleanerCleanupReceiptStatus;
   selectedFindingIds: string[];
   resolvedFindingIds: string[];
@@ -588,12 +617,23 @@ export type CleanerCleanupEvent = {
   result: CleanerCleanupHistoryResult;
 };
 
+export type CleanerCleanupHistoryEntry = {
+  id: string;
+  completedAt: number;
+  mode: CleanerScanMode;
+  freeSpaceBeforeBytes: number | null;
+  freeSpaceAfterBytes: number | null;
+  recoveredBytes: number | null;
+  deletedTargetNames: string[];
+};
+
 export type CleanerStoreSchema = {
   schemaVersion: 3;
   exclusions: CleanerExclusion[];
   itemHistory: Record<string, CleanerItemHistory>;
   cleanupEvents: CleanerCleanupEvent[];
   cleanupReceipts: CleanerCleanupReceipt[];
+  cleanupHistory: CleanerCleanupHistoryEntry[];
   applicationObservations: Record<string, CleanerApplicationObservation>;
   migrationNotices: string[];
   preferences: CleanerPreferences;
@@ -601,7 +641,7 @@ export type CleanerStoreSchema = {
 
 export type CleanerHistorySnapshot = Pick<
   CleanerStoreSchema,
-  "itemHistory" | "cleanupEvents" | "cleanupReceipts" | "migrationNotices"
+  "cleanupHistory" | "migrationNotices"
 >;
 
 export type CleanerDetectorCandidate = {
@@ -616,6 +656,7 @@ export type CleanerDetectorCandidate = {
   ownershipStatus: CleanerOwnershipStatus;
   ownerApplicationIds: string[];
   exactDataRoot: boolean;
+  manualApprovalEligible?: boolean;
   processMatchRules: CleanerProcessMatchRule[];
   protectedParentBypass?: {
     applicationId: string;

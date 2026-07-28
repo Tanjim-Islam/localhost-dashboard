@@ -2,6 +2,7 @@ import type {
   CleanerAccountingConfidence,
   CleanerCleanupAttemptStatus,
   CleanerCleanupFailureCategory,
+  CleanerCleanupHistoryEntry,
   CleanerCleanupReceipt,
   CleanerCleanupReceiptFinding,
   CleanerCleanupReceiptStatus,
@@ -10,7 +11,10 @@ import type {
   CleanerStoreSchema,
 } from "./types";
 import { MAX_CLEANER_EVENTS, pruneCleanerHistory } from "./history";
-import { MAX_CLEANER_RECEIPTS } from "./cleanup-receipts";
+import {
+  MAX_CLEANER_HISTORY_ENTRIES,
+  MAX_CLEANER_RECEIPTS,
+} from "./cleanup-receipts";
 import { pruneCleanerApplicationObservations } from "./applications/observation-store";
 
 export function migrateCleanerStore(input: unknown): CleanerStoreSchema {
@@ -38,6 +42,13 @@ export function migrateCleanerStore(input: unknown): CleanerStoreSchema {
       `${droppedReceiptCount} invalid cleanup receipt record(s) were excluded from active history. The pre-migration audit backup remains recoverable.`,
     );
   }
+  const cleanupHistory = (
+    Array.isArray(source["cleanupHistory"]) ? source["cleanupHistory"] : []
+  )
+    .map(sanitizeCleanupHistoryEntry)
+    .filter((entry): entry is CleanerCleanupHistoryEntry => entry !== null)
+    .sort((left, right) => right.completedAt - left.completedAt)
+    .slice(0, MAX_CLEANER_HISTORY_ENTRIES);
 
   const next: CleanerStoreSchema = {
     schemaVersion: 3,
@@ -45,6 +56,7 @@ export function migrateCleanerStore(input: unknown): CleanerStoreSchema {
     itemHistory: sanitizeItemHistory(source["itemHistory"]),
     cleanupEvents: sanitizeLegacyCleanupEvents(source["cleanupEvents"]),
     cleanupReceipts,
+    cleanupHistory,
     applicationObservations: sanitizeApplicationObservations(
       source["applicationObservations"],
     ),
@@ -70,6 +82,7 @@ function sanitizeCleanupReceipt(input: unknown): CleanerCleanupReceipt | null {
   const requestedConfirmation = enumValue(source["requestedConfirmation"], [
     "safe",
     "conditional",
+    "manual-review",
   ] as const);
   const createdAt = finiteNumber(source["createdAt"]);
   if (
@@ -101,6 +114,7 @@ function sanitizeCleanupReceipt(input: unknown): CleanerCleanupReceipt | null {
     createdAt,
     startedAt: finiteNumber(source["startedAt"]),
     completedAt: finiteNumber(source["completedAt"]),
+    dismissedAt: finiteNumber(source["dismissedAt"]),
     status,
     selectedFindingIds: stringArray(source["selectedFindingIds"], 200, 64),
     resolvedFindingIds: stringArray(source["resolvedFindingIds"], 200, 64),
@@ -137,6 +151,28 @@ function sanitizeCleanupReceipt(input: unknown): CleanerCleanupReceipt | null {
       source["postCleanupVerificationCompleted"] === true,
     interruptionReason: boundedString(source["interruptionReason"], 256),
     findings,
+  };
+}
+
+function sanitizeCleanupHistoryEntry(
+  input: unknown,
+): CleanerCleanupHistoryEntry | null {
+  const source = asRecord(input);
+  const id = boundedString(source["id"], 64);
+  const completedAt = finiteNumber(source["completedAt"]);
+  const mode =
+    source["mode"] === "standard" || source["mode"] === "deep"
+      ? source["mode"]
+      : undefined;
+  if (!id || completedAt === undefined || !mode) return null;
+  return {
+    id,
+    completedAt,
+    mode,
+    freeSpaceBeforeBytes: finiteNumber(source["freeSpaceBeforeBytes"]) ?? null,
+    freeSpaceAfterBytes: finiteNumber(source["freeSpaceAfterBytes"]) ?? null,
+    recoveredBytes: finiteNumber(source["recoveredBytes"], true) ?? null,
+    deletedTargetNames: stringArray(source["deletedTargetNames"], 200, 256),
   };
 }
 
@@ -225,6 +261,7 @@ function sanitizeReceiptFinding(
       source["reparseObjectsSuccessfullyRemoved"],
     ),
     skippedEntryCount: nonNegativeNumber(source["skippedEntryCount"]),
+    lockedBytesSkipped: nonNegativeNumber(source["lockedBytesSkipped"]),
     failedEntryCount: nonNegativeNumber(source["failedEntryCount"]),
     logicalBytesRemoved: nonNegativeNumber(source["logicalBytesRemoved"]),
     estimatedAllocatedBytesAddressed: nullableNonNegativeNumber(

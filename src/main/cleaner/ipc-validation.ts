@@ -2,6 +2,7 @@ import type {
   CleanCleanerFindingsInput,
   CleanerExclusionScope,
   CleanerPreferences,
+  PrepareCleanerCleanupInput,
   StartCleanerScanInput,
   UpdateCleanerExclusionsInput,
 } from "./types";
@@ -35,6 +36,13 @@ export function validateCleanerSessionId(value: unknown): string {
   return value;
 }
 
+export function validateCleanerCleanupRequestId(value: unknown): string {
+  if (typeof value !== "string" || !SESSION_ID_PATTERN.test(value)) {
+    throw new Error("Cleaner cleanup request id is invalid.");
+  }
+  return value;
+}
+
 export function validateCleanCleanerFindingsInput(
   value: unknown,
 ): CleanCleanerFindingsInput {
@@ -42,6 +50,8 @@ export function validateCleanCleanerFindingsInput(
     "scanSessionId",
     "findingIds",
     "confirmation",
+    "approvedManualReviewFindingIds",
+    "approvedInUseFindingIds",
   ]);
   const scanSessionId = validateCleanerSessionId(input.scanSessionId);
   if (!Array.isArray(input.findingIds) || input.findingIds.length === 0) {
@@ -59,10 +69,93 @@ export function validateCleanCleanerFindingsInput(
   if (new Set(findingIds).size !== findingIds.length) {
     throw new Error("Duplicate Cleaner finding ids are not allowed.");
   }
-  if (input.confirmation !== "safe" && input.confirmation !== "conditional") {
+  if (
+    input.confirmation !== "safe" &&
+    input.confirmation !== "conditional" &&
+    input.confirmation !== "manual-review"
+  ) {
     throw new Error("Cleaner confirmation level is invalid.");
   }
-  return { scanSessionId, findingIds, confirmation: input.confirmation };
+  const approvedManualReviewFindingIds = validateOptionalFindingIds(
+    input.approvedManualReviewFindingIds,
+    "Manual-review approval",
+  );
+  if (approvedManualReviewFindingIds.some((id) => !findingIds.includes(id))) {
+    throw new Error(
+      "Manual-review approvals must refer to selected Cleaner findings.",
+    );
+  }
+  if (
+    input.confirmation === "manual-review" &&
+    approvedManualReviewFindingIds.length === 0
+  ) {
+    throw new Error(
+      "Manual-review confirmation requires at least one approved finding.",
+    );
+  }
+  if (
+    input.confirmation !== "manual-review" &&
+    approvedManualReviewFindingIds.length > 0
+  ) {
+    throw new Error(
+      "Manual-review approvals require manual-review confirmation.",
+    );
+  }
+  const approvedInUseFindingIds = validateOptionalFindingIds(
+    input.approvedInUseFindingIds,
+    "In-use approval",
+  );
+  if (approvedInUseFindingIds.some((id) => !findingIds.includes(id))) {
+    throw new Error(
+      "In-use approvals must refer to selected Cleaner findings.",
+    );
+  }
+  return {
+    scanSessionId,
+    findingIds,
+    confirmation: input.confirmation,
+    ...(approvedManualReviewFindingIds.length > 0
+      ? { approvedManualReviewFindingIds }
+      : {}),
+    ...(approvedInUseFindingIds.length > 0 ? { approvedInUseFindingIds } : {}),
+  };
+}
+
+export function validatePrepareCleanerCleanupInput(
+  value: unknown,
+): PrepareCleanerCleanupInput {
+  const input = requirePlainObject(value, ["scanSessionId", "findingIds"]);
+  const scanSessionId = validateCleanerSessionId(input.scanSessionId);
+  if (!Array.isArray(input.findingIds) || input.findingIds.length === 0) {
+    throw new Error("At least one Cleaner finding id is required.");
+  }
+  if (input.findingIds.length > 200) {
+    throw new Error("Too many Cleaner findings were selected.");
+  }
+  const findingIds = validateOptionalFindingIds(
+    input.findingIds,
+    "Cleanup preparation",
+  );
+  return { scanSessionId, findingIds };
+}
+
+function validateOptionalFindingIds(value: unknown, label: string): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 200) {
+    throw new Error(`${label} finding ids are invalid.`);
+  }
+  const findingIds = value.map((id) => {
+    if (typeof id !== "string" || !FINDING_ID_PATTERN.test(id)) {
+      throw new Error(`${label} finding id is invalid.`);
+    }
+    return id;
+  });
+  if (new Set(findingIds).size !== findingIds.length) {
+    throw new Error(
+      `Duplicate ${label.toLowerCase()} finding ids are not allowed.`,
+    );
+  }
+  return findingIds;
 }
 
 export function validateUpdateCleanerExclusionsInput(

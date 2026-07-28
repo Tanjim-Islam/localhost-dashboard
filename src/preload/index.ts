@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer, clipboard } from "electron";
 import {
+  validateCleanerCleanupRequestId,
   validateCleanerPreferences,
   validateCleanerSessionId,
   validateCleanCleanerFindingsInput,
+  validatePrepareCleanerCleanupInput,
   validateStartCleanerScanInput,
   validateUpdateCleanerExclusionsInput,
 } from "../main/cleaner/ipc-validation";
@@ -201,6 +203,11 @@ contextBridge.exposeInMainWorld("api", {
       "cleaner:cleanup",
       validateCleanCleanerFindingsInput(input),
     ),
+  prepareCleanerCleanup: (input: unknown) =>
+    ipcRenderer.invoke(
+      "cleaner:cleanup-prepare",
+      validatePrepareCleanerCleanupInput(input),
+    ),
   getCleanerExclusions: () => ipcRenderer.invoke("cleaner:exclusions-get"),
   updateCleanerExclusions: (input: unknown) =>
     ipcRenderer.invoke(
@@ -208,6 +215,11 @@ contextBridge.exposeInMainWorld("api", {
       validateUpdateCleanerExclusionsInput(input),
     ),
   getCleanerHistory: () => ipcRenderer.invoke("cleaner:history-get"),
+  dismissCleanerCleanupReceipt: (cleanupRequestId: unknown) =>
+    ipcRenderer.invoke(
+      "cleaner:receipt-dismiss",
+      validateCleanerCleanupRequestId(cleanupRequestId),
+    ),
   getCleanerPreferences: () => ipcRenderer.invoke("cleaner:preferences-get"),
   updateCleanerPreferences: (input: unknown) =>
     ipcRenderer.invoke(

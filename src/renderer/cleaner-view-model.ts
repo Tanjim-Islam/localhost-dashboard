@@ -40,6 +40,7 @@ export type CleanerViewFinding = {
     | "manual-review";
   excluded: boolean;
   canDelete: boolean;
+  manualApprovalAllowed?: boolean;
 };
 
 export type CleanerFindingFilters = {
@@ -177,7 +178,8 @@ export type CleanerSummaryMetrics = {
   partialLogicalBytes: number;
 };
 
-export type CleanerSelectionTone = "none" | "safe" | "conditional";
+export type CleanerSelectionTone =
+  "none" | "safe" | "conditional" | "manual-review";
 
 export type CleanerCompactSize = {
   estimatedRecoveryBytes: number | null;
@@ -214,7 +216,23 @@ export function cleanerTabAvailable(
   return platform === "win32" && features.cleaner;
 }
 
-export function canSelectCleanerFinding(finding: CleanerViewFinding): boolean {
+export function canApproveManualReviewFinding(
+  finding: CleanerViewFinding,
+): boolean {
+  return (
+    finding.safety === "manual-review" &&
+    !finding.excluded &&
+    finding.manualApprovalAllowed === true
+  );
+}
+
+export function canSelectCleanerFinding(
+  finding: CleanerViewFinding,
+  manualReviewApproved = false,
+): boolean {
+  if (finding.safety === "manual-review") {
+    return manualReviewApproved && canApproveManualReviewFinding(finding);
+  }
   return (
     !finding.excluded &&
     finding.canDelete &&
@@ -273,24 +291,8 @@ export function getCleanerCompactReason(finding: CleanerViewFinding): string {
     return "Hidden from cleanup by an exclusion rule.";
   }
 
-  if (
-    finding.measurementCompleteness === "partial" ||
-    finding.measurementCompleteness === "unavailable"
-  ) {
-    return "Recovery could not be measured completely, so cleanup is blocked.";
-  }
-
   if (finding.safety === "safe-after-close") {
-    const processNames = [
-      ...new Set(
-        (finding.relatedProcesses ?? [])
-          .filter((processInfo) => processInfo.blocking)
-          .map((processInfo) => processInfo.name),
-      ),
-    ].slice(0, 2);
-    return processNames.length > 0
-      ? `Close ${processNames.join(", ")} first, then scan again.`
-      : "Close the related app first, then scan again.";
+    return "Close the related app first, then scan again.";
   }
 
   if (finding.safety === "conditional") {
@@ -315,7 +317,16 @@ export function getCleanerCompactReason(finding: CleanerViewFinding): string {
   }
 
   if (finding.safety === "manual-review") {
-    return "Safety could not be confirmed, so cleanup is blocked.";
+    return finding.manualApprovalAllowed
+      ? "Review and approve this item before selecting it."
+      : "Safety or accounting requirements are not complete, so cleanup remains blocked.";
+  }
+
+  if (
+    finding.measurementCompleteness === "partial" ||
+    finding.measurementCompleteness === "unavailable"
+  ) {
+    return "Recovery could not be measured completely, so cleanup is blocked.";
   }
 
   return "Safe to remove. It can be recreated when needed.";
@@ -553,6 +564,9 @@ export function getCleanerSelectionTone(
 ): CleanerSelectionTone {
   const selected = findings.filter((finding) => selectedIds.has(finding.id));
   if (selected.length === 0) return "none";
+  if (selected.some((finding) => finding.safety === "manual-review")) {
+    return "manual-review";
+  }
   return selected.some((finding) => finding.safety === "conditional")
     ? "conditional"
     : "safe";

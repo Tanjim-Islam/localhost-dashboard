@@ -9,6 +9,7 @@ import type {
   CleanerCleanupReceipt,
   CleanerCleanupReceiptFinding,
   CleanerCleanupResult,
+  CleanerCleanupUsageCheck,
   CleanerClock,
   CleanerDetector,
   CleanerDetectorCandidate,
@@ -20,6 +21,7 @@ import type {
   CleanerFinding,
   CleanerPersistence,
   CleanerProcessProvider,
+  PrepareCleanerCleanupInput,
 } from "./types";
 import type { CleanerScanSession } from "./scan-session";
 import { fingerprintsMatch, validateCleanerTargetPath } from "./path-safety";
@@ -31,6 +33,7 @@ import { resolveCleanerApplications } from "./applications/installation-resolver
 import {
   hasMoreRestrictiveCleanerOwnershipState,
   resolveCleanerCandidateOwnership,
+  resolveCleanerLeftoverCacheStatus,
 } from "./applications/ownership-resolver";
 import {
   getCleanerApplicationDataRoot,
@@ -42,6 +45,8 @@ import {
   upsertCleanerCleanupReceipt,
 } from "./cleanup-receipts";
 import {
+  applyOwnedDataPolicy,
+  canManuallyApproveCleanerCandidate,
   calculateNonExcludedSafetyBytes,
   calculateUnionLogicalBytes,
   calculateUnionRecoverableBytes,
@@ -69,6 +74,7 @@ type DeleteExactTreeResult = {
   directoriesSuccessfullyRemoved: number;
   reparseObjectsSuccessfullyRemoved: number;
   skippedEntries: number;
+  lockedBytesSkipped: number;
   failedEntries: number;
   failureCategories: CleanerCleanupFailureCategory[];
   skippedReparsePoints: number;
@@ -76,6 +82,52 @@ type DeleteExactTreeResult = {
 
 export class CleanerCleanupExecutor {
   constructor(private readonly dependencies: CleanerCleanupDependencies) {}
+
+  async inspectUsage(
+    session: CleanerScanSession,
+    input: PrepareCleanerCleanupInput,
+    environment: CleanerEnvironment,
+  ): Promise<CleanerCleanupUsageCheck> {
+    const findings = input.findingIds.map((id) => {
+      const finding = session.findings.get(id);
+      if (!finding) {
+        throw new Error(`Cleaner finding ${id} is unknown or stale.`);
+      }
+      return finding;
+    });
+    if (
+      findings.some(
+        (finding) => finding.safety === "protected" || finding.excluded,
+      )
+    ) {
+      throw new Error(
+        "Protected or excluded Cleaner findings cannot be prepared for cleanup.",
+      );
+    }
+    const processes = await this.dependencies.processProvider.list(environment);
+    return {
+      scanSessionId: session.id,
+      checkedAt: this.dependencies.clock.now(),
+      findings: findings
+        .map((finding) => ({
+          findingId: finding.id,
+          displayName: finding.displayName,
+          processes: findRelatedCleanerProcesses(
+            finding.processMatchRules,
+            processes,
+            finding.path,
+          )
+            .filter((processInfo) => processInfo.blocking)
+            .map((processInfo) => ({
+              name: processInfo.name,
+              ...(processInfo.pid === undefined
+                ? {}
+                : { pid: processInfo.pid }),
+            })),
+        }))
+        .filter((finding) => finding.processes.length > 0),
+    };
+  }
 
   async clean(
     session: CleanerScanSession,
@@ -92,6 +144,12 @@ export class CleanerCleanupExecutor {
       return finding;
     });
     validateSelectedFindings(selectedFindings, input);
+    const approvedManualReviewFindingIds = new Set(
+      input.approvedManualReviewFindingIds ?? [],
+    );
+    const approvedInUseFindingIds = new Set(
+      input.approvedInUseFindingIds ?? [],
+    );
     const { resolved, overlapSkippedIds } =
       resolveOverlappingSelectedFindings(selectedFindings);
     const beforeDrive = await measureDriveSpace(
@@ -147,6 +205,8 @@ export class CleanerCleanupExecutor {
             environment,
             session.mode,
             accountingWorker,
+            approvedManualReviewFindingIds.has(finding.id),
+            approvedInUseFindingIds.has(finding.id),
             (startedItem) => {
               replaceReceiptFinding(receipt, startedItem);
               recomputeReceiptAggregates(receipt);
@@ -197,7 +257,7 @@ export class CleanerCleanupExecutor {
     recomputeReceiptAggregates(receipt);
     receipt.status = resolveFinalReceiptStatus(receipt, globalFailure);
     const finalState = persistence.read();
-    recordFinalizedCleanupReceipt(finalState, receipt);
+    recordFinalizedCleanupReceipt(finalState, receipt, session.mode);
     persistence.write(finalState);
     applyReceiptToSession(session, receipt, afterDrive);
 
@@ -216,6 +276,8 @@ export class CleanerCleanupExecutor {
     environment: CleanerEnvironment,
     mode: import("./types").CleanerScanMode,
     accountingWorker: CleanerAccountingWorkerSession,
+    manualReviewApproved: boolean,
+    inUseApproved: boolean,
     onAttemptStarted: (item: CleanerCleanupReceiptFinding) => void,
   ): Promise<CleanerCleanupReceiptFinding> {
     const before = await accountingWorker.measure(
@@ -223,8 +285,10 @@ export class CleanerCleanupExecutor {
       new CleanerCancellationToken(),
     );
     if (
-      before.measurementCompleteness !== "complete" ||
-      before.estimatedReclaimableBytes === null
+      !before.logicalTraversalComplete ||
+      (!manualReviewApproved &&
+        (before.measurementCompleteness !== "complete" ||
+          before.estimatedReclaimableBytes === null))
     ) {
       return skippedReceiptFinding(
         finding,
@@ -238,6 +302,8 @@ export class CleanerCleanupExecutor {
       environment,
       mode,
       before,
+      manualReviewApproved,
+      inUseApproved,
     );
     if (preflightFailure) return preflightFailure;
 
@@ -265,6 +331,8 @@ export class CleanerCleanupExecutor {
     environment: CleanerEnvironment,
     mode: import("./types").CleanerScanMode,
     measurement: CleanerMeasuredSize,
+    manualReviewApproved: boolean,
+    inUseApproved: boolean,
   ): Promise<CleanerCleanupReceiptFinding | undefined> {
     const { filesystem } = this.dependencies;
     const currentStore = this.dependencies.persistence.read();
@@ -315,7 +383,7 @@ export class CleanerCleanupExecutor {
       currentProcesses,
       finding.path,
     );
-    if (running.some((processInfo) => processInfo.blocking)) {
+    if (running.some((processInfo) => processInfo.blocking) && !inUseApproved) {
       return skippedReceiptFinding(
         finding,
         "Application running state changed. Run a new scan.",
@@ -381,6 +449,55 @@ export class CleanerCleanupExecutor {
       currentCandidate,
       applications,
     );
+    const currentOwnerApplications = currentOwnership.ownerApplicationIds
+      .map((ownerId) =>
+        applications.find((application) => application.id === ownerId),
+      )
+      .filter((application) => application !== undefined);
+    const currentProtectedMarkers = selectProtectedMarkers(
+      currentCandidate,
+      measurement,
+    );
+    if (
+      currentProtectedMarkers.length > 0 ||
+      !measurement.logicalTraversalComplete
+    ) {
+      return skippedReceiptFinding(
+        finding,
+        "Protected or mixed-state data appeared. Run a new scan.",
+        "state-changed",
+      );
+    }
+    const currentLeftoverCacheStatus = resolveCleanerLeftoverCacheStatus({
+      dataKind: currentCandidate.dataKind,
+      ownership: currentOwnership,
+      ownerResolutions: currentOwnerApplications,
+      exactDataRoot: currentCandidate.exactDataRoot,
+      hasBlockingProcess: running.some((processInfo) => processInfo.blocking),
+      hasProtectedMarkers: currentProtectedMarkers.length > 0,
+      hasInternalReparsePoints: measurement.internalReparsePointCount > 0,
+    });
+    const currentPolicy = applyOwnedDataPolicy({
+      candidate: currentCandidate,
+      safety: currentCandidate.baseSafety,
+      canDelete: currentCandidate.canDelete,
+      application: currentApplication,
+      ownershipStatus: currentOwnership.status,
+      leftoverCacheStatus: currentLeftoverCacheStatus,
+    });
+    const currentManualApprovalAllowed = canManuallyApproveCleanerCandidate({
+      candidate: currentCandidate,
+      safety:
+        finding.safety === "manual-review" &&
+        currentPolicy.safety !== "protected"
+          ? "manual-review"
+          : currentPolicy.safety,
+      rootIsReparsePoint:
+        Boolean(measurement.rootStat?.isSymbolicLink) ||
+        Boolean(measurement.rootStat?.isReparsePoint),
+      protectedMarkerCount: currentProtectedMarkers.length,
+      markerInspectionComplete: measurement.logicalTraversalComplete,
+    });
     const definition = finding.applicationId
       ? getCleanerApplicationDefinition(finding.applicationId)
       : undefined;
@@ -423,10 +540,17 @@ export class CleanerCleanupExecutor {
     };
     if (
       currentCandidate.applicationId !== finding.applicationId ||
-      currentCandidate.baseSafety === "protected" ||
-      currentCandidate.baseSafety === "manual-review" ||
-      !currentCandidate.canDelete ||
-      hasMoreRestrictiveCleanerOwnershipState(finding, currentIdentity)
+      currentPolicy.safety === "protected" ||
+      (manualReviewApproved
+        ? !currentManualApprovalAllowed
+        : currentPolicy.safety === "manual-review" ||
+          !currentPolicy.canDelete) ||
+      hasMoreRestrictiveCleanerOwnershipState(finding, {
+        ...currentIdentity,
+        applicationRunningState: inUseApproved
+          ? "not-running-observed"
+          : currentIdentity.applicationRunningState,
+      })
     ) {
       return skippedReceiptFinding(
         finding,
@@ -435,16 +559,6 @@ export class CleanerCleanupExecutor {
       );
     }
 
-    if (
-      selectProtectedMarkers(currentCandidate, measurement).length > 0 ||
-      !measurement.logicalTraversalComplete
-    ) {
-      return skippedReceiptFinding(
-        finding,
-        "Protected or mixed-state data appeared. Run a new scan.",
-        "state-changed",
-      );
-    }
     return undefined;
   }
 
@@ -537,7 +651,9 @@ export class CleanerCleanupExecutor {
     ) {
       item.attemptStatus = "partial";
       item.message =
-        "Cleanup was only partial or could not be verified completely.";
+        operations.lockedBytesSkipped > 0
+          ? "Cleaned unlocked files. Windows kept files that were still locked."
+          : "Cleanup was only partial or could not be verified completely.";
     } else {
       item.attemptStatus = "failed";
       item.message =
@@ -567,6 +683,7 @@ export async function deleteExactTree(
     directoriesSuccessfullyRemoved: 0,
     reparseObjectsSuccessfullyRemoved: 0,
     skippedEntries: 0,
+    lockedBytesSkipped: 0,
     failedEntries: 0,
     failureCategories: [],
     skippedReparsePoints: 0,
@@ -588,11 +705,14 @@ export async function deleteExactTree(
         await filesystem.removeReparsePoint(currentPath);
         result.reparseObjectsSuccessfullyRemoved += 1;
       } catch (error) {
-        result.failedEntries += 1;
-        result.skippedReparsePoints += 1;
-        result.failureCategories.push(
-          classifyFilesystemFailure(error, "reparse-removal-failed"),
+        const category = classifyRemovalFailure(
+          error,
+          "reparse-removal-failed",
         );
+        if (category === "locked") result.skippedEntries += 1;
+        else result.failedEntries += 1;
+        result.skippedReparsePoints += 1;
+        result.failureCategories.push(category);
       }
       return;
     }
@@ -603,8 +723,14 @@ export async function deleteExactTree(
         await filesystem.unlink(currentPath);
         result.filesSuccessfullyUnlinked += 1;
       } catch (error) {
-        result.failedEntries += 1;
-        result.failureCategories.push(classifyFilesystemFailure(error));
+        const category = classifyRemovalFailure(error);
+        if (category === "locked") {
+          result.skippedEntries += 1;
+          result.lockedBytesSkipped += Math.max(0, stat.size);
+        } else {
+          result.failedEntries += 1;
+        }
+        result.failureCategories.push(category);
       }
       return;
     }
@@ -638,8 +764,13 @@ export async function deleteExactTree(
       await filesystem.removeDirectory(currentPath);
       result.directoriesSuccessfullyRemoved += 1;
     } catch (error) {
-      result.failedEntries += 1;
-      result.failureCategories.push(classifyFilesystemFailure(error));
+      const category = classifyRemovalFailure(error);
+      if (category === "locked" || category === "not-empty") {
+        result.skippedEntries += 1;
+      } else {
+        result.failedEntries += 1;
+      }
+      result.failureCategories.push(category);
     }
   };
 
@@ -657,24 +788,63 @@ function validateSelectedFindings(
   }
   if (
     findings.some((finding) => finding.safety === "conditional") &&
-    input.confirmation !== "conditional"
+    input.confirmation === "safe"
   ) {
     throw new Error(
       "Conditional Cleaner findings require stronger confirmation.",
+    );
+  }
+  const approvedManualReviewFindingIds = new Set(
+    input.approvedManualReviewFindingIds ?? [],
+  );
+  const approvedInUseFindingIds = new Set(input.approvedInUseFindingIds ?? []);
+  const selectedManualReviewFindingIds = findings
+    .filter((finding) => finding.safety === "manual-review")
+    .map((finding) => finding.id);
+  if (selectedManualReviewFindingIds.length > 0) {
+    if (input.confirmation !== "manual-review") {
+      throw new Error(
+        "Manual-review Cleaner findings require manual-review confirmation.",
+      );
+    }
+    if (
+      selectedManualReviewFindingIds.some(
+        (findingId) => !approvedManualReviewFindingIds.has(findingId),
+      ) ||
+      approvedManualReviewFindingIds.size !==
+        selectedManualReviewFindingIds.length
+    ) {
+      throw new Error(
+        "Every selected manual-review finding must be explicitly approved.",
+      );
+    }
+  } else if (approvedManualReviewFindingIds.size > 0) {
+    throw new Error(
+      "Manual-review approvals do not match the selected Cleaner findings.",
+    );
+  }
+  if (
+    [...approvedInUseFindingIds].some(
+      (findingId) => !input.findingIds.includes(findingId),
+    )
+  ) {
+    throw new Error(
+      "In-use approvals do not match the selected Cleaner findings.",
     );
   }
   for (const finding of findings) {
     if (finding.safety === "protected") {
       throw new Error("Protected Cleaner findings cannot be selected.");
     }
-    if (
-      finding.safety === "manual-review" ||
-      !finding.canDelete ||
-      finding.measurementCompleteness !== "complete" ||
-      finding.estimatedReclaimableBytes === null
-    ) {
+    const cleanupUnavailable =
+      finding.safety === "manual-review"
+        ? !finding.manualApprovalAllowed
+        : !finding.canDelete ||
+          finding.measurementCompleteness !== "complete" ||
+          finding.estimatedReclaimableBytes === null;
+    if (cleanupUnavailable) {
       throw new Error(
-        "Incomplete or manual-review Cleaner findings cannot be deleted.",
+        "This Cleaner finding is incomplete or is not eligible for cleanup.",
       );
     }
     if (finding.excluded) {
@@ -729,6 +899,7 @@ function createInitialReceiptFinding(
     directoriesSuccessfullyRemoved: 0,
     reparseObjectsSuccessfullyRemoved: 0,
     skippedEntryCount: 0,
+    lockedBytesSkipped: 0,
     failedEntryCount: 0,
     logicalBytesRemoved: 0,
     estimatedAllocatedBytesAddressed: null,
@@ -800,6 +971,7 @@ function applyDeleteOperations(
   item.reparseObjectsSuccessfullyRemoved =
     operations.reparseObjectsSuccessfullyRemoved;
   item.skippedEntryCount = operations.skippedEntries;
+  item.lockedBytesSkipped = operations.lockedBytesSkipped;
   item.failedEntryCount = operations.failedEntries;
   item.failureCategories = uniqueFailureCategories([
     ...item.failureCategories,
@@ -1001,6 +1173,7 @@ function applyReceiptToSession(
         receiptFinding.postCleanupMeasurementCompleteness === "complete";
     }
     finding.safety = "manual-review";
+    finding.manualApprovalAllowed = false;
     finding.accountingActionabilityBlocked = true;
     finding.reason = `${finding.reason} Cleanup state changed. Run a new scan before selecting this finding again.`;
     return true;
@@ -1097,6 +1270,18 @@ function classifyFilesystemFailure(
   if (code === "EBUSY") return "locked";
   if (code === "ENOTEMPTY") return "not-empty";
   return fallback;
+}
+
+function classifyRemovalFailure(
+  error: unknown,
+  fallback: CleanerCleanupFailureCategory = "filesystem-error",
+): CleanerCleanupFailureCategory {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : "";
+  if (code === "EPERM") return "locked";
+  return classifyFilesystemFailure(error, fallback);
 }
 
 function isMissingFilesystemError(error: unknown): boolean {

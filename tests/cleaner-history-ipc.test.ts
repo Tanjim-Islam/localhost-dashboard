@@ -14,8 +14,10 @@ import { scoreCleanerFinding } from "../src/main/cleaner/scoring";
 import { calculateUnionRecoverableBytes } from "../src/main/cleaner/scanner";
 import { resolveOverlappingSelectedFindings } from "../src/main/cleaner/cleanup-executor";
 import {
+  validateCleanerCleanupRequestId,
   validateCleanerPreferences,
   validateCleanCleanerFindingsInput,
+  validatePrepareCleanerCleanupInput,
   validateStartCleanerScanInput,
   validateUpdateCleanerExclusionsInput,
 } from "../src/main/cleaner/ipc-validation";
@@ -106,6 +108,7 @@ const finding = (overrides: Partial<CleanerFinding> = {}): CleanerFinding => ({
   excluded: false,
   selected: false,
   canDelete: true,
+  manualApprovalAllowed: false,
   requiresExplicitConfirmation: false,
   reparsePointStatus: "clear",
   recommendation: "recommended",
@@ -121,6 +124,11 @@ const finding = (overrides: Partial<CleanerFinding> = {}): CleanerFinding => ({
 });
 
 test("Cleaner IPC validation rejects arbitrary paths, extra fields, duplicates, and invalid confirmation", () => {
+  assert.equal(
+    validateCleanerCleanupRequestId("12345678-1234-1234-1234-123456789abc"),
+    "12345678-1234-1234-1234-123456789abc",
+  );
+  assert.throws(() => validateCleanerCleanupRequestId("C:\\Users\\private"));
   assert.deepEqual(validateStartCleanerScanInput({ mode: "deep" }), {
     mode: "deep",
   });
@@ -134,6 +142,41 @@ test("Cleaner IPC validation rejects arbitrary paths, extra fields, duplicates, 
       findingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
       confirmation: "safe",
     }).findingIds,
+    ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+  );
+  assert.deepEqual(
+    validateCleanCleanerFindingsInput({
+      scanSessionId: "12345678-1234-1234-1234-123456789abc",
+      findingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      confirmation: "safe",
+      approvedInUseFindingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+    }).approvedInUseFindingIds,
+    ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+  );
+  assert.deepEqual(
+    validatePrepareCleanerCleanupInput({
+      scanSessionId: "12345678-1234-1234-1234-123456789abc",
+      findingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+    }),
+    {
+      scanSessionId: "12345678-1234-1234-1234-123456789abc",
+      findingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+    },
+  );
+  assert.throws(() =>
+    validatePrepareCleanerCleanupInput({
+      scanSessionId: "12345678-1234-1234-1234-123456789abc",
+      findingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      path: "C:\\Users",
+    }),
+  );
+  assert.deepEqual(
+    validateCleanCleanerFindingsInput({
+      scanSessionId: "12345678-1234-1234-1234-123456789abc",
+      findingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      confirmation: "manual-review",
+      approvedManualReviewFindingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+    }).approvedManualReviewFindingIds,
     ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
   );
   assert.throws(() =>
@@ -159,6 +202,22 @@ test("Cleaner IPC validation rejects arbitrary paths, extra fields, duplicates, 
       scanSessionId: "12345678-1234-1234-1234-123456789abc",
       findingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
       confirmation: "everything",
+    }),
+  );
+  assert.throws(() =>
+    validateCleanCleanerFindingsInput({
+      scanSessionId: "12345678-1234-1234-1234-123456789abc",
+      findingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      confirmation: "manual-review",
+      approvedManualReviewFindingIds: ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+    }),
+  );
+  assert.throws(() =>
+    validateCleanCleanerFindingsInput({
+      scanSessionId: "12345678-1234-1234-1234-123456789abc",
+      findingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      confirmation: "safe",
+      approvedManualReviewFindingIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
     }),
   );
 });

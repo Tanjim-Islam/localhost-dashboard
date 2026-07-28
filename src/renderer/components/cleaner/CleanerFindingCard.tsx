@@ -16,6 +16,7 @@ import {
   Search,
 } from "lucide-react";
 import {
+  canApproveManualReviewFinding,
   canSelectCleanerFinding,
   getCleanerCompactReason,
   getCleanerCompactSize,
@@ -29,7 +30,6 @@ import {
   formatCleanerBytes,
   formatCleanerDate,
   formatCleanerInstallState,
-  formatCleanerRunningState,
   humanizeCleanerValue,
 } from "../../cleaner-format";
 import { CleanerDetailsAccordion } from "./CleanerDetailsAccordion";
@@ -42,18 +42,22 @@ type ExclusionScope =
 export function CleanerFindingCard({
   finding,
   selected,
+  manualReviewApproved,
   onSelect,
+  onReview,
   onExclude,
   onManageExclusions,
 }: {
   finding: CleanerFinding;
   selected: boolean;
+  manualReviewApproved: boolean;
   onSelect(selected: boolean): void;
+  onReview(): void;
   onExclude(scope: ExclusionScope): void;
   onManageExclusions(): void;
 }) {
   const reduceMotion = useReducedMotion();
-  const selectable = canSelectCleanerFinding(finding);
+  const selectable = canSelectCleanerFinding(finding, manualReviewApproved);
   const visualStatus = getCleanerVisualStatus(finding.safety, finding.excluded);
   const meta = CLEANER_STATUS_META[visualStatus];
   const styles = CLEANER_TONE_STYLES[meta.tone];
@@ -97,7 +101,7 @@ export function CleanerFindingCard({
               </div>
               <div className="mt-0.5 truncate text-lg font-semibold leading-5 text-gray-900">
                 {size.estimatedRecoveryBytes === null
-                  ? "Unknown"
+                  ? "Size unknown"
                   : formatCleanerBytes(size.estimatedRecoveryBytes)}
               </div>
               {size.showLogicalSize && (
@@ -124,6 +128,14 @@ export function CleanerFindingCard({
             {compactReason}
           </p>
 
+          {finding.safety === "manual-review" && (
+            <ManualReviewApprovalControl
+              finding={finding}
+              approved={manualReviewApproved}
+              onReview={onReview}
+            />
+          )}
+
           <CleanerDetailsAccordion
             path={finding.path}
             actions={
@@ -141,7 +153,7 @@ export function CleanerFindingCard({
                   [
                     "Estimated recovery",
                     finding.estimatedReclaimableBytes === null
-                      ? "Unknown"
+                      ? "Size unknown"
                       : formatCleanerBytes(finding.estimatedReclaimableBytes),
                   ],
                   ["Logical size", formatCleanerBytes(finding.logicalBytes)],
@@ -221,7 +233,9 @@ export function CleanerFindingCard({
                   ],
                 ]}
               />
-              <DetailNote>{finding.statusExplanation}</DetailNote>
+              {!finding.relatedProcesses.some(
+                (processInfo) => processInfo.blocking,
+              ) && <DetailNote>{finding.statusExplanation}</DetailNote>}
               {finding.recommendationReason !== finding.statusExplanation && (
                 <DetailNote>{finding.recommendationReason}</DetailNote>
               )}
@@ -243,10 +257,6 @@ export function CleanerFindingCard({
                   [
                     "Installation",
                     formatCleanerInstallState(finding.applicationInstallState),
-                  ],
-                  [
-                    "Running",
-                    formatCleanerRunningState(finding.applicationRunningState),
                   ],
                   [
                     "Ownership",
@@ -311,28 +321,6 @@ export function CleanerFindingCard({
                     label="Unavailable sources"
                     items={finding.unavailableEvidenceSources}
                   />
-                </div>
-              )}
-            </DetailGroup>
-
-            <DetailGroup label="Process evidence">
-              {finding.relatedProcesses.length === 0 ? (
-                <DetailNote>No related process evidence.</DetailNote>
-              ) : (
-                <div className="space-y-1.5">
-                  {finding.relatedProcesses.map((processInfo) => (
-                    <DetailNote
-                      key={`${processInfo.name}-${processInfo.pid ?? "unknown"}`}
-                    >
-                      <strong>{processInfo.name}</strong>
-                      {processInfo.pid
-                        ? `, PID ${processInfo.pid}`
-                        : ", PID unavailable"}
-                      {`. ${humanizeCleanerValue(
-                        processInfo.evidenceStrength,
-                      )}. ${processInfo.blocking ? "Blocks cleanup." : "Advisory only."}`}
-                    </DetailNote>
-                  ))}
                 </div>
               )}
             </DetailGroup>
@@ -543,7 +531,12 @@ function SelectionControl({
   onSelect(selected: boolean): void;
 }) {
   if (selectable) {
-    const tone = finding.safety === "conditional" ? "conditional" : "safe";
+    const tone =
+      finding.safety === "manual-review"
+        ? "review"
+        : finding.safety === "conditional"
+          ? "conditional"
+          : "safe";
     const styles = CLEANER_TONE_STYLES[tone];
     return (
       <label
@@ -590,6 +583,46 @@ function SelectionControl({
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </span>
+  );
+}
+
+function ManualReviewApprovalControl({
+  finding,
+  approved,
+  onReview,
+}: {
+  finding: CleanerFinding;
+  approved: boolean;
+  onReview(): void;
+}) {
+  const approvalAllowed = canApproveManualReviewFinding(finding);
+  const styles = CLEANER_TONE_STYLES.review;
+  if (approved) {
+    return (
+      <span
+        data-cleaner-manual-review-state="approved"
+        className={`mt-2.5 inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${styles.border} ${styles.surface} ${styles.text}`}
+      >
+        <Check className="h-3.5 w-3.5" aria-hidden="true" />
+        Approved
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-cleaner-manual-review-action="true"
+      disabled={!approvalAllowed}
+      onClick={onReview}
+      title={
+        approvalAllowed
+          ? "Review this item for manual cleanup."
+          : "This item still fails a required safety check."
+      }
+      className={`mt-2.5 min-h-8 rounded-lg border px-2.5 py-1 text-xs font-semibold outline-none focus-visible:ring-2 focus-visible:ring-cleaner-review-border disabled:cursor-not-allowed disabled:opacity-60 ${styles.border} ${styles.surface} ${styles.text}`}
+    >
+      {approvalAllowed ? "Review" : "Unavailable"}
+    </button>
   );
 }
 

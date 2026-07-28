@@ -6,6 +6,7 @@ import {
   buildCleanerIssueSummary,
   calculateCleanerSummaryMetrics,
   calculateSelectedRecoverableBytes,
+  canApproveManualReviewFinding,
   canSelectCleanerFinding,
   cleanerTabAvailable,
   conditionalConfirmationRequired,
@@ -83,11 +84,12 @@ const findings: CleanerViewFinding[] = (
       path: "C:\\fixture\\unknown",
       normalizedPath: "c:\\fixture\\unknown",
       sizeBytes: 700,
-      recoverableBytes: 0,
+      recoverableBytes: 700,
       cleanupValueScore: 0,
       safety: "manual-review",
       excluded: false,
       canDelete: false,
+      manualApprovalAllowed: true,
     },
     {
       id: "protected",
@@ -140,6 +142,19 @@ test("selection rules block protected and excluded items and bulk-select only sa
   assert.equal(canSelectCleanerFinding(findings[1]), false);
   assert.equal(canSelectCleanerFinding(findings[2]), true);
   assert.equal(canSelectCleanerFinding(findings[3]), false);
+  assert.equal(canApproveManualReviewFinding(findings[3]), true);
+  assert.equal(canSelectCleanerFinding(findings[3], true), true);
+  assert.equal(
+    canSelectCleanerFinding(
+      {
+        ...findings[3],
+        estimatedReclaimableBytes: null,
+        measurementCompleteness: "partial",
+      },
+      true,
+    ),
+    true,
+  );
   assert.equal(canSelectCleanerFinding(findings[4]), false);
   assert.equal(canSelectCleanerFinding(findings[5]), false);
   assert.deepEqual(selectAllSafeNow(findings), ["safe"]);
@@ -152,6 +167,10 @@ test("selection rules block protected and excluded items and bulk-select only sa
   assert.equal(
     getCleanerSelectionTone(findings, new Set(["safe", "conditional"])),
     "conditional",
+  );
+  assert.equal(
+    getCleanerSelectionTone(findings, new Set(["safe", "manual"])),
+    "manual-review",
   );
 });
 
@@ -182,6 +201,13 @@ test("summary and selected recovery calculations match the displayed labels", ()
       new Set(["safe", "conditional"]),
     ),
     1_500,
+  );
+  assert.equal(
+    calculateSelectedRecoverableBytes(
+      findings,
+      new Set(["safe", "conditional", "manual"]),
+    ),
+    2_200,
   );
 });
 
@@ -225,7 +251,7 @@ test("compact finding reasons stay short while preserving safety decisions", () 
       ...findings[1],
       relatedProcesses: [{ name: "uv", blocking: true }],
     }),
-    "Close uv first, then scan again.",
+    "Close the related app first, then scan again.",
   );
   assert.match(getCleanerCompactReason(findings[4]), /Cleanup is blocked/);
   assert.match(getCleanerCompactReason(findings[5]), /exclusion rule/);
@@ -455,12 +481,17 @@ test("Cleaner finding cards expose visible themed selection and blocked controls
   assert.match(card, /aria-disabled="true"/);
   assert.match(card, /finding\.safety === "protected"/);
   assert.match(card, /finding\.safety === "manual-review"/);
+  assert.match(card, /canApproveManualReviewFinding/);
+  assert.match(card, /data-cleaner-manual-review-action="true"/);
+  assert.match(card, /approvalAllowed \? "Review" : "Unavailable"/);
+  assert.match(card, /Size unknown/);
+  assert.doesNotMatch(card, /I reviewed this item and approve cleanup/);
   assert.match(
     card,
     /getCleanerVisualStatus\(finding\.safety, finding\.excluded\)/,
   );
 
-  for (const tone of ["safe", "conditional"] as const) {
+  for (const tone of ["safe", "conditional", "review"] as const) {
     assert.match(CLEANER_TONE_STYLES[tone].checkbox, /border-cleaner-/);
     assert.match(CLEANER_TONE_STYLES[tone].checkbox, /bg-gray-100/);
     assert.match(
@@ -480,6 +511,25 @@ test("Cleaner finding cards expose visible themed selection and blocked controls
       `${palette.name} conditional checkbox border was not distinct from the card`,
     );
   }
+});
+
+test("manual-review confirmation shows each selected name and path", () => {
+  const dialog = readCleanerRendererSource(
+    "components",
+    "cleaner",
+    "CleanerConfirmationDialog.tsx",
+  );
+
+  assert.match(dialog, /Confirm manual-review cleanup/);
+  assert.match(dialog, /CLEAN MANUAL REVIEW/);
+  assert.match(dialog, /\{finding\.displayName\}/);
+  assert.match(dialog, /\{finding\.path\}/);
+  assert.match(dialog, /Yes, clean what can be cleaned/);
+  assert.match(
+    dialog,
+    /Active builds, installs, or applications may be affected/,
+  );
+  assert.match(dialog, /skip files Windows/);
 });
 
 test("Cleaner renderer keeps technical evidence in collapsed grouped details", () => {
@@ -504,10 +554,8 @@ test("Cleaner renderer keeps technical evidence in collapsed grouped details", (
     "Storage",
     "Safety",
     "Application",
-    "Process evidence",
     "History",
     "Installation",
-    "Running",
     "Data kind",
     "Leftover cache",
     "Shared ownership",
@@ -519,6 +567,9 @@ test("Cleaner renderer keeps technical evidence in collapsed grouped details", (
     assert.match(card, new RegExp(label));
   }
   assert.match(card, /finding\.history/);
+  assert.doesNotMatch(card, /Process evidence/);
+  assert.doesNotMatch(card, /finding\.relatedProcesses\.map/);
+  assert.doesNotMatch(card, /formatCleanerRunningState/);
   assert.match(details, /useState\(false\)/);
   assert.match(details, /\{open &&/);
   assert.match(details, />Details</);
@@ -535,7 +586,7 @@ test("Cleaner renderer keeps technical evidence in collapsed grouped details", (
   assert.doesNotMatch(formatCleanerBytes(1024 ** 3), /\bGB\b/);
 });
 
-test("Cleaner accounting UI separates physical recovery, logical size, and durable receipt states", () => {
+test("Cleaner accounting UI separates physical recovery and uses one-time receipts plus compact history", () => {
   const card = readCleanerRendererSource(
     "components",
     "cleaner",
@@ -547,6 +598,16 @@ test("Cleaner accounting UI separates physical recovery, logical size, and durab
     "CleanerSummary.tsx",
   );
   const tab = readCleanerRendererSource("components", "CleanerTab.tsx");
+  const historyDrawer = readCleanerRendererSource(
+    "components",
+    "cleaner",
+    "CleanerHistoryDrawer.tsx",
+  );
+  const actionBar = readCleanerRendererSource(
+    "components",
+    "cleaner",
+    "CleanerActionBar.tsx",
+  );
 
   assert.match(summary, /Estimated recoverable/);
   assert.match(summary, /could not be included in recovery estimates/);
@@ -556,14 +617,31 @@ test("Cleaner accounting UI separates physical recovery, logical size, and durab
   assert.match(card, /Estimated recovery/);
   assert.match(card, /"Logical size"/);
   assert.match(card, /"Hardlinks"/);
-  assert.match(tab, /history\.cleanupReceipts/);
-  assert.match(tab, /Earlier cleanup receipts/);
+  assert.match(tab, /setCleanupHistory\(history\.cleanupHistory\)/);
+  assert.match(tab, /dismissCleanerCleanupReceipt/);
+  assert.doesNotMatch(tab, /setCleanupResult\(history\./);
+  assert.doesNotMatch(tab, /Earlier cleanup receipts/);
+  assert.doesNotMatch(tab, /Legacy cleanup history/);
   assert.match(tab, /Technical receipt details/);
   assert.match(tab, /aria-label="Dismiss cleanup receipt"/);
-  assert.match(tab, /onDismiss=\{\(\) => setCleanupResult\(null\)\}/);
+  assert.match(tab, /onDismiss=\{\(\) => void dismissCleanupResult\(\)\}/);
   assert.match(tab, /signedFreeSpaceDeltaBytes/);
   assert.match(tab, /status === "partial"/);
   assert.match(tab, /border-cleaner-conditional-border/);
+  assert.match(actionBar, /> History \(/);
+  assert.match(historyDrawer, /Cleanup history/);
+  assert.match(historyDrawer, /Completed cleanup runs, newest first/);
+  assert.match(historyDrawer, /entry\.freeSpaceBeforeBytes/);
+  assert.match(historyDrawer, /entry\.freeSpaceAfterBytes/);
+  assert.match(historyDrawer, /entry\.recoveredBytes/);
+  assert.match(historyDrawer, /entry\.deletedTargetNames/);
+  assert.match(historyDrawer, /role="tree"/);
+  assert.match(historyDrawer, /Standard Scan/);
+  assert.match(historyDrawer, /Deep Audit/);
+  assert.doesNotMatch(
+    historyDrawer,
+    /normalizedPath|findingId|individualFiles|filesSuccessfullyUnlinked/,
+  );
   assert.equal(formatCleanerSignedBytes(-(1024 ** 2)), "-1.00 MiB");
   assert.equal(formatCleanerSignedBytes(1024 ** 2), "+1.00 MiB");
 });
@@ -792,7 +870,10 @@ test("Cleaner renderer preserves guarded IPC and never sends a raw deletion path
   assert.match(`${tab}\n${cleanerComponents}`, /Run Standard Scan/);
   assert.doesNotMatch(tab, /#[0-9a-f]{3,8}/i);
   assert.match(preload, /validateCleanCleanerFindingsInput/);
+  assert.match(preload, /validatePrepareCleanerCleanupInput/);
+  assert.match(tab, /prepareCleanerCleanup\(\{/);
   assert.doesNotMatch(preload, /cleanCleanerFindings:[\s\S]{0,250}path:/);
+  assert.doesNotMatch(preload, /prepareCleanerCleanup:[\s\S]{0,250}path:/);
   assert.equal(
     fs
       .readFileSync(

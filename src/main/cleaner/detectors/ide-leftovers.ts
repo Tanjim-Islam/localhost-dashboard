@@ -237,11 +237,13 @@ export class IdeLeftoverDetector implements CleanerDetector {
             "Reinstall required extensions from the editor marketplace or a backup.",
           relatedProcessNames: editor.processNames,
           dataKind: "extension-store",
+          manualApprovalEligible: !editor.protectedByDefault,
           processMatchRules: [
             {
               applicationIds: [editor.appId],
               commandCategories: ["editor"],
               executableBasenames: editor.processNames,
+              allowReferencedTarget: true,
               weakNameWarnings: editor.processNames,
             },
           ],

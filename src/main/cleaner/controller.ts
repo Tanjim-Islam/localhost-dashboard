@@ -3,6 +3,7 @@ import type {
   CleanCleanerFindingsInput,
   CleanerCleanupProgress,
   CleanerCleanupResult,
+  CleanerCleanupUsageCheck,
   CleanerEnvironment,
   CleanerExclusion,
   CleanerHistorySnapshot,
@@ -11,6 +12,7 @@ import type {
   CleanerScanProgress,
   CleanerScanResult,
   CleanerScanState,
+  PrepareCleanerCleanupInput,
   StartCleanerScanInput,
   UpdateCleanerExclusionsInput,
 } from "./types";
@@ -28,6 +30,7 @@ import {
   isFindingExcluded,
   synchronizeHistoryExclusions,
 } from "./exclusions";
+import { dismissCleanerCleanupReceipt } from "./cleanup-receipts";
 
 export type CleanerControllerEvents = {
   "scan-progress": [CleanerScanProgress];
@@ -204,6 +207,15 @@ export class CleanerController extends EventEmitter<CleanerControllerEvents> {
     }
   }
 
+  async prepareCleanup(
+    input: PrepareCleanerCleanupInput,
+  ): Promise<CleanerCleanupUsageCheck> {
+    if (this.cleanupActive)
+      throw new Error("Cleaner cleanup is already running.");
+    const session = this.sessions.requireCompleted(input.scanSessionId);
+    return this.cleanupExecutor.inspectUsage(session, input, this.environment);
+  }
+
   getExclusions(): CleanerExclusion[] {
     return this.persistence.read().exclusions;
   }
@@ -230,11 +242,20 @@ export class CleanerController extends EventEmitter<CleanerControllerEvents> {
   getHistory(): CleanerHistorySnapshot {
     const state = this.persistence.read();
     return {
-      itemHistory: state.itemHistory,
-      cleanupEvents: state.cleanupEvents,
-      cleanupReceipts: state.cleanupReceipts,
+      cleanupHistory: state.cleanupHistory,
       migrationNotices: state.migrationNotices,
     };
+  }
+
+  dismissCleanupReceipt(cleanupRequestId: string): boolean {
+    const state = this.persistence.read();
+    const dismissed = dismissCleanerCleanupReceipt(
+      state,
+      cleanupRequestId,
+      this.now(),
+    );
+    if (dismissed) this.persistence.write(state);
+    return dismissed;
   }
 
   getPreferences(): CleanerPreferences {

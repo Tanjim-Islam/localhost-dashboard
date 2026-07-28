@@ -175,7 +175,25 @@ export async function createCleanerFixtureRoot(
   await makeCandidate("User/go/pkg/mod", 1_800_000_000);
   await makeCandidate("User/.cargo/registry", 1_100_000_000);
   await makeCandidate("User/.rustup/toolchains", 2_800_000_000);
-  await makeCandidate("User/.gradle/caches", 2_600_000_000);
+  const gradleCache = await makeCandidate("User/.gradle/caches", 2_600_000_000);
+  standardAccountingOverrides[normalizeWindowsPath(gradleCache)] = {
+    logicalBytes: 2_600_000_000,
+    allocatedBytes: null,
+    uniqueAllocatedBytes: null,
+    estimatedReclaimableBytes: null,
+    reclaimableLowerBoundBytes: 0,
+    reclaimableUpperBoundBytes: null,
+    accountingConfidence: "lower-bound",
+    hardlinkRecordCount: 0,
+    externalHardlinkRecordCount: 0,
+    measuredFileCount: 1,
+    measuredDirectoryCount: 1,
+    inspectedEntryCount: 2,
+    measurementCompleteness: "partial",
+    measurementLimitReason: "metadata-limit",
+    logicalTraversalComplete: true,
+    physicalAccountingComplete: false,
+  };
   await makeCandidate("User/.gradle/wrapper/dists", 1_000_000_000);
   await makeCandidate("User/.m2/repository", 2_100_000_000);
   await makeCandidate("User/.nuget/packages", 980_000_000);
@@ -192,6 +210,7 @@ export async function createCleanerFixtureRoot(
     300_000_000,
   );
   await makeCandidate("User/.windsurf/extensions", 900_000_000);
+  await makeCandidate("User/.antigravity/extensions", 640_000_000);
   await makeCandidate("User/AppData/Roaming/Code/Cache", 1_700_000_000);
   await makeCandidate("User/.vscode/extensions", 1_200_000_000);
   await makeCandidate(
@@ -412,6 +431,10 @@ export async function createCleanerFixtureRoot(
     "User/AppData/Local/Programs/cursor/Cursor.exe",
     1,
   );
+  const antigravityExecutable = await makeFileCandidate(
+    "User/AppData/Local/Programs/Antigravity/Antigravity.exe",
+    1,
+  );
   const antigravityToolsExecutable = await makeFileCandidate(
     "User/AppData/Local/Antigravity Tools/antigravity_tools.exe",
     1,
@@ -569,6 +592,15 @@ export async function createCleanerFixtureRoot(
             ),
             fixtureEvidence(
               "uninstall-registry",
+              "editor.antigravity",
+              "Current Gemini Antigravity registry record.",
+              {
+                observedName: "Gemini Antigravity",
+                publisher: "Google LLC",
+              },
+            ),
+            fixtureEvidence(
+              "uninstall-registry",
               "tool.antigravity-tools",
               "Current Antigravity Tools 4.2.2 registry record.",
               {
@@ -634,6 +666,10 @@ export async function createCleanerFixtureRoot(
           evidence: [
             fixtureExecutableEvidence("editor.vscode", codeExecutable),
             fixtureExecutableEvidence("editor.cursor", cursorExecutable),
+            fixtureExecutableEvidence(
+              "editor.antigravity",
+              antigravityExecutable,
+            ),
             fixtureExecutableEvidence(
               "tool.antigravity-tools",
               antigravityToolsExecutable,

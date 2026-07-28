@@ -39,6 +39,7 @@ export const createEmptyCleanerState = (): CleanerStoreSchema => ({
   itemHistory: {},
   cleanupEvents: [],
   cleanupReceipts: [],
+  cleanupHistory: [],
   applicationObservations: {},
   migrationNotices: [],
   preferences: { defaultScanMode: "standard", showExcluded: false },

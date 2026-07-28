@@ -1,5 +1,11 @@
 import { forwardRef } from "react";
-import { Eraser, RefreshCw, ScanSearch, SlidersHorizontal } from "lucide-react";
+import {
+  Eraser,
+  History,
+  RefreshCw,
+  ScanSearch,
+  SlidersHorizontal,
+} from "lucide-react";
 import { formatCleanerBytes } from "../../cleaner-format";
 import type { CleanerSelectionTone } from "../../cleaner-view-model";
 
@@ -9,14 +15,18 @@ export const CleanerActionBar = forwardRef<
     mode: "standard" | "deep";
     selectedCount: number;
     selectedBytes: number;
+    selectedSizeUnknown: boolean;
     selectionTone: CleanerSelectionTone;
     safeRecoverableBytes: number;
     exclusionCount: number;
+    historyCount: number;
+    historyButtonRef: React.RefObject<HTMLButtonElement | null>;
     onSelectSafe(): void;
     onClearSelection(): void;
     onRescan(): void;
     onAlternateScan(): void;
     onOpenExclusions(): void;
+    onOpenHistory(): void;
     onCleanSafe(): void;
     onCleanSelected(): void;
   }
@@ -25,25 +35,31 @@ export const CleanerActionBar = forwardRef<
     mode,
     selectedCount,
     selectedBytes,
+    selectedSizeUnknown,
     selectionTone,
     safeRecoverableBytes,
     exclusionCount,
+    historyCount,
+    historyButtonRef,
     onSelectSafe,
     onClearSelection,
     onRescan,
     onAlternateScan,
     onOpenExclusions,
+    onOpenHistory,
     onCleanSafe,
     onCleanSelected,
   },
   exclusionsButtonRef,
 ) {
   const selectedButtonTone =
-    selectionTone === "conditional"
-      ? "bg-cleaner-conditional text-cleaner-conditional-contrast hover:bg-cleaner-conditional/90"
-      : selectionTone === "safe"
-        ? "bg-cleaner-safe text-cleaner-safe-contrast hover:bg-cleaner-safe/90"
-        : "bg-gray-300 text-gray-700";
+    selectionTone === "manual-review"
+      ? "bg-cleaner-review text-cleaner-review-contrast hover:bg-cleaner-review/90"
+      : selectionTone === "conditional"
+        ? "bg-cleaner-conditional text-cleaner-conditional-contrast hover:bg-cleaner-conditional/90"
+        : selectionTone === "safe"
+          ? "bg-cleaner-safe text-cleaner-safe-contrast hover:bg-cleaner-safe/90"
+          : "bg-gray-300 text-gray-700";
   return (
     <section
       className="mt-3 border-t border-gray-300 pt-3"
@@ -90,6 +106,15 @@ export const CleanerActionBar = forwardRef<
             <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />{" "}
             Exclusions ({exclusionCount})
           </button>
+          <button
+            ref={historyButtonRef}
+            type="button"
+            onClick={onOpenHistory}
+            className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-gray-300 bg-gray-200 px-3 text-sm font-medium text-gray-800 outline-none hover:bg-gray-300 focus-visible:ring-2 focus-visible:ring-cleaner-review-border"
+          >
+            <History className="h-4 w-4" aria-hidden="true" /> History (
+            {historyCount})
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 xl:justify-end">
@@ -100,7 +125,13 @@ export const CleanerActionBar = forwardRef<
             <div className="font-semibold text-gray-900">
               {selectedCount} selected
             </div>
-            <div>{formatCleanerBytes(selectedBytes)} recoverable</div>
+            <div>
+              {selectedSizeUnknown
+                ? selectedBytes > 0
+                  ? `${formatCleanerBytes(selectedBytes)} known, plus unknown`
+                  : "Size unknown"
+                : `${formatCleanerBytes(selectedBytes)} recoverable`}
+            </div>
           </div>
           <button
             type="button"

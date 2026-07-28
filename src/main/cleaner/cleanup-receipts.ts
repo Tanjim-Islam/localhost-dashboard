@@ -1,11 +1,13 @@
 import type {
   CleanerCleanupReceipt,
   CleanerCleanupReceiptFinding,
+  CleanerScanMode,
   CleanerStoreSchema,
 } from "./types";
 import { cleanerHistoryKey, pruneCleanerHistory } from "./history";
 
 export const MAX_CLEANER_RECEIPTS = 100;
+export const MAX_CLEANER_HISTORY_ENTRIES = 100;
 
 export function upsertCleanerCleanupReceipt(
   state: CleanerStoreSchema,
@@ -53,11 +55,32 @@ export function recoverInterruptedCleanupReceipts(
   return changed;
 }
 
+export function dismissCleanerCleanupReceipt(
+  state: CleanerStoreSchema,
+  cleanupRequestId: string,
+  now: number,
+): boolean {
+  const receipt = state.cleanupReceipts.find(
+    (item) => item.cleanupRequestId === cleanupRequestId,
+  );
+  if (
+    !receipt ||
+    receipt.status === "in-progress" ||
+    receipt.dismissedAt !== undefined
+  ) {
+    return false;
+  }
+  receipt.dismissedAt = now;
+  return true;
+}
+
 export function recordFinalizedCleanupReceipt(
   state: CleanerStoreSchema,
   receipt: CleanerCleanupReceipt,
+  mode: CleanerScanMode,
 ): void {
   upsertCleanerCleanupReceipt(state, receipt);
+  recordCompactCleanupHistory(state, receipt, mode);
   for (const finding of receipt.findings) {
     const key = cleanerHistoryKey(finding.detectorId, finding.normalizedPath);
     const history = state.itemHistory[key] ?? {
@@ -122,6 +145,40 @@ export function recordFinalizedCleanupReceipt(
     state.itemHistory[key] = history;
   }
   pruneCleanerHistory(state);
+}
+
+function recordCompactCleanupHistory(
+  state: CleanerStoreSchema,
+  receipt: CleanerCleanupReceipt,
+  mode: CleanerScanMode,
+): void {
+  const deletedTargetNames = receipt.findings
+    .filter(
+      (finding) =>
+        finding.attemptStatus === "deleted" &&
+        finding.verificationCompleted &&
+        finding.postCleanupRootExists === false &&
+        finding.skippedEntryCount === 0 &&
+        finding.failedEntryCount === 0,
+    )
+    .map((finding) => finding.displayName.trim().slice(0, 256))
+    .filter(Boolean)
+    .slice(0, 200);
+  const entry = {
+    id: receipt.cleanupRequestId,
+    completedAt: receipt.completedAt ?? receipt.startedAt ?? receipt.createdAt,
+    mode,
+    freeSpaceBeforeBytes: receipt.freeSpaceBefore?.freeBytes ?? null,
+    freeSpaceAfterBytes: receipt.freeSpaceAfter?.freeBytes ?? null,
+    recoveredBytes: receipt.signedFreeSpaceDeltaBytes ?? null,
+    deletedTargetNames,
+  };
+  state.cleanupHistory = [
+    entry,
+    ...state.cleanupHistory.filter((item) => item.id !== entry.id),
+  ]
+    .sort((left, right) => right.completedAt - left.completedAt)
+    .slice(0, MAX_CLEANER_HISTORY_ENTRIES);
 }
 
 function recordInterruptedFinding(

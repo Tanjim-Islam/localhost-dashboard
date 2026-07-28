@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { CleanerCleanupExecutor } from "../src/main/cleaner/cleanup-executor";
 import {
+  dismissCleanerCleanupReceipt,
+  MAX_CLEANER_HISTORY_ENTRIES,
   MAX_CLEANER_RECEIPTS,
   recoverInterruptedCleanupReceipts,
 } from "../src/main/cleaner/cleanup-receipts";
@@ -73,6 +75,48 @@ test("cleanup persists an in-progress receipt before unlink and finalizes exact 
     const stored = persistence.read().cleanupReceipts[0];
     assert.equal(stored.status, "completed");
     assert.equal(stored.cleanupRequestId, result.cleanupRequestId);
+    const history = persistence.read().cleanupHistory[0];
+    assert.deepEqual(history, {
+      id: result.cleanupRequestId,
+      completedAt: result.completedAt,
+      mode: "standard",
+      freeSpaceBeforeBytes: 10_000_000_000,
+      freeSpaceAfterBytes: 10_050_000_000,
+      recoveredBytes: 50_000_000,
+      deletedTargetNames: [finding.displayName],
+    });
+    assert.deepEqual(Object.keys(history).sort(), [
+      "completedAt",
+      "deletedTargetNames",
+      "freeSpaceAfterBytes",
+      "freeSpaceBeforeBytes",
+      "id",
+      "mode",
+      "recoveredBytes",
+    ]);
+    assert.doesNotMatch(
+      JSON.stringify(history),
+      /normalizedPath|detectorId|findingId|fixture\.bin|directoryListing/i,
+    );
+
+    const state = persistence.read();
+    assert.equal(
+      dismissCleanerCleanupReceipt(state, result.cleanupRequestId, 123_456_789),
+      true,
+    );
+    persistence.write(state);
+    assert.equal(
+      persistence.read().cleanupReceipts[0].dismissedAt,
+      123_456_789,
+    );
+    assert.equal(
+      dismissCleanerCleanupReceipt(
+        persistence.read(),
+        result.cleanupRequestId,
+        987_654_321,
+      ),
+      false,
+    );
     assert.doesNotMatch(
       JSON.stringify(stored),
       /fixture\.bin|directoryListings|rawCommand|registryDump|secret/i,
@@ -460,6 +504,20 @@ test("schema migration retains bounded receipts and strips unknown audit payload
           directoryListing: ["private.bin"],
         }),
       ),
+      cleanupHistory: Array.from(
+        { length: MAX_CLEANER_HISTORY_ENTRIES + 5 },
+        (_, index) => ({
+          id: `history-${index}`,
+          completedAt: index,
+          mode: index % 2 === 0 ? "standard" : "deep",
+          freeSpaceBeforeBytes: 1_000,
+          freeSpaceAfterBytes: 1_200,
+          recoveredBytes: 200,
+          deletedTargetNames: ["npm content cache"],
+          normalizedPath: "c:\\private",
+          individualFiles: ["private.bin"],
+        }),
+      ),
       applicationObservations: {},
       migrationNotices: [],
       preferences: { defaultScanMode: "standard", showExcluded: false },
@@ -468,9 +526,14 @@ test("schema migration retains bounded receipts and strips unknown audit payload
 
     assert.equal(migrated.schemaVersion, 3);
     assert.equal(migrated.cleanupReceipts.length, MAX_CLEANER_RECEIPTS);
+    assert.equal(migrated.cleanupHistory.length, MAX_CLEANER_HISTORY_ENTRIES);
+    assert.equal(
+      migrated.cleanupHistory[0].completedAt,
+      MAX_CLEANER_HISTORY_ENTRIES + 4,
+    );
     assert.doesNotMatch(
       JSON.stringify(migrated),
-      /rawCommand|directoryListing|private\.bin|registryDump|--token|secret/i,
+      /rawCommand|directoryListing|individualFiles|private\.bin|registryDump|--token|secret|c:\\\\private/i,
     );
     assert.match(
       migrated.migrationNotices.join(" "),
