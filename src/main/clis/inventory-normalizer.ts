@@ -47,7 +47,9 @@ export function normalizeCliInventory(
   if (!isInventoryShape(value)) return null;
   const platform = value.platform;
   const endpoints = dedupeEndpoints(value.endpoints);
-  const endpointById = new Map(endpoints.map((endpoint) => [endpoint.id, endpoint]));
+  const endpointById = new Map(
+    endpoints.map((endpoint) => [endpoint.id, endpoint]),
+  );
   const commandsByInstallation = new Map<string, string[]>();
   for (const command of value.commands) {
     if (
@@ -78,16 +80,15 @@ export function normalizeCliInventory(
     const productId = raw.productId;
     const installationEndpoints = raw.endpointIds
       .map((id) => endpointById.get(id))
-      .filter((endpoint): endpoint is CliExecutableEndpoint => Boolean(endpoint));
+      .filter((endpoint): endpoint is CliExecutableEndpoint =>
+        Boolean(endpoint),
+      );
     const identity = isPackageIdentity(raw.packageIdentity)
       ? structuredClone(raw.packageIdentity)
       : undefined;
     const standaloneIdentity = installationEndpoints
       .map((endpoint) =>
-        groupEquivalentEndpointKey(
-          { productId, endpoint },
-          platform,
-        ),
+        groupEquivalentEndpointKey({ productId, endpoint }, platform),
       )
       .sort()[0];
     const id = createInstallationId({
@@ -146,8 +147,7 @@ export function normalizeCliInventory(
       issueCodes: Array.isArray(raw.issueCodes)
         ? [...new Set(raw.issueCodes)]
         : [],
-      firstSeenAt:
-        finite(raw.firstSeenAt) ?? finite(value.generatedAt) ?? 0,
+      firstSeenAt: finite(raw.firstSeenAt) ?? finite(value.generatedAt) ?? 0,
       ...(finite(raw.lastSeenAt) !== undefined
         ? { lastSeenAt: finite(raw.lastSeenAt) }
         : {}),
@@ -180,13 +180,19 @@ export function normalizeCliInventory(
     const existing = groups.get(key);
     groups.set(
       key,
-      existing
-        ? mergeInstallations(existing, candidate, endpoints)
-        : candidate,
+      existing ? mergeInstallations(existing, candidate, endpoints) : candidate,
     );
   }
 
-  const installations = [...groups.values()];
+  const installations = [...groups.values()].filter(
+    (installation) => installation.presence !== "missing",
+  );
+  const retainedEndpointIds = new Set(
+    installations.flatMap((installation) => installation.endpointIds),
+  );
+  const retainedEndpoints = endpoints.filter((endpoint) =>
+    retainedEndpointIds.has(endpoint.id),
+  );
   for (const installation of installations) {
     installation.uninstallCapability = calculateUninstallCapability({
       definition: getCliDefinition(installation.productId),
@@ -200,7 +206,7 @@ export function normalizeCliInventory(
     });
   }
   const commands: CliInventorySnapshot["commands"] = [];
-  assignCommandResolution(installations, commands, endpoints);
+  assignCommandResolution(installations, commands, retainedEndpoints);
   const products = buildProducts(platform, installations, commands);
   const normalized: CliInventorySnapshot = {
     schemaVersion: 2,
@@ -220,10 +226,10 @@ export function normalizeCliInventory(
     products,
     installations,
     commands,
-    endpoints,
-    sourceResults: value.sourceResults.slice(0, 64).map((source) =>
-      structuredClone(source),
-    ),
+    endpoints: retainedEndpoints,
+    sourceResults: value.sourceResults
+      .slice(0, 64)
+      .map((source) => structuredClone(source)),
   };
   finalizeHealth(normalized);
   return normalized;
@@ -245,8 +251,7 @@ function mergeInstallations(
     ...preferredVersion,
     endpointIds,
     presence,
-    origin:
-      left.origin === "unknown" ? right.origin : left.origin,
+    origin: left.origin === "unknown" ? right.origin : left.origin,
     issueCodes: [...new Set([...left.issueCodes, ...right.issueCodes])],
     firstSeenAt: Math.min(left.firstSeenAt, right.firstSeenAt),
     lastSeenAt: maxDefined(left.lastSeenAt, right.lastSeenAt),
@@ -292,8 +297,16 @@ function preferVersion(
 }
 
 function preferPresence(left: CliPresence, right: CliPresence): CliPresence {
-  const order: CliPresence[] = ["present", "inaccessible", "unknown", "missing"];
-  return order.find((presence) => presence === left || presence === right) ?? "unknown";
+  const order: CliPresence[] = [
+    "present",
+    "inaccessible",
+    "unknown",
+    "missing",
+  ];
+  return (
+    order.find((presence) => presence === left || presence === right) ??
+    "unknown"
+  );
 }
 
 function preferVerification(
@@ -307,7 +320,9 @@ function preferVerification(
     "ownership-unknown",
     "cached",
   ];
-  return order.find((status) => status === left || status === right) ?? "cached";
+  return (
+    order.find((status) => status === left || status === right) ?? "cached"
+  );
 }
 
 function inferVerification(
@@ -369,10 +384,10 @@ function normalizeScope(value: unknown): CliPackageIdentity["scope"] {
 function isPackageIdentity(value: unknown): value is CliPackageIdentity {
   return Boolean(
     value &&
-      typeof value === "object" &&
-      typeof (value as CliPackageIdentity).source === "string" &&
-      typeof (value as CliPackageIdentity).packageId === "string" &&
-      typeof (value as CliPackageIdentity).ownershipConfidence === "string",
+    typeof value === "object" &&
+    typeof (value as CliPackageIdentity).source === "string" &&
+    typeof (value as CliPackageIdentity).packageId === "string" &&
+    typeof (value as CliPackageIdentity).ownershipConfidence === "string",
   );
 }
 
@@ -425,12 +440,12 @@ function finite(value: unknown): number | undefined {
 }
 
 function isOrigin(value: unknown): value is CliInstallationOrigin {
-  return typeof value === "string" && ORIGINS.has(value as CliInstallationOrigin);
+  return (
+    typeof value === "string" && ORIGINS.has(value as CliInstallationOrigin)
+  );
 }
 
-function isVerificationStatus(
-  value: unknown,
-): value is CliVerificationStatus {
+function isVerificationStatus(value: unknown): value is CliVerificationStatus {
   return (
     typeof value === "string" &&
     VERIFICATION_STATUSES.has(value as CliVerificationStatus)

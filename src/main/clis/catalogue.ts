@@ -1,8 +1,4 @@
-import type {
-  CliCategory,
-  CliPackageSource,
-  CliPlatform,
-} from "./types";
+import type { CliCategory, CliPackageSource, CliPlatform } from "./types";
 
 export type CliVersionProbeDefinition = {
   commandName: string;
@@ -24,6 +20,7 @@ export type CliDefinition = {
   versionProbe?: CliVersionProbeDefinition;
   foundational?: boolean;
   preferVersionProbe?: boolean;
+  alwaysProbeVersion?: boolean;
   incompleteProbe?: {
     commandName: string;
     args: readonly string[];
@@ -133,7 +130,11 @@ export const CLI_CATALOGUE: readonly CliDefinition[] = [
   }),
   manager("npm", "npm", ["npm"], true),
   manager("npx", "npx", ["npx"], true, null),
-  manager("pnpm", "pnpm", ["pnpm"], true),
+  {
+    ...manager("pnpm", "pnpm", ["pnpm"], true),
+    preferVersionProbe: true,
+    alwaysProbeVersion: true,
+  },
   manager("yarn", "Yarn", ["yarn"], true),
   manager("pip", "pip", ["pip", "pip3"], true),
   manager("pipx", "pipx", ["pipx"], true),
@@ -204,11 +205,7 @@ export const CLI_CATALOGUE: readonly CliDefinition[] = [
   infra("minikube", "Minikube", ["minikube"]),
   infra("kind", "Kind", ["kind"]),
   infra("podman", "Podman", ["podman"]),
-  database("postgresql", "PostgreSQL Tools", [
-    "psql",
-    "pg_dump",
-    "pg_restore",
-  ]),
+  database("postgresql", "PostgreSQL Tools", ["psql", "pg_dump", "pg_restore"]),
   database("mongodb", "MongoDB Tools", ["mongosh", "mongo", "mongod"]),
   database("atlas", "MongoDB Atlas CLI", ["atlas"]),
   database("prisma", "Prisma CLI", ["prisma"], {
@@ -243,9 +240,7 @@ export function getCliDefinitions(platform: CliPlatform): CliDefinition[] {
   ).map((definition) => ({ ...definition }));
 }
 
-export function getCliDefinition(
-  productId: string,
-): CliDefinition | undefined {
+export function getCliDefinition(productId: string): CliDefinition | undefined {
   return CLI_CATALOGUE.find((definition) => definition.id === productId);
 }
 
@@ -362,8 +357,7 @@ function cloud(
     commands,
     platforms: both,
     packages,
-    versionProbe:
-      id === "firebase" ? undefined : probe(commands[0]),
+    versionProbe: id === "firebase" ? undefined : probe(commands[0]),
   };
 }
 

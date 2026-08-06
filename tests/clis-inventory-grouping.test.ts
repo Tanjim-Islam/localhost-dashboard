@@ -46,7 +46,10 @@ test("npm package metadata groups cmd, PowerShell, and extensionless launchers",
     assert.equal(product.removedInstallationIds.length, 0);
     assert.equal(product.health, "healthy");
     assert.equal(product.verificationStatus, "verified");
-    assert.doesNotMatch(product.issueCodes.join(","), /path-conflict|duplicate/);
+    assert.doesNotMatch(
+      product.issueCodes.join(","),
+      /path-conflict|duplicate/,
+    );
 
     const installation = requireInstallation(
       inventory,
@@ -94,7 +97,7 @@ test("real product fixtures keep package installs distinct from genuine standalo
     });
     const claudeProduct = requireProduct(inventory, "claude-code");
     assert.equal(claudeProduct.currentInstallationIds.length, 2);
-    assert.equal(claudeProduct.health, "warning");
+    assert.equal(claudeProduct.health, "healthy");
     assert(claudeProduct.issueCodes.includes("path-conflict"));
     assert(!claudeProduct.issueCodes.includes("duplicate-version"));
     const claudeInstallations = claudeProduct.currentInstallationIds.map((id) =>
@@ -107,8 +110,9 @@ test("real product fixtures keep package installs distinct from genuine standalo
       1,
     );
     assert.equal(
-      claudeInstallations.filter((installation) => !installation.packageIdentity)
-        .length,
+      claudeInstallations.filter(
+        (installation) => !installation.packageIdentity,
+      ).length,
       1,
     );
     assert(
@@ -156,13 +160,17 @@ test("duplicate-version requires distinct installations with the same known vers
   inventory.installations[1].version = "29.1.3";
   finalizeHealth(inventory);
   assert(
-    requireProduct(inventory, "docker").issueCodes.includes("duplicate-version"),
+    requireProduct(inventory, "docker").issueCodes.includes(
+      "duplicate-version",
+    ),
   );
 
   inventory.installations[1].version = "28.0.0";
   finalizeHealth(inventory);
   assert(
-    !requireProduct(inventory, "docker").issueCodes.includes("duplicate-version"),
+    !requireProduct(inventory, "docker").issueCodes.includes(
+      "duplicate-version",
+    ),
   );
 });
 
@@ -170,12 +178,21 @@ test("embedded Codex runtime tools are separate, hidden from current counts, and
   const root = await mkdtemp(path.join(os.tmpdir(), "clis-embedded-"));
   try {
     const normal = path.join(root, "pnpm");
-    const pnpmTarget = path.join(normal, ".tools", "pnpm-exe", "10.33.0", "pnpm.exe");
+    const pnpmTarget = path.join(
+      normal,
+      ".tools",
+      "pnpm-exe",
+      "10.33.0",
+      "pnpm.exe",
+    );
     await mkdir(path.dirname(pnpmTarget), { recursive: true });
     await writeFile(pnpmTarget, "pnpm fixture");
     await mkdir(normal, { recursive: true });
     await writeFile(path.join(normal, "pnpm.CMD"), `@"${pnpmTarget}" %*\n`);
-    await writeFile(path.join(normal, "pnpm"), `#!/bin/sh\n"${pnpmTarget}" "$@"\n`);
+    await writeFile(
+      path.join(normal, "pnpm"),
+      `#!/bin/sh\n"${pnpmTarget}" "$@"\n`,
+    );
 
     const embedded = path.join(
       root,
@@ -405,8 +422,7 @@ test("Winget-owned execution aliases group with package endpoints without false 
   const packageExecutable = endpoint({
     id: "ngrok-package",
     commandName: "ngrok",
-    path:
-      "C:\\Program Files\\WindowsApps\\ngrok.ngrok_3.39.8.0_x64__fixture\\ngrok.exe",
+    path: "C:\\Program Files\\WindowsApps\\ngrok.ngrok_3.39.8.0_x64__fixture\\ngrok.exe",
   });
   const packageRecord: CliPackageRecord = {
     productId: "ngrok",
@@ -419,8 +435,7 @@ test("Winget-owned execution aliases group with package endpoints without false 
       packageId: "9MVS1J51GMK6",
       packageVersion: "3.39.8.0",
       scope: "unknown",
-      managerRoot:
-        "C:\\Users\\fixture\\AppData\\Local\\Microsoft\\WindowsApps",
+      managerRoot: "C:\\Users\\fixture\\AppData\\Local\\Microsoft\\WindowsApps",
       managerExecutablePath:
         "C:\\Users\\fixture\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe",
       ownershipConfidence: "corroborated",
@@ -609,7 +624,7 @@ test("Docker uses the curated CLI probe instead of the Docker Desktop package ve
   assert.equal(rebuilt.installations[0].health, "healthy");
 });
 
-test("cached shim duplicates are repaired while unrelated historical installs stay removed", () => {
+test("successful scans discard unrelated historical installations", () => {
   const currentEndpoint = endpoint({
     id: "codex-current-cmd",
     commandName: "codex",
@@ -666,11 +681,14 @@ test("cached shim duplicates are repaired while unrelated historical installs st
       uninstallEvidence: "manager-owned",
     },
   };
-  const previous = snapshotWithInstallations([
-    historicalInstallation("old-cmd", "codex", [currentEndpoint.id]),
-    historicalInstallation("old-shell", "codex", [extensionless.id]),
-    historicalInstallation("old-app", "codex", [appAlias.id], "system"),
-  ], [currentEndpoint, extensionless, appAlias]);
+  const previous = snapshotWithInstallations(
+    [
+      historicalInstallation("old-cmd", "codex", [currentEndpoint.id]),
+      historicalInstallation("old-shell", "codex", [extensionless.id]),
+      historicalInstallation("old-app", "codex", [appAlias.id], "system"),
+    ],
+    [currentEndpoint, extensionless, appAlias],
+  );
   const inventory = buildFromRecords({
     records: [
       { productId: "codex", endpoint: currentEndpoint },
@@ -681,11 +699,50 @@ test("cached shim duplicates are repaired while unrelated historical installs st
   });
   const product = requireProduct(inventory, "codex");
   assert.equal(product.currentInstallationIds.length, 1);
-  assert.equal(product.removedInstallationIds.length, 1);
-  assert.equal(product.installationIds.length, 2);
+  assert.equal(product.removedInstallationIds.length, 0);
+  assert.equal(product.installationIds.length, 1);
   assert.equal(product.health, "healthy");
   assert.equal(product.verificationStatus, "verified");
   assert(!product.issueCodes.includes("cached-missing"));
+});
+
+test("partial source failures retain prior evidence as hidden unknown state", () => {
+  const oldEndpoint = endpoint({
+    id: "codex-source-unavailable",
+    commandName: "codex",
+    path: "C:\\Users\\fixture\\AppData\\Roaming\\npm\\codex.cmd",
+    pathIndex: 0,
+    kind: "shim",
+  });
+  const oldInstallation = historicalInstallation(
+    "old-codex-source",
+    "codex",
+    [oldEndpoint.id],
+    "package-manager",
+  );
+  oldInstallation.packageIdentity = {
+    source: "npm",
+    packageId: "@openai/codex",
+    packageVersion: "0.145.0",
+    scope: "user",
+    managerRoot: "C:\\Users\\fixture\\AppData\\Roaming\\npm",
+    installRoot:
+      "C:\\Users\\fixture\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex",
+    ownershipConfidence: "exact",
+    uninstallEvidence: "manager-owned",
+  };
+  const inventory = buildFromRecords({
+    records: [],
+    packages: [],
+    previous: snapshotWithInstallations([oldInstallation], [oldEndpoint]),
+    failedSourceIds: new Set(["npm|fixture"]),
+  });
+  const retained = inventory.installations[0];
+  const product = requireProduct(inventory, "codex");
+  assert.equal(retained.presence, "unknown");
+  assert(retained.issueCodes.includes("package-source-unavailable"));
+  assert.equal(product.currentInstallationIds.length, 0);
+  assert.equal(product.removedInstallationIds.length, 0);
 });
 
 test("runtime health stays independent from ownership, version, and history", () => {
@@ -804,7 +861,66 @@ test("version cache requires an unchanged fingerprint and probe timeouts do not 
   assert.equal(runCount, 1);
   assert.equal(changed.installations[0].health, "healthy");
   assert.equal(changed.installations[0].version, undefined);
-  assert.equal(changed.installations[0].verificationStatus, "ownership-unknown");
+  assert.equal(
+    changed.installations[0].verificationStatus,
+    "ownership-unknown",
+  );
+});
+
+test("pnpm always refreshes its version through the active executable", async () => {
+  const pnpm = endpoint({
+    id: "pnpm-version-refresh",
+    commandName: "pnpm",
+    path: "C:\\Users\\fixture\\AppData\\Local\\pnpm\\pnpm.cmd",
+    pathIndex: 0,
+    kind: "shim",
+    shimTarget:
+      "C:\\Users\\fixture\\AppData\\Local\\pnpm\\.tools\\pnpm-exe\\10.33.0\\pnpm.exe",
+  });
+  const initial = buildFromRecords({
+    records: [{ productId: "pnpm", endpoint: pnpm }],
+    packages: [],
+    previous: null,
+  });
+  initial.installations[0].version = "10.12.1";
+  initial.installations[0].versionSource = "version-probe";
+  initial.installations[0].issueCodes = [];
+
+  const refreshed = buildFromRecords({
+    records: [{ productId: "pnpm", endpoint: pnpm }],
+    packages: [],
+    previous: initial,
+  });
+  assert.equal(refreshed.installations[0].version, undefined);
+
+  let runCount = 0;
+  await probeVersions({
+    environment: defaultEnvironment(),
+    runner: {
+      async run(): Promise<CliCommandResult> {
+        runCount += 1;
+        return {
+          executable: pnpm.shimTarget as string,
+          exitCode: 0,
+          stdout: "10.33.0\n",
+          stderr: "",
+          timedOut: false,
+          cancelled: false,
+          outputExceeded: false,
+        };
+      },
+    },
+    cancellation: new CliCancellationToken(),
+    installations: refreshed.installations,
+    endpoints: refreshed.endpoints,
+    previous: initial,
+    onProgress: () => undefined,
+  });
+  finalizeHealth(refreshed);
+  assert.equal(runCount, 1);
+  assert.equal(refreshed.installations[0].version, "10.33.0");
+  assert.equal(refreshed.installations[0].versionSource, "version-probe");
+  assert.equal(requireProduct(refreshed, "pnpm").health, "healthy");
 });
 
 test("Google Cloud SDK reads its bounded passive VERSION metadata without executing gcloud", async () => {
@@ -965,12 +1081,11 @@ async function buildInventory(input: {
   snapshot?: ReturnType<typeof createPathSnapshot>;
   packages: CliPackageRecord[];
 }): Promise<CliInventorySnapshot> {
-  const snapshot =
-    input.snapshot ?? {
-      directories: input.directories ?? [],
-      pathExt: [".exe", ".cmd", ".ps1"],
-      pathDirectoryCount: input.directories?.length ?? 0,
-    };
+  const snapshot = input.snapshot ?? {
+    directories: input.directories ?? [],
+    pathExt: [".exe", ".cmd", ".ps1"],
+    pathDirectoryCount: input.directories?.length ?? 0,
+  };
   const records = await enumerateCliPathEndpoints({
     platform: "win32",
     snapshot,
@@ -989,6 +1104,7 @@ function buildFromRecords(input: {
   records: CliPathEndpointRecord[];
   packages: CliPackageRecord[];
   previous: CliInventorySnapshot | null;
+  failedSourceIds?: Set<string>;
 }): CliInventorySnapshot {
   const scanEnvironment = input.environment ?? defaultEnvironment();
   const mutable = matchInstallations(
@@ -1000,7 +1116,7 @@ function buildFromRecords(input: {
     environment: scanEnvironment,
     mutable,
     previous: input.previous,
-    failedSourceIds: new Set(),
+    failedSourceIds: input.failedSourceIds ?? new Set(),
     now: 1_800_000_000_000,
   });
   const snapshot: CliInventorySnapshot = {
@@ -1134,11 +1250,10 @@ function snapshotWithInstallations(
   };
 }
 
-function requireProduct(
-  inventory: CliInventorySnapshot,
-  productId: string,
-) {
-  const product = inventory.products.find((candidate) => candidate.id === productId);
+function requireProduct(inventory: CliInventorySnapshot, productId: string) {
+  const product = inventory.products.find(
+    (candidate) => candidate.id === productId,
+  );
   assert(product);
   return product;
 }

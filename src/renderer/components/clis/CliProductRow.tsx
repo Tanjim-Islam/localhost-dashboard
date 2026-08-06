@@ -1,5 +1,7 @@
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   AlertTriangle,
+  Check,
   ChevronDown,
   ChevronRight,
   Clipboard,
@@ -9,6 +11,7 @@ import {
   ShieldAlert,
   TerminalSquare,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type {
   CliInstallation,
   CliInventorySnapshot,
@@ -45,10 +48,7 @@ export function CliProductRow({
   onToggle(): void;
   onVerify(installation: CliInstallation): void;
   onReveal(installation: CliInstallation): void;
-  onUninstall(
-    installation: CliInstallation,
-    trigger: HTMLButtonElement,
-  ): void;
+  onUninstall(installation: CliInstallation, trigger: HTMLButtonElement): void;
 }) {
   const installations = getVisibleCliInstallations(
     inventory,
@@ -73,21 +73,22 @@ export function CliProductRow({
       )
     : undefined;
   const activeEndpoint = primary
-    ? inventory.endpoints.find(
+    ? (inventory.endpoints.find(
         (endpoint) =>
           primary.endpointIds.includes(endpoint.id) &&
           activeCommand?.activeEndpointId === endpoint.id,
       ) ??
       inventory.endpoints.find((endpoint) =>
         primary.endpointIds.includes(endpoint.id),
-      )
+      ))
     : undefined;
   const source = primary?.packageIdentity?.source ?? "standalone";
   const currentCount = product.currentInstallationIds.length;
-  const removedCount = product.removedInstallationIds.length;
-  const hasDuplicateIssue = product.issueCodes.some((issue) =>
-    ["duplicate-version", "path-conflict"].includes(issue),
-  );
+  const productHealthLabel =
+    product.id === "dotnet" &&
+    product.issueCodes.includes("incomplete-installation")
+      ? "Runtime only, no SDK"
+      : undefined;
 
   return (
     <article className="app-card overflow-hidden border border-gray-300 bg-gray-100/90 shadow-soft">
@@ -105,22 +106,13 @@ export function CliProductRow({
             <span className="font-semibold text-gray-900">
               {product.displayName}
             </span>
-            <StatusPill status={product.health} />
-            <VerificationPill status={product.verificationStatus} />
+            <StatusPill status={product.health} label={productHealthLabel} />
             {currentCount > 1 && (
               <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                  hasDuplicateIssue
-                    ? "bg-cleaner-conditional-surface text-cleaner-conditional-text"
-                    : "bg-gray-200 text-gray-700"
-                }`}
+                className="rounded-full border border-gray-300 bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-700"
+                title="Multiple installations are available. PATH selects which one runs."
               >
-                {currentCount} current installations
-              </span>
-            )}
-            {removedCount > 0 && (
-              <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
-                {removedCount} removed
+                {currentCount} installations
               </span>
             )}
           </span>
@@ -186,7 +178,9 @@ export function InstallationPanel({
     (command) => command.installationId === installation.id,
   );
   const identity = installation.packageIdentity;
-  const launcherPaths = [...new Set(endpoints.map((endpoint) => endpoint.path))];
+  const launcherPaths = [
+    ...new Set(endpoints.map((endpoint) => endpoint.path)),
+  ];
   const canonicalTargets = [
     ...new Set(
       endpoints
@@ -206,9 +200,40 @@ export function InstallationPanel({
   const visibleIssues = installation.issueCodes.filter((issue) =>
     ACTIONABLE_ISSUES.has(issue),
   );
+  const installationHealthLabel =
+    installation.productId === "dotnet" &&
+    installation.issueCodes.includes("incomplete-installation")
+      ? "Runtime only, no SDK"
+      : undefined;
+  const commandText = commands.map((command) => command.name).join(", ");
+  const primaryPath = endpoints[0]?.path;
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyResetTimer = useRef<number | null>(null);
   const canUninstall = ["supported", "requires-warning"].includes(
     installation.uninstallCapability.status,
   );
+
+  useEffect(
+    () => () => {
+      if (copyResetTimer.current !== null) {
+        window.clearTimeout(copyResetTimer.current);
+      }
+    },
+    [],
+  );
+
+  const copyWithFeedback = (key: string, value: string): void => {
+    window.api.copyText(value);
+    setCopiedKey(key);
+    if (copyResetTimer.current !== null) {
+      window.clearTimeout(copyResetTimer.current);
+    }
+    copyResetTimer.current = window.setTimeout(() => {
+      setCopiedKey((current) => (current === key ? null : current));
+      copyResetTimer.current = null;
+    }, 1_600);
+  };
+
   return (
     <section
       className={`rounded-xl border border-gray-300 p-3 ${
@@ -224,12 +249,19 @@ export function InstallationPanel({
             <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700">
               {installation.versionSource.replaceAll("-", " ")}
             </span>
-            <StatusPill status={installation.health} />
+            <StatusPill
+              status={installation.health}
+              label={installationHealthLabel}
+            />
             <VerificationPill status={installation.verificationStatus} />
           </div>
           <p className="mt-1 break-all text-xs text-gray-700">
-            <strong>{CLI_SOURCE_LABELS[identity?.source ?? "standalone"]}</strong>
-            {identity?.packageId ? ` · ${identity.packageId}` : " · Package owner not proven"}
+            <strong>
+              {CLI_SOURCE_LABELS[identity?.source ?? "standalone"]}
+            </strong>
+            {identity?.packageId
+              ? ` · ${identity.packageId}`
+              : " · Package owner not proven"}
           </p>
           <p className="mt-0.5 text-[11px] text-gray-600">
             {installation.platform} · {installation.architecture} ·{" "}
@@ -240,15 +272,18 @@ export function InstallationPanel({
           <SmallButton
             label="Copy command"
             icon={<Clipboard className="h-3.5 w-3.5" />}
-            onClick={() =>
-              window.api.copyText(commands.map((command) => command.name).join(", "))
-            }
+            onClick={() => copyWithFeedback("command", commandText)}
+            disabled={!commandText}
+            confirmable
+            confirmed={copiedKey === "command"}
           />
-          {endpoints[0] && (
+          {primaryPath && (
             <SmallButton
               label="Copy path"
               icon={<ExternalLink className="h-3.5 w-3.5" />}
-              onClick={() => window.api.copyText(endpoints[0].path)}
+              onClick={() => copyWithFeedback("primary-path", primaryPath)}
+              confirmable
+              confirmed={copiedKey === "primary-path"}
             />
           )}
           <SmallButton
@@ -259,7 +294,11 @@ export function InstallationPanel({
           />
           <SmallButton
             label={busy ? "Verifying" : "Verify"}
-            icon={<RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />}
+            icon={
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`}
+              />
+            }
             onClick={onVerify}
             disabled={busy}
           />
@@ -280,24 +319,42 @@ export function InstallationPanel({
       </div>
 
       <dl className="mt-3 grid gap-x-5 gap-y-2 text-xs sm:grid-cols-2">
-        <Detail label="Commands" value={commands.map((command) => `${command.name} (${command.pathRole})`).join(", ") || "None"} />
-        <Detail label="PATH position" value={pathPosition(commands, endpoints)} />
         <Detail
+          label="Commands"
+          value={
+            commands
+              .map((command) => `${command.name} (${command.pathRole})`)
+              .join(", ") || "None"
+          }
+        />
+        <Detail
+          label="PATH position"
+          value={pathPosition(commands, endpoints)}
+        />
+        <CopyablePathsDetail
           label={`Launchers (${launcherPaths.length})`}
-          value={launcherPaths.length > 0 ? launcherPaths.join("\n") : "Missing"}
-          mono
-          multiline
+          paths={launcherPaths}
+          pathKind="launcher"
+          copiedKey={copiedKey}
+          onCopy={copyWithFeedback}
         />
         {canonicalTargets.length > 0 && (
-          <Detail
+          <CopyablePathsDetail
             label={canonicalTargets.length === 1 ? "Target" : "Targets"}
-            value={canonicalTargets.join("\n")}
-            mono
-            multiline
+            paths={canonicalTargets}
+            pathKind="target"
+            copiedKey={copiedKey}
+            onCopy={copyWithFeedback}
           />
         )}
-        <Detail label="Last seen" value={formatCliAge(installation.lastSeenAt)} />
-        <Detail label="Last verified" value={formatCliAge(installation.lastSuccessfulVerificationAt)} />
+        <Detail
+          label="Last seen"
+          value={formatCliAge(installation.lastSeenAt)}
+        />
+        <Detail
+          label="Last verified"
+          value={formatCliAge(installation.lastSuccessfulVerificationAt)}
+        />
       </dl>
 
       {visibleIssues.length > 0 && (
@@ -330,22 +387,33 @@ export function InstallationPanel({
 
 function StatusPill({
   status,
+  label,
 }: {
   status: CliProductStatus | CliRuntimeHealth;
+  label?: string;
 }) {
   const classes = {
-    healthy: "bg-cleaner-safe-surface text-cleaner-safe-text border-cleaner-safe-border",
-    warning: "bg-cleaner-conditional-surface text-cleaner-conditional-text border-cleaner-conditional-border",
-    broken: "bg-cleaner-danger-surface text-cleaner-danger-text border-cleaner-danger-border",
-    missing: "bg-cleaner-excluded-surface text-cleaner-excluded-text border-cleaner-excluded-border",
-    inaccessible: "bg-cleaner-danger-surface text-cleaner-danger-text border-cleaner-danger-border",
-    incomplete: "bg-cleaner-conditional-surface text-cleaner-conditional-text border-cleaner-conditional-border",
+    healthy:
+      "bg-cleaner-safe-surface text-cleaner-safe-text border-cleaner-safe-border",
+    warning:
+      "bg-cleaner-conditional-surface text-cleaner-conditional-text border-cleaner-conditional-border",
+    broken:
+      "bg-cleaner-danger-surface text-cleaner-danger-text border-cleaner-danger-border",
+    missing:
+      "bg-cleaner-excluded-surface text-cleaner-excluded-text border-cleaner-excluded-border",
+    inaccessible:
+      "bg-cleaner-danger-surface text-cleaner-danger-text border-cleaner-danger-border",
+    incomplete:
+      "bg-cleaner-conditional-surface text-cleaner-conditional-text border-cleaner-conditional-border",
     unverified: "bg-gray-200 text-gray-700 border-gray-300",
-    unknown: "bg-cleaner-review-surface text-cleaner-review-text border-cleaner-review-border",
+    unknown:
+      "bg-cleaner-review-surface text-cleaner-review-text border-cleaner-review-border",
   }[status];
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${classes}`}>
-      {status}
+    <span
+      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${classes}`}
+    >
+      {label ?? capitalizeStatus(status)}
     </span>
   );
 }
@@ -401,27 +469,142 @@ function Detail({
   );
 }
 
+function CopyablePathsDetail({
+  label,
+  paths,
+  pathKind,
+  copiedKey,
+  onCopy,
+}: {
+  label: string;
+  paths: string[];
+  pathKind: "launcher" | "target";
+  copiedKey: string | null;
+  onCopy(key: string, value: string): void;
+}) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-gray-600">
+        {label}
+      </dt>
+      <dd className="mt-0.5 space-y-0.5">
+        {paths.length === 0 ? (
+          <span className="text-gray-900">Missing</span>
+        ) : (
+          paths.map((pathValue, index) => {
+            const pathKey = `${pathKind}:${index}:${pathValue}`;
+            const copied = copiedKey === pathKey;
+            return (
+              <button
+                key={pathValue}
+                type="button"
+                onClick={() => onCopy(pathKey, pathValue)}
+                className={`group -mx-1.5 grid w-[calc(100%+0.75rem)] cursor-copy grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-1.5 py-1 text-left outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-night-700/25 motion-reduce:transition-none ${
+                  copied
+                    ? "border-cleaner-safe-border bg-cleaner-safe-surface text-cleaner-safe-text"
+                    : "border-transparent text-gray-900 hover:border-gray-300 hover:bg-gray-200/70"
+                }`}
+                title={copied ? "Copied" : "Click to copy this path"}
+                aria-label={`${copied ? "Copied" : "Copy"} ${pathKind} path ${pathValue}`}
+              >
+                <span className="min-w-0 break-all font-mono">{pathValue}</span>
+                <AnimatePresence initial={false} mode="wait">
+                  <motion.span
+                    key={copied ? "copied" : "copy"}
+                    initial={
+                      reduceMotion ? false : { opacity: 0, scale: 0.88, y: 2 }
+                    }
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={
+                      reduceMotion
+                        ? { opacity: 0 }
+                        : { opacity: 0, scale: 0.88, y: -2 }
+                    }
+                    transition={{ duration: reduceMotion ? 0 : 0.16 }}
+                    className={`mt-0.5 inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold ${
+                      copied
+                        ? "text-cleaner-safe-text"
+                        : "text-gray-600 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                    }`}
+                    aria-live="polite"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-3 w-3" aria-hidden="true" />
+                        Copied
+                      </>
+                    ) : (
+                      <Clipboard className="h-3 w-3" aria-hidden="true" />
+                    )}
+                  </motion.span>
+                </AnimatePresence>
+              </button>
+            );
+          })
+        )}
+      </dd>
+    </div>
+  );
+}
+
 function SmallButton({
   label,
   icon,
   onClick,
   disabled,
+  confirmable = false,
+  confirmed = false,
 }: {
   label: string;
   icon: React.ReactNode;
   onClick(): void;
   disabled?: boolean;
+  confirmable?: boolean;
+  confirmed?: boolean;
 }) {
+  const reduceMotion = useReducedMotion();
+
   return (
-    <button
+    <motion.button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-300 bg-gray-200/65 px-2.5 text-xs font-medium outline-none transition hover:bg-gray-300 focus-visible:ring-2 focus-visible:ring-night-700/25 disabled:opacity-45"
+      className={`inline-flex h-8 items-center justify-center rounded-lg border px-2.5 text-xs font-medium outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-night-700/25 disabled:opacity-45 motion-reduce:transition-none ${
+        confirmable ? "min-w-[7.25rem]" : ""
+      } ${
+        confirmed
+          ? "border-cleaner-safe-border bg-cleaner-safe-surface text-cleaner-safe-text"
+          : "border-gray-300 bg-gray-200/65 hover:bg-gray-300"
+      }`}
     >
-      {icon}
-      {label}
-    </button>
+      <AnimatePresence initial={false} mode="wait">
+        <motion.span
+          key={confirmed ? "confirmed" : "idle"}
+          initial={reduceMotion ? false : { opacity: 0, scale: 0.9, y: 2 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={
+            reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, y: -2 }
+          }
+          transition={{ duration: reduceMotion ? 0 : 0.16 }}
+          className="inline-flex items-center gap-1.5"
+          aria-live="polite"
+        >
+          {confirmed ? (
+            <>
+              <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              Copied
+            </>
+          ) : (
+            <>
+              {icon}
+              {label}
+            </>
+          )}
+        </motion.span>
+      </AnimatePresence>
+    </motion.button>
   );
 }
 
@@ -433,7 +616,8 @@ function pathPosition(
   const endpoint = endpoints.find((candidate) =>
     active?.endpointIds.includes(candidate.id),
   );
-  if (endpoint?.pathIndex !== undefined) return `Active, PATH ${endpoint.pathIndex + 1}`;
+  if (endpoint?.pathIndex !== undefined)
+    return `Active, PATH ${endpoint.pathIndex + 1}`;
   if (commands.some((command) => command.pathRole === "shadowed")) {
     return "Shadowed by an earlier PATH entry";
   }
@@ -445,17 +629,20 @@ type CliExecutableEndpoint =
   import("../../../main/clis/types").CliExecutableEndpoint;
 
 const ACTIONABLE_ISSUES = new Set<CliIssueCode>([
-  "duplicate-version",
-  "path-conflict",
   "broken-shim",
   "missing-target",
   "inaccessible",
-  "incomplete-installation",
 ]);
 
+function capitalizeStatus(status: string): string {
+  return `${status.charAt(0).toUpperCase()}${status.slice(1)}`;
+}
+
 function samePath(left: string, right: string): boolean {
-  return left.replaceAll("/", "\\").toLowerCase() ===
-    right.replaceAll("/", "\\").toLowerCase();
+  return (
+    left.replaceAll("/", "\\").toLowerCase() ===
+    right.replaceAll("/", "\\").toLowerCase()
+  );
 }
 
 function formatOrigin(origin: CliInstallation["origin"]): string {

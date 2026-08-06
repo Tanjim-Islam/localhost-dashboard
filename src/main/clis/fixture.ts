@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { getCliDefinition } from "./catalogue";
+import { buildProducts, finalizeHealth } from "./inventory-builder";
 import {
   createEndpointFingerprint,
   createInstallationFingerprint,
@@ -17,7 +17,6 @@ import type {
   CliInventorySnapshot,
   CliPackageIdentity,
   CliPlatform,
-  CliProduct,
   CliScanProgress,
   CliSourceResult,
   CliUninstallCapability,
@@ -45,7 +44,9 @@ export class FixtureCliProvider implements CliFixtureProvider {
     private readonly now: () => number,
   ) {}
 
-  async scan(input: Parameters<CliFixtureProvider["scan"]>[0]): Promise<CliInventorySnapshot> {
+  async scan(
+    input: Parameters<CliFixtureProvider["scan"]>[0],
+  ): Promise<CliInventorySnapshot> {
     await this.ensureFiles();
     for (let index = 0; index < STAGES.length; index += 1) {
       input.cancellation.throwIfCancelled();
@@ -158,47 +159,20 @@ export class FixtureCliProvider implements CliFixtureProvider {
         pathIndex: 0,
         issues: ["incomplete-installation"],
       }),
-      this.record({
-        productId: "gemini-cli",
-        commandNames: ["gemini"],
-        version: "0.1.12",
-        endpointPath: path.join(this.root, "removed", "gemini.cmd"),
-        pathIndex: undefined,
-        presence: "missing",
-        issues: ["cached-missing"],
-      }),
     ];
-    const visible: Array<{
-      installation: CliInstallation;
-      command: CliCommand;
-      endpoint: CliExecutableEndpoint;
-    }> = records.map((record) => {
-      if (!this.removed.has(record.installation.id)) return record;
-      return {
-        ...record,
-        installation: {
-          ...record.installation,
-          presence: "missing" as const,
-          health: "missing" as const,
-          verificationStatus: "cached" as const,
-          issueCodes: ["cached-missing"],
-          missingSince: generatedAt,
-          lastSeenAt: record.installation.lastSeenAt,
-          lastVerifiedAt: generatedAt,
-          uninstallCapability: {
-            ...record.installation.uninstallCapability,
-            status: "blocked" as const,
-            reasonCode: "installation-missing" as const,
-            reason: "The installation is no longer present.",
-          },
-        },
-        command: { ...record.command, pathRole: "not-on-path" as const },
-      };
-    });
+    const visible = records.filter(
+      (record) => !this.removed.has(record.installation.id),
+    );
     const installations = visible.map((record) => record.installation);
     const commands = visible.map((record) => record.command);
     const endpoints = visible.map((record) => record.endpoint);
-    const products = createProducts(installations, commands);
+    const assembled = {
+      products: buildProducts(this.platform, installations, commands),
+      installations,
+      commands,
+      endpoints,
+    };
+    finalizeHealth(assembled);
     const sourceResults: CliSourceResult[] = [
       source("fixture-path", "Fixture PATH", "success", 7, generatedAt),
       source("fixture-npm", "Fixture npm packages", "success", 2, generatedAt),
@@ -220,7 +194,7 @@ export class FixtureCliProvider implements CliFixtureProvider {
       lastSuccessfulScanAt: generatedAt - 5 * 60 * 1000,
       completeness: "partial",
       cached: false,
-      products,
+      products: assembled.products,
       installations,
       commands,
       endpoints,
@@ -284,7 +258,9 @@ export class FixtureCliProvider implements CliFixtureProvider {
     const health: CliInstallation["health"] =
       presence === "missing"
         ? "missing"
-        : issues.some((issue) => ["broken-shim", "missing-target"].includes(issue))
+        : issues.some((issue) =>
+              ["broken-shim", "missing-target"].includes(issue),
+            )
           ? "broken"
           : issues.includes("incomplete-installation")
             ? "incomplete"
@@ -395,60 +371,6 @@ export class FixtureCliCommandRunner implements CliCommandRunner {
   }
 }
 
-function createProducts(
-  installations: CliInstallation[],
-  commands: CliCommand[],
-): CliProduct[] {
-  const products: CliProduct[] = [];
-  for (const productId of new Set(installations.map((item) => item.productId))) {
-    const definition = getCliDefinition(productId);
-    if (!definition) continue;
-    const owned = installations.filter((item) => item.productId === productId);
-    const issueCodes = [...new Set(owned.flatMap((item) => item.issueCodes))];
-    products.push({
-      id: productId,
-      displayName: definition.displayName,
-      category: definition.category,
-      aliases: [...(definition.aliases ?? [])],
-      commandNames: [
-        ...new Set(
-          commands
-            .filter((command) => command.productId === productId)
-            .map((command) => command.name),
-        ),
-      ],
-      supportedPlatforms: [...(definition.platforms ?? ["win32", "darwin"])],
-      discoveryConfidence: "catalogued",
-      installationIds: owned.map((item) => item.id),
-      currentInstallationIds: owned
-        .filter((item) => item.presence === "present")
-        .map((item) => item.id),
-      removedInstallationIds: owned
-        .filter((item) => item.presence === "missing")
-        .map((item) => item.id),
-      embeddedInstallationIds: [],
-      health: owned.some((item) =>
-        ["broken", "inaccessible", "incomplete"].includes(item.health),
-      )
-        ? "broken"
-        : owned.every((item) => item.health === "missing")
-          ? "missing"
-          : issueCodes.length
-            ? "warning"
-            : "healthy",
-      verificationStatus: owned.some(
-        (item) => item.verificationStatus === "ownership-unknown",
-      )
-        ? "ownership-unknown"
-        : owned.every((item) => item.verificationStatus === "cached")
-          ? "cached"
-          : "verified",
-      issueCodes,
-    });
-  }
-  return products.sort((a, b) => a.displayName.localeCompare(b.displayName));
-}
-
 function capability(
   status: CliUninstallCapability["status"],
   sourceType: CliUninstallCapability["source"],
@@ -467,7 +389,10 @@ function capability(
           ? "multiple-commands"
           : "standalone-binary",
     reason,
-    warnings: status === "requires-warning" ? ["All package commands will be removed."] : [],
+    warnings:
+      status === "requires-warning"
+        ? ["All package commands will be removed."]
+        : [],
     requiresElevation: false,
     providedCommands: commands,
   };

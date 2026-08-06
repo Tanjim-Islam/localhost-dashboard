@@ -12,7 +12,7 @@ export type CliFilters = {
   category: CliCategory | "all";
   health: CliHealthStatus | "all";
   source: CliPackageSource | "all";
-  presence: "all" | "installed" | "removed" | "embedded";
+  presence: "all" | "installed" | "embedded";
   duplicatesOnly: boolean;
 };
 
@@ -21,7 +21,6 @@ export type CliSummary = {
   aiCoding: number;
   duplicates: number;
   broken: number;
-  missing: number;
 };
 
 export const CLI_CATEGORY_LABELS: Record<CliCategory, string> = {
@@ -59,7 +58,7 @@ export function summarizeCliInventory(
   inventory: CliInventorySnapshot | null,
 ): CliSummary {
   if (!inventory) {
-    return { installed: 0, aiCoding: 0, duplicates: 0, broken: 0, missing: 0 };
+    return { installed: 0, aiCoding: 0, duplicates: 0, broken: 0 };
   }
   const installed = inventory.products.filter(
     (product) => product.currentInstallationIds.length > 0,
@@ -70,9 +69,6 @@ export function summarizeCliInventory(
       .length,
     duplicates: installed.filter(isDuplicateProduct).length,
     broken: installed.filter((product) => product.health === "broken").length,
-    missing: inventory.products.filter(
-      (product) => product.removedInstallationIds.length > 0,
-    ).length,
   };
 }
 
@@ -149,14 +145,12 @@ export function getVisibleCliInstallations(
   const ids =
     presence === "installed"
       ? product.currentInstallationIds
-      : presence === "removed"
-        ? product.removedInstallationIds
-        : presence === "embedded"
-          ? product.embeddedInstallationIds
-          : [
-              ...product.currentInstallationIds,
-              ...product.removedInstallationIds,
-            ];
+      : presence === "embedded"
+        ? product.embeddedInstallationIds
+        : [
+            ...product.currentInstallationIds,
+            ...product.embeddedInstallationIds,
+          ];
   const idSet = new Set(ids);
   return inventory.installations.filter((installation) =>
     idSet.has(installation.id),

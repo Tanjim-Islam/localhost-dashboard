@@ -121,7 +121,7 @@ The permanent CLIs tab loads its last saved inventory immediately. It never insp
 - Separate runtime health and neutral ownership or version confidence
 - Compact launcher lists grouped under one package installation
 - Embedded application or SDK tools in an optional filter, excluded from normal installed totals
-- Broken shims, missing targets, inaccessible endpoints, incomplete runtimes, and recently removed installations
+- Broken shims, missing targets, inaccessible endpoints, incomplete runtimes, and multiple current installations
 - Isolated package-source failures without discarding the last valid inventory
 
 The catalogue covers common AI coding tools, runtimes, package managers, build tools, cloud tools, containers, databases, and general developer utilities. Package inventories and exact package `bin` metadata supplement the catalogue. npm `.cmd`, `.ps1`, and extensionless launchers for one package are grouped as endpoints of one installation. Unknown PATH executables are not executed or displayed automatically.
@@ -165,7 +165,7 @@ npm run test:clis
 npm run dev:clis-test
 ```
 
-`test:clis` uses fake runners, temporary PATH directories, passive metadata, and simulated package inventories. It never invokes a real package-manager uninstall. `dev:clis-test` redirects `clis.json` to a temporary fixture root, supplies healthy, duplicate, broken, missing, and partial-source records, and simulates both uninstall success and failure. Fixture mode is visibly labeled and does not affect Cleaner fixture mode or the normal Electron profile.
+`test:clis` uses fake runners, temporary PATH directories, passive metadata, and simulated package inventories. It never invokes a real package-manager uninstall. `dev:clis-test` redirects `clis.json` to a temporary fixture root, supplies healthy, multiple-installation, broken, incomplete, and partial-source records, and simulates both uninstall success and failure. Fixture mode is visibly labeled and does not affect Cleaner fixture mode or the normal Electron profile.
 
 ## Known Limitations
 

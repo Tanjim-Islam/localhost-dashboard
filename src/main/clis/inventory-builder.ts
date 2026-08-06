@@ -24,8 +24,6 @@ import type {
 import { calculateUninstallCapability } from "./uninstall-policy";
 import { classifyCliOrigin, isEmbeddedCliOrigin } from "./origin";
 
-const MISSING_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-
 export function assembleInventory(input: {
   environment: CliScanEnvironment;
   mutable: MutableCliInstallation[];
@@ -64,6 +62,7 @@ export function assembleInventory(input: {
     const previous = previousById.get(installationId);
     const definition = getCliDefinition(record.productId);
     const canReusePreviousVersion =
+      !definition?.alwaysProbeVersion &&
       previous?.fingerprint === fingerprint &&
       Boolean(previous.version) &&
       !(
@@ -135,15 +134,14 @@ export function assembleInventory(input: {
       firstSeenAt: previous?.firstSeenAt ?? input.now,
       lastSeenAt: input.now,
       lastVerifiedAt: input.now,
-      lastSuccessfulVerificationAt:
-        hasUsableEndpoint
-          ? input.now
-          : previous?.lastSuccessfulVerificationAt,
+      lastSuccessfulVerificationAt: hasUsableEndpoint
+        ? input.now
+        : previous?.lastSuccessfulVerificationAt,
       uninstallCapability: capability,
     });
   }
 
-  addRetainedMissingInstallations({
+  addRetainedUnknownInstallations({
     input,
     installations,
     commands,
@@ -162,7 +160,7 @@ export function assembleInventory(input: {
   };
 }
 
-function addRetainedMissingInstallations(input: {
+function addRetainedUnknownInstallations(input: {
   input: {
     environment: CliScanEnvironment;
     previous: CliInventorySnapshot | null;
@@ -226,14 +224,11 @@ function addRetainedMissingInstallations(input: {
       [...input.input.failedSourceIds].some((sourceId) =>
         sourceIdMatchesPackageSource(sourceId, source),
       );
-    const missingSince = previous.missingSince ?? input.input.now;
-    if (!sourceFailed && input.input.now - missingSince > MISSING_RETENTION_MS) {
-      continue;
-    }
+    if (!sourceFailed) continue;
     const retained: CliInstallation = {
       ...structuredClone(previous),
-      presence: sourceFailed ? "unknown" : "missing",
-      health: sourceFailed ? "unknown" : "missing",
+      presence: "unknown",
+      health: "unknown",
       issueCodes: [
         ...new Set([
           ...previous.issueCodes.filter(
@@ -244,21 +239,21 @@ function addRetainedMissingInstallations(input: {
               issue !== "cached-missing" &&
               issue !== "package-source-unavailable",
           ),
-          sourceFailed ? "package-source-unavailable" : "cached-missing",
+          "package-source-unavailable",
         ]),
       ] as CliIssueCode[],
       versionSource: previous.version ? "cached" : "unknown",
       verificationStatus: "cached",
-      missingSince,
       uninstallCapability: calculateUninstallCapability({
         definition: getCliDefinition(previous.productId),
         identity: previous.packageIdentity,
         commands: previous.uninstallCapability.providedCommands,
-        presence: sourceFailed ? "unknown" : "missing",
-        sourceFailed,
+        presence: "unknown",
+        sourceFailed: true,
         origin: previous.origin,
       }),
     };
+    delete retained.missingSince;
     input.installations.push(retained);
     input.commands.push(
       ...(input.input.previous?.commands ?? [])
@@ -269,9 +264,7 @@ function addRetainedMissingInstallations(input: {
           pathRole: "not-on-path" as const,
         })),
     );
-    input.endpoints.push(
-      ...previousEndpoints,
-    );
+    input.endpoints.push(...previousEndpoints);
   }
 }
 
@@ -316,8 +309,7 @@ export function assignCommandResolution(
       const pathEndpointIds = installEndpoints
         .filter(
           (endpoint) =>
-            endpoint.commandName === name &&
-            endpoint.pathIndex !== undefined,
+            endpoint.commandName === name && endpoint.pathIndex !== undefined,
         )
         .map((endpoint) => endpoint.id);
       const activeEndpointId = activeByName.get(name);
@@ -357,8 +349,7 @@ export function finalizeHealth(
 ): void {
   for (const installation of assembled.installations) {
     installation.issueCodes = installation.issueCodes.filter(
-      (issue) =>
-        issue !== "path-conflict" && issue !== "duplicate-version",
+      (issue) => issue !== "path-conflict" && issue !== "duplicate-version",
     );
     installation.health = deriveRuntimeHealth(
       installation,
@@ -387,10 +378,7 @@ export function finalizeHealth(
       );
       if (!installation) continue;
       distinct.set(
-        meaningfulInstallationKey(
-          installation,
-          assembled.endpoints,
-        ),
+        meaningfulInstallationKey(installation, assembled.endpoints),
         command,
       );
     }
@@ -428,8 +416,7 @@ export function finalizeHealth(
       isCurrentInstallation(installation) &&
       !isEmbeddedCliOrigin(installation.origin)
     ) {
-      const current =
-        currentByProduct.get(installation.productId) ?? [];
+      const current = currentByProduct.get(installation.productId) ?? [];
       current.push(installation);
       currentByProduct.set(installation.productId, current);
     }
@@ -480,12 +467,7 @@ export function finalizeHealth(
     product.issueCodes = [
       ...new Set(current.flatMap((item) => item.issueCodes)),
     ];
-    product.health = deriveProductStatus(
-      current,
-      assembled.commands,
-      product.issueCodes,
-      product.removedInstallationIds.length > 0,
-    );
+    product.health = deriveProductStatus(current, assembled.commands);
     product.verificationStatus = deriveProductVerification(current);
   }
 }
@@ -534,7 +516,9 @@ export function buildProducts(
       displayName: definition.displayName,
       category: definition.category,
       aliases: [...(definition.aliases ?? [])],
-      commandNames: [...new Set(productCommands.map((command) => command.name))],
+      commandNames: [
+        ...new Set(productCommands.map((command) => command.name)),
+      ],
       supportedPlatforms,
       discoveryConfidence: "catalogued",
       installationIds: [
@@ -548,8 +532,6 @@ export function buildProducts(
           currentInstallationIds.includes(installation.id),
         ),
         commands,
-        [],
-        removedInstallationIds.length > 0,
       ),
       verificationStatus: deriveProductVerification(
         productInstallations.filter((installation) =>
@@ -558,11 +540,10 @@ export function buildProducts(
       ),
       issueCodes: [
         ...new Set(
-          productInstallations.flatMap(
-            (installation) =>
-              currentInstallationIds.includes(installation.id)
-                ? installation.issueCodes
-                : [],
+          productInstallations.flatMap((installation) =>
+            currentInstallationIds.includes(installation.id)
+              ? installation.issueCodes
+              : [],
           ),
         ),
       ],
@@ -587,7 +568,9 @@ function collectEndpointIssues(
     if (commandEndpoints.some(isUsableEndpoint)) continue;
     for (const endpoint of commandEndpoints) {
       if (!endpoint.targetExists) {
-        issues.push(endpoint.kind === "shim" ? "broken-shim" : "missing-target");
+        issues.push(
+          endpoint.kind === "shim" ? "broken-shim" : "missing-target",
+        );
       }
       if (!endpoint.accessible || !endpoint.executable) {
         issues.push("inaccessible");
@@ -693,8 +676,7 @@ function deriveVerificationStatus(input: {
   if (input.presence === "missing" || input.versionSource === "cached") {
     return "cached";
   }
-  const exactOwnership =
-    input.packageIdentity?.ownershipConfidence === "exact";
+  const exactOwnership = input.packageIdentity?.ownershipConfidence === "exact";
   const verifiedVersion =
     Boolean(input.version) &&
     ["package-metadata", "executable-metadata", "version-probe"].includes(
@@ -727,19 +709,19 @@ function deriveProductVerification(
 function deriveProductStatus(
   current: CliInstallation[],
   commands: CliCommand[],
-  issueCodes: CliIssueCode[],
-  hasRemoved: boolean,
 ): CliProduct["health"] {
-  if (current.length === 0) return hasRemoved ? "missing" : "unknown";
+  if (current.length === 0) return "unknown";
   const activeIds = new Set(
     commands
       .filter((command) => command.pathRole === "active")
       .map((command) => command.installationId),
   );
-  const assessed = current.some((installation) => activeIds.has(installation.id))
+  const assessed = current.some((installation) =>
+    activeIds.has(installation.id),
+  )
     ? current.filter((installation) => activeIds.has(installation.id))
     : current;
-  const hasUsable = current.some(
+  const hasUsable = assessed.some(
     (installation) => installation.health === "healthy",
   );
   if (!hasUsable) {
@@ -757,11 +739,8 @@ function deriveProductStatus(
     return "broken";
   }
   if (
-    issueCodes.includes("path-conflict") ||
     assessed.some((installation) =>
-      ["broken", "inaccessible", "incomplete"].includes(
-        installation.health,
-      ),
+      ["broken", "inaccessible", "incomplete"].includes(installation.health),
     )
   ) {
     return "warning";
@@ -815,10 +794,7 @@ function sourceIdMatchesPackageSource(
   let expected: string = source;
   if (source === "yarn-classic") expected = "yarn";
   else if (source === "registry") expected = "windows-registry";
-  else if (
-    source === "homebrew-formula" ||
-    source === "homebrew-cask"
-  ) {
+  else if (source === "homebrew-formula" || source === "homebrew-cask") {
     expected = "homebrew";
   }
   return sourcePrefix === expected;

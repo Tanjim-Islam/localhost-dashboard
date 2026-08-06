@@ -34,8 +34,7 @@ test("renderer view model summarizes and searches products, commands, package ID
       ),
     ).length,
   );
-  assert.equal(summary.broken, 2);
-  assert.equal(summary.missing, 1);
+  assert.equal(summary.broken, 1);
   for (const query of ["Codex", "codex", "@openai/codex", "path-a"]) {
     assert(
       filterCliProducts(inventory, {
@@ -65,7 +64,7 @@ test("renderer view model summarizes and searches products, commands, package ID
   );
 });
 
-test("renderer hides embedded-only tools and keeps current and removed counts separate", async () => {
+test("renderer keeps embedded tools out of installed state and includes them in all state", async () => {
   const provider = new FixtureCliProvider(
     path.join(process.cwd(), ".tmp-tests", "clis-renderer-origin-fixture"),
     "win32",
@@ -99,7 +98,22 @@ test("renderer hides embedded-only tools and keeps current and removed counts se
     presence: "all",
     duplicatesOnly: false,
   });
-  assert.equal(defaults.some((candidate) => candidate.id === product.id), false);
+  assert.equal(
+    defaults.some((candidate) => candidate.id === product.id),
+    true,
+  );
+  const installed = filterCliProducts(inventory, {
+    query: product.displayName,
+    category: "all",
+    health: "all",
+    source: "all",
+    presence: "installed",
+    duplicatesOnly: false,
+  });
+  assert.equal(
+    installed.some((candidate) => candidate.id === product.id),
+    false,
+  );
   const embedded = filterCliProducts(inventory, {
     query: product.displayName,
     category: "all",
@@ -108,7 +122,10 @@ test("renderer hides embedded-only tools and keeps current and removed counts se
     presence: "embedded",
     duplicatesOnly: false,
   });
-  assert.equal(embedded.some((candidate) => candidate.id === product.id), true);
+  assert.equal(
+    embedded.some((candidate) => candidate.id === product.id),
+    true,
+  );
   assert.equal(
     getVisibleCliInstallations(inventory, product, "embedded").length,
     1,
@@ -158,14 +175,22 @@ test("tab, preload, and modal contracts expose no raw destructive input", async 
   );
   assert.match(tab, /Nothing is scanned automatically/);
   assert.match(tab, /Embedded tools/);
-  assert.match(
+  assert.match(tab, /Multiple installs/);
+  assert.match(tab, /const DEFAULT_FILTERS:[\s\S]*?presence: "installed"/);
+  assert.doesNotMatch(tab, /label="Missing"|value: "removed"/);
+  assert.doesNotMatch(
     tab,
-    /const DEFAULT_FILTERS:[\s\S]*?presence: "installed"/,
+    /cache cleanup|leftover removal|delete configuration/i,
   );
-  assert.doesNotMatch(tab, /cache cleanup|leftover removal|delete configuration/i);
   assert.match(row, /Launchers/);
+  assert.match(row, /CopyablePathsDetail/);
+  assert.match(row, /cursor-copy/);
+  assert.match(row, /copyWithFeedback/);
+  assert.match(row, /confirmed=\{copiedKey === "command"\}/);
+  assert.match(row, /confirmed=\{copiedKey === "primary-path"\}/);
   assert.match(row, /VerificationPill/);
-  assert.match(row, /hasDuplicateIssue/);
+  assert.match(row, /Runtime only, no SDK/);
+  assert.doesNotMatch(row, /removedCount|current installations/);
   assert.doesNotMatch(row, /installation\.issueCodes\.map/);
   assert.match(dialog, /role="alertdialog"/);
   assert.match(dialog, /event.key === "Escape"/);

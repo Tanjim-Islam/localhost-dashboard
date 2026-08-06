@@ -45,7 +45,8 @@ test("manual scan publishes fixture conflicts and bounds package-source failures
     const bun = snapshot.products.find((product) => product.id === "bun");
     assert(bun?.issueCodes.includes("path-conflict"));
     assert.equal(
-      snapshot.sourceResults.filter((source) => source.status === "failed").length,
+      snapshot.sourceResults.filter((source) => source.status === "failed")
+        .length,
       1,
     );
     assert.equal(harness.controller.getInventory()?.cached, true);
@@ -67,7 +68,10 @@ test("scan completion publishes the finalized snapshot used by the store", async
     assert.equal(snapshot.completeness, "complete");
     assert.equal(snapshot.cached, false);
     assert.equal(snapshot.lastSuccessfulScanAt, stored.lastSuccessfulScanAt);
-    assert.equal(snapshot.lastSuccessfulScanAt, stored.inventory?.lastSuccessfulScanAt);
+    assert.equal(
+      snapshot.lastSuccessfulScanAt,
+      stored.inventory?.lastSuccessfulScanAt,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -103,14 +107,17 @@ test("exact npm uninstall consumes one-use preview and refreshes inventory", asy
     assert.equal(
       harness.controller
         .getInventory()
-        ?.installations.find((item) => item.id === installation.id)?.presence,
-      "missing",
+        ?.installations.some((item) => item.id === installation.id),
+      false,
     );
     await assert.rejects(
       () => harness.controller.uninstall(request),
       /preview is stale/i,
     );
-    assert.equal(harness.persistence.read().uninstallAudits[0].status, "succeeded");
+    assert.equal(
+      harness.persistence.read().uninstallAudits[0].status,
+      "succeeded",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -148,7 +155,10 @@ test("manager failure is simulated and stale revisions are rejected", async () =
     });
     assert.equal(result.status, "failed");
     assert.equal(result.verifiedRemoved, false);
-    assert.equal(harness.persistence.read().uninstallAudits[0].status, "failed");
+    assert.equal(
+      harness.persistence.read().uninstallAudits[0].status,
+      "failed",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

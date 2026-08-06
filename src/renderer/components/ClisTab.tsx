@@ -117,9 +117,8 @@ export default function ClisTab({
       setNotice(error.message);
     });
     const offInventory = window.api.onCliInventoryChanged(setInventory);
-    const offUninstallProgress = window.api.onCliUninstallProgress(
-      setUninstallProgress,
-    );
+    const offUninstallProgress =
+      window.api.onCliUninstallProgress(setUninstallProgress);
     const offUninstallComplete = window.api.onCliUninstallComplete((result) => {
       setUninstallProgress(null);
       setNotice(result.message);
@@ -140,20 +139,29 @@ export default function ClisTab({
     () => filterCliProducts(inventory, filters),
     [filters, inventory],
   );
-  const sources = useMemo(
-    () =>
-      [
-        ...new Set(
-          (inventory?.installations ?? []).map(
+  const sources = useMemo(() => {
+    const visibleInstallationIds = new Set(
+      (inventory?.products ?? []).flatMap((product) => [
+        ...product.currentInstallationIds,
+        ...product.embeddedInstallationIds,
+      ]),
+    );
+    return [
+      ...new Set(
+        (inventory?.installations ?? [])
+          .filter((installation) => visibleInstallationIds.has(installation.id))
+          .map(
             (installation) =>
               installation.packageIdentity?.source ?? "standalone",
           ),
-        ),
-      ].sort(),
-    [inventory],
-  );
+      ),
+    ].sort();
+  }, [inventory]);
 
-  useEffect(() => onCountChange(summary.installed), [onCountChange, summary.installed]);
+  useEffect(
+    () => onCountChange(summary.installed),
+    [onCountChange, summary.installed],
+  );
 
   const scanning =
     scan?.status === "scanning" ||
@@ -236,7 +244,8 @@ export default function ClisTab({
   if (!active) return null;
 
   const sourceFailures =
-    inventory?.sourceResults.filter((source) => source.status === "failed") ?? [];
+    inventory?.sourceResults.filter((source) => source.status === "failed") ??
+    [];
 
   return (
     <section
@@ -273,11 +282,14 @@ export default function ClisTab({
         </div>
         <div className="flex items-center gap-2">
           {scanning && (
-            <div className="mr-1 min-w-[190px] text-right text-xs text-gray-600" aria-live="polite">
+            <div
+              className="mr-1 min-w-[190px] text-right text-xs text-gray-600"
+              aria-live="polite"
+            >
               <p className="font-medium text-gray-800">
                 {scan?.status === "cancelling"
                   ? "Cancelling"
-                  : progress?.label ?? "Starting scan"}
+                  : (progress?.label ?? "Starting scan")}
               </p>
               <p>
                 Sources {progress?.completedSources ?? 0}/
@@ -309,12 +321,51 @@ export default function ClisTab({
         </div>
       </header>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <SummaryButton label="Installed" count={summary.installed} active={filters.presence === "installed"} onClick={() => setFilters((value) => ({ ...value, presence: value.presence === "installed" ? "all" : "installed" }))} />
-        <SummaryButton label="AI coding" count={summary.aiCoding} active={filters.category === "ai-coding"} onClick={() => setFilters((value) => ({ ...value, category: value.category === "ai-coding" ? "all" : "ai-coding" }))} />
-        <SummaryButton label="Duplicates" count={summary.duplicates} active={filters.duplicatesOnly} onClick={() => setFilters((value) => ({ ...value, duplicatesOnly: !value.duplicatesOnly }))} />
-        <SummaryButton label="Broken" count={summary.broken} active={filters.health === "broken"} onClick={() => setFilters((value) => ({ ...value, health: value.health === "broken" ? "all" : "broken" }))} />
-        <SummaryButton label="Missing" count={summary.missing} active={filters.presence === "removed"} onClick={() => setFilters((value) => ({ ...value, presence: value.presence === "removed" ? "all" : "removed" }))} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <SummaryButton
+          label="Installed"
+          count={summary.installed}
+          active={filters.presence === "installed"}
+          onClick={() =>
+            setFilters((value) => ({
+              ...value,
+              presence: value.presence === "installed" ? "all" : "installed",
+            }))
+          }
+        />
+        <SummaryButton
+          label="AI coding"
+          count={summary.aiCoding}
+          active={filters.category === "ai-coding"}
+          onClick={() =>
+            setFilters((value) => ({
+              ...value,
+              category: value.category === "ai-coding" ? "all" : "ai-coding",
+            }))
+          }
+        />
+        <SummaryButton
+          label="Multiple installs"
+          count={summary.duplicates}
+          active={filters.duplicatesOnly}
+          onClick={() =>
+            setFilters((value) => ({
+              ...value,
+              duplicatesOnly: !value.duplicatesOnly,
+            }))
+          }
+        />
+        <SummaryButton
+          label="Broken"
+          count={summary.broken}
+          active={filters.health === "broken"}
+          onClick={() =>
+            setFilters((value) => ({
+              ...value,
+              health: value.health === "broken" ? "all" : "broken",
+            }))
+          }
+        />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -329,16 +380,90 @@ export default function ClisTab({
             className="min-w-0 flex-1 bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-600/70"
           />
         </label>
-        <CliSelect label="Category" value={filters.category} onChange={(category) => setFilters((value) => ({ ...value, category: category as CliFilters["category"] }))} options={[{ value: "all", label: "All" }, ...Object.entries(CLI_CATEGORY_LABELS).map(([value, label]) => ({ value, label }))]} />
-        <CliSelect label="Status" value={filters.health} onChange={(health) => setFilters((value) => ({ ...value, health: health as CliHealthStatus | "all" }))} options={["all", "healthy", "unverified", "warning", "broken", "missing", "unknown"].map((value) => ({ value, label: value === "all" ? "All" : capitalize(value) }))} />
-        <CliSelect label="Source" value={filters.source} onChange={(source) => setFilters((value) => ({ ...value, source: source as CliPackageSource | "all" }))} options={[{ value: "all", label: "All" }, ...sources.map((source) => ({ value: source, label: CLI_SOURCE_LABELS[source] }))]} />
-        <CliSelect label="State" value={filters.presence} onChange={(presence) => setFilters((value) => ({ ...value, presence: presence as CliFilters["presence"] }))} options={[{ value: "all", label: "All" }, { value: "installed", label: "Installed" }, { value: "removed", label: "Removed" }, { value: "embedded", label: "Embedded tools" }]} />
+        <CliSelect
+          label="Category"
+          value={filters.category}
+          onChange={(category) =>
+            setFilters((value) => ({
+              ...value,
+              category: category as CliFilters["category"],
+            }))
+          }
+          options={[
+            { value: "all", label: "All" },
+            ...Object.entries(CLI_CATEGORY_LABELS).map(([value, label]) => ({
+              value,
+              label,
+            })),
+          ]}
+        />
+        <CliSelect
+          label="Status"
+          value={filters.health}
+          onChange={(health) =>
+            setFilters((value) => ({
+              ...value,
+              health: health as CliHealthStatus | "all",
+            }))
+          }
+          options={[
+            "all",
+            "healthy",
+            "unverified",
+            "warning",
+            "broken",
+            "unknown",
+          ].map((value) => ({
+            value,
+            label: value === "all" ? "All" : capitalize(value),
+          }))}
+        />
+        <CliSelect
+          label="Source"
+          value={filters.source}
+          onChange={(source) =>
+            setFilters((value) => ({
+              ...value,
+              source: source as CliPackageSource | "all",
+            }))
+          }
+          options={[
+            { value: "all", label: "All" },
+            ...sources.map((source) => ({
+              value: source,
+              label: CLI_SOURCE_LABELS[source],
+            })),
+          ]}
+        />
+        <CliSelect
+          label="State"
+          value={filters.presence}
+          onChange={(presence) =>
+            setFilters((value) => ({
+              ...value,
+              presence: presence as CliFilters["presence"],
+            }))
+          }
+          options={[
+            { value: "all", label: "All" },
+            { value: "installed", label: "Installed" },
+            { value: "embedded", label: "Embedded tools" },
+          ]}
+        />
       </div>
 
       {notice && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-300 bg-gray-200/55 px-3 py-2 text-xs text-gray-700" role="status">
+        <div
+          className="flex items-center justify-between gap-3 rounded-xl border border-gray-300 bg-gray-200/55 px-3 py-2 text-xs text-gray-700"
+          role="status"
+        >
           <span>{notice}</span>
-          <button type="button" onClick={() => setNotice(null)} className="rounded p-1 outline-none hover:bg-gray-300 focus-visible:ring-2 focus-visible:ring-night-700/25" aria-label="Dismiss status">
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            className="rounded p-1 outline-none hover:bg-gray-300 focus-visible:ring-2 focus-visible:ring-night-700/25"
+            aria-label="Dismiss status"
+          >
             <CircleSlash2 className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -347,11 +472,14 @@ export default function ClisTab({
       {sourceFailures.length > 0 && (
         <details className="rounded-xl border border-cleaner-blocked-border bg-cleaner-blocked-surface/70 px-3 py-2 text-xs text-cleaner-blocked-text">
           <summary className="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-cleaner-blocked-border">
-            {sourceFailures.length} package source{sourceFailures.length === 1 ? "" : "s"} could not be read
+            {sourceFailures.length} package source
+            {sourceFailures.length === 1 ? "" : "s"} could not be read
           </summary>
           <ul className="mt-2 space-y-1 pl-4">
             {sourceFailures.map((source) => (
-              <li key={source.sourceId}>{source.label}: {source.message ?? "Unavailable"}</li>
+              <li key={source.sourceId}>
+                {source.label}: {source.message ?? "Unavailable"}
+              </li>
             ))}
           </ul>
         </details>
@@ -365,9 +493,23 @@ export default function ClisTab({
         />
       ) : products.length === 0 ? (
         <EmptyState
-          icon={summary.installed === 0 ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
-          title={summary.installed === 0 ? "No developer CLIs found" : "No CLIs match these filters"}
-          detail={summary.installed === 0 ? "The completed scan found no catalogued or package-owned developer CLIs." : "Clear a filter or search to see the rest of the cached inventory."}
+          icon={
+            summary.installed === 0 ? (
+              <CheckCircle2 className="h-5 w-5" />
+            ) : (
+              <AlertCircle className="h-5 w-5" />
+            )
+          }
+          title={
+            summary.installed === 0
+              ? "No developer CLIs found"
+              : "No CLIs match these filters"
+          }
+          detail={
+            summary.installed === 0
+              ? "The completed scan found no catalogued or package-owned developer CLIs."
+              : "Clear a filter or search to see the rest of the cached inventory."
+          }
         />
       ) : (
         <div className="space-y-2.5">
@@ -457,7 +599,9 @@ function SummaryButton({
       }`}
     >
       <span className="block text-lg font-semibold leading-none">{count}</span>
-      <span className={`mt-1 block text-[10px] font-semibold uppercase tracking-wider ${active ? "text-night-100/75" : "text-gray-600"}`}>
+      <span
+        className={`mt-1 block text-[10px] font-semibold uppercase tracking-wider ${active ? "text-night-100/75" : "text-gray-600"}`}
+      >
         {label}
       </span>
     </button>
