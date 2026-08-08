@@ -9,6 +9,8 @@ import SettingsPanel from "./components/SettingsPanel";
 import UpdateNotification from "./components/UpdateNotification";
 import RecentScriptsDrawer from "./components/RecentScriptsDrawer";
 import EnvironmentKeysTab from "./components/EnvironmentKeysTab";
+import CleanerTab from "./components/CleanerTab";
+import ClisTab from "./components/ClisTab";
 
 dayjs.extend(relativeTime);
 
@@ -46,6 +48,8 @@ type PlatformFeatures = {
   ahkScripts: boolean;
   automatorScripts: boolean;
   environmentKeys: boolean;
+  cleaner: boolean;
+  clis: boolean;
 };
 
 type AutomatorItem = {
@@ -68,13 +72,21 @@ type AutomatorItem = {
   memory?: number;
 };
 
-type TabType = "servers" | "ahk" | "automator" | "environment";
+type TabType =
+  | "servers"
+  | "clis"
+  | "ahk"
+  | "automator"
+  | "environment"
+  | "cleaner";
 
 type AppMeta = {
   version: string;
   platform: string;
   arch: string;
   features: PlatformFeatures;
+  cleanerTestMode: boolean;
+  clisTestMode: boolean;
 };
 
 type RecentScript = {
@@ -116,9 +128,14 @@ export default function App() {
   const [recentScripts, setRecentScripts] = useState<RecentScript[]>([]);
   const [recentOpen, setRecentOpen] = useState(false);
   const [environmentKeyCount, setEnvironmentKeyCount] = useState(0);
+  const [cliCount, setCliCount] = useState(0);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem("dashboard:activeTab");
-    return saved === "ahk" || saved === "automator" || saved === "environment"
+    return saved === "clis" ||
+      saved === "ahk" ||
+      saved === "automator" ||
+      saved === "environment" ||
+      saved === "cleaner"
       ? saved
       : "servers";
   });
@@ -130,6 +147,8 @@ export default function App() {
     ahkScripts: false,
     automatorScripts: false,
     environmentKeys: false,
+    cleaner: false,
+    clis: false,
   });
 
   useEffect(() => {
@@ -185,9 +204,11 @@ export default function App() {
 
   const supportedTabs = useMemo<TabType[]>(() => {
     const tabs: TabType[] = ["servers"];
+    if (platformFeatures.clis) tabs.push("clis");
     if (platformFeatures.ahkScripts) tabs.push("ahk");
     if (platformFeatures.automatorScripts) tabs.push("automator");
     if (platformFeatures.environmentKeys) tabs.push("environment");
+    if (platformFeatures.cleaner) tabs.push("cleaner");
     return tabs;
   }, [platformFeatures]);
 
@@ -298,7 +319,13 @@ export default function App() {
   return (
     <div className="app-shell h-screen w-screen bg-night text-gray-900 select-none overflow-hidden">
       <TitleBar
-        onRefresh={() => window.api.refresh()}
+        onRefresh={() => {
+          if (activeTab === "cleaner") {
+            window.dispatchEvent(new Event("dashboard:cleaner-rescan"));
+          } else {
+            window.api.refresh();
+          }
+        }}
         onSettings={() => setOpenSettings(true)}
         search={query}
         onSearchChange={setQuery}
@@ -307,6 +334,8 @@ export default function App() {
             ? "Search ENV key names."
             : "Search ports, PID, names."
         }
+        showSearch={activeTab !== "cleaner" && activeTab !== "clis"}
+        showRefresh={activeTab !== "clis"}
         version={version}
         platform={platform}
       />
@@ -330,6 +359,15 @@ export default function App() {
                 >
                   Servers
                 </TabButton>
+                {platformFeatures.clis && (
+                  <TabButton
+                    active={activeTab === "clis"}
+                    onClick={() => setActiveTab("clis")}
+                    count={cliCount}
+                  >
+                    CLIs
+                  </TabButton>
+                )}
                 {platformFeatures.ahkScripts && (
                   <TabButton
                     active={activeTab === "ahk"}
@@ -355,6 +393,14 @@ export default function App() {
                     count={environmentKeyCount}
                   >
                     ENV Keys
+                  </TabButton>
+                )}
+                {platformFeatures.cleaner && (
+                  <TabButton
+                    active={activeTab === "cleaner"}
+                    onClick={() => setActiveTab("cleaner")}
+                  >
+                    Cleaner
                   </TabButton>
                 )}
               </>
@@ -498,6 +544,23 @@ export default function App() {
             active={activeTab === "environment"}
             query={query}
             onCountChange={setEnvironmentKeyCount}
+          />
+        )}
+
+        {platformFeatures.clis && (
+          <ClisTab
+            active={activeTab === "clis"}
+            testMode={Boolean(meta?.clisTestMode)}
+            onCountChange={setCliCount}
+          />
+        )}
+
+        {platformFeatures.cleaner && (
+          <CleanerTab
+            active={activeTab === "cleaner"}
+            testMode={Boolean(meta?.cleanerTestMode)}
+            query={query}
+            onQueryChange={setQuery}
           />
         )}
       </div>

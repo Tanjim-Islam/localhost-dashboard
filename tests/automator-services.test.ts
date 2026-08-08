@@ -11,9 +11,16 @@ import {
 
 test("discovers workflow and script files from a Services directory", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "services-"));
+  const updateWorkflowName =
+    process.platform === "win32"
+      ? "update-cli.workflow"
+      : "~:update-cli.workflow";
   fs.mkdirSync(path.join(root, "cleanup-system.workflow"));
-  fs.mkdirSync(path.join(root, "~:update-cli.workflow"));
-  fs.writeFileSync(path.join(root, "awei-keepalive.swift"), "#!/usr/bin/env swift\n");
+  fs.mkdirSync(path.join(root, updateWorkflowName));
+  fs.writeFileSync(
+    path.join(root, "awei-keepalive.swift"),
+    "#!/usr/bin/env swift\n",
+  );
   fs.writeFileSync(path.join(root, ".DS_Store"), "");
 
   const entries = await discoverServiceScriptEntries(root, [
@@ -49,7 +56,7 @@ test("discovers workflow and script files from a Services directory", async () =
       },
       {
         name: "update-cli",
-        path: path.join(root, "~:update-cli.workflow"),
+        path: path.join(root, updateWorkflowName),
         pid: undefined,
         canOpenInAutomator: true,
       },
@@ -89,7 +96,8 @@ test("attaches anonymous Automator runner PIDs only when Services workflows matc
       scriptName: "WorkflowServiceRunner",
       sourceKind: "workflow-service-runner",
       sourceLabel: "Workflow service runner",
-      commandLine: "/System/Library/Frameworks/AppKit.framework/WorkflowServiceRunner",
+      commandLine:
+        "/System/Library/Frameworks/AppKit.framework/WorkflowServiceRunner",
       elapsedSeconds: 10,
       canOpenInAutomator: false,
     },
@@ -100,7 +108,8 @@ test("attaches anonymous Automator runner PIDs only when Services workflows matc
       scriptName: "Automator Runner",
       sourceKind: "automator-runner",
       sourceLabel: "Automator runner",
-      commandLine: "/System/Library/Frameworks/Automator.framework/com.apple.automator.runner",
+      commandLine:
+        "/System/Library/Frameworks/Automator.framework/com.apple.automator.runner",
       elapsedSeconds: 8,
       canOpenInAutomator: false,
     },
@@ -126,7 +135,8 @@ test("attaches anonymous Automator runner PIDs only when Services workflows matc
       scriptName: "WorkflowServiceRunner",
       sourceKind: "workflow-service-runner",
       sourceLabel: "Workflow service runner",
-      commandLine: "/System/Library/Frameworks/AppKit.framework/WorkflowServiceRunner",
+      commandLine:
+        "/System/Library/Frameworks/AppKit.framework/WorkflowServiceRunner",
       canOpenInAutomator: false,
     },
   ]);
