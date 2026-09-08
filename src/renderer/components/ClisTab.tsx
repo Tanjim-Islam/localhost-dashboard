@@ -3,11 +3,12 @@ import {
   AlertCircle,
   CheckCircle2,
   CircleSlash2,
+  FolderPlus,
+  X,
   Search,
   Terminal,
 } from "lucide-react";
 import type {
-  CliHealthStatus,
   CliInstallation,
   CliInventorySnapshot,
   CliPackageSource,
@@ -22,8 +23,10 @@ import {
   filterCliProducts,
   formatCliAge,
   summarizeCliInventory,
+  isCliCommandVerified,
   type CliFilters,
 } from "../cli-view-model";
+import type { CliShell } from "../cli-invocation";
 import { CliProductRow } from "./clis/CliProductRow";
 import { CliSelect } from "./clis/CliSelect";
 import { CliUninstallDialog } from "./clis/CliUninstallDialog";
@@ -65,14 +68,29 @@ export default function ClisTab({
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [busyInstallationId, setBusyInstallationId] = useState<string>();
   const mounted = useRef(true);
+  const [now, setNow] = useState(() => Date.now());
+  const [scanDirectories, setScanDirectories] = useState<
+    Array<{ id: string; path: string }>
+  >([]);
+  const [showScanDirectories, setShowScanDirectories] = useState(false);
+  const [shell, setShell] = useState<CliShell>("powershell");
+
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [active]);
 
   useEffect(() => {
     mounted.current = true;
     void Promise.all([
       window.api.getCliInventory(),
       window.api.getCliScanState(),
-    ]).then(([saved, current]) => {
+      window.api.getCliScanDirectories(),
+    ]).then(([saved, current, directories]) => {
       if (!mounted.current) return;
+      setScanDirectories(directories);
       setInventory(saved);
       setScan(current.status === "idle" ? null : current);
     });
@@ -263,7 +281,7 @@ export default function ClisTab({
             </span>
             {inventory?.cached && (
               <span className="rounded-full border border-gray-300 bg-gray-200/65 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-700">
-                Cached
+                Saved scan
               </span>
             )}
             {testMode && (
@@ -277,10 +295,18 @@ export default function ClisTab({
             {inventory?.lastSuccessfulScanAt
               ? formatCliAge(inventory.lastSuccessfulScanAt)
               : "Never"}
-            {inventory && ` · ${inventory.platform} ${inventory.architecture}`}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowScanDirectories((value) => !value)}
+            aria-expanded={showScanDirectories}
+            className="h-9 rounded-xl border border-gray-300 px-3 text-xs font-medium hover:bg-gray-200 focus-visible:ring-2 focus-visible:ring-night-700/25"
+          >
+            Scan folders
+            {scanDirectories.length > 0 ? ` (${scanDirectories.length})` : ""}
+          </button>
           {scanning && (
             <div
               className="mr-1 min-w-[190px] text-right text-xs text-gray-600"
@@ -320,6 +346,59 @@ export default function ClisTab({
           )}
         </div>
       </header>
+
+      {showScanDirectories && (
+        <section className="rounded-xl border border-gray-300 bg-gray-100 p-4 text-xs">
+          <p className="text-gray-700">
+            Scans check PATH, installed applications, package records, and
+            common tool folders. Add folders for portable tools elsewhere.
+            Nothing is scanned automatically.
+          </p>
+          <p className="mt-1 text-gray-600">
+            Added folders include up to 8 levels of subfolders. Dependency,
+            cache, and linked subfolders are skipped.
+          </p>
+          {scanDirectories.map((directory) => (
+            <div key={directory.id} className="mt-2 flex items-center gap-2">
+              <span className="min-w-0 flex-1 break-all font-mono text-gray-800">
+                {directory.path}
+              </span>
+              <button
+                type="button"
+                disabled={scanning}
+                aria-label={`Remove scan folder ${directory.path}`}
+                onClick={async () => {
+                  try {
+                    setScanDirectories(
+                      await window.api.removeCliScanDirectory(directory.id),
+                    );
+                  } catch (error) {
+                    setNotice(messageOf(error));
+                  }
+                }}
+                className="rounded-lg p-2 hover:bg-gray-200 focus-visible:ring-2 focus-visible:ring-night-700/25"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            disabled={scanning || scanDirectories.length >= 20}
+            onClick={async () => {
+              try {
+                setScanDirectories(await window.api.chooseCliScanDirectory());
+              } catch (error) {
+                setNotice(messageOf(error));
+              }
+            }}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 font-medium hover:bg-gray-200 disabled:opacity-45"
+          >
+            <FolderPlus className="h-4 w-4" />
+            Add folder
+          </button>
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SummaryButton
@@ -403,19 +482,29 @@ export default function ClisTab({
           onChange={(health) =>
             setFilters((value) => ({
               ...value,
-              health: health as CliHealthStatus | "all",
+              health: health as CliFilters["health"],
             }))
           }
           options={[
             "all",
             "healthy",
+            "verified",
             "unverified",
             "warning",
             "broken",
             "unknown",
           ].map((value) => ({
             value,
-            label: value === "all" ? "All" : capitalize(value),
+            label:
+              value === "all"
+                ? "All"
+                : value === "healthy"
+                  ? "Installed"
+                  : value === "unknown"
+                    ? "Not checked"
+                    : value === "unverified"
+                      ? "Needs verification"
+                      : capitalize(value),
           }))}
         />
         <CliSelect
@@ -447,10 +536,34 @@ export default function ClisTab({
           options={[
             { value: "all", label: "All" },
             { value: "installed", label: "Installed" },
-            { value: "embedded", label: "Embedded tools" },
+            { value: "embedded", label: "Bundled tools" },
+            { value: "candidates", label: "Other discoveries" },
           ]}
         />
       </div>
+
+      {inventory?.platform === "win32" && (
+        <div className="flex items-center gap-2 text-xs text-gray-600">
+          <span>Copy commands for</span>
+          <div className="w-56 flex-none">
+            <CliSelect
+              label="Terminal"
+              value={shell}
+              onChange={(value) => setShell(value as CliShell)}
+              options={[
+                { value: "powershell", label: "PowerShell" },
+                { value: "cmd", label: "Command Prompt" },
+              ]}
+            />
+          </div>
+        </div>
+      )}
+      {filters.presence === "candidates" && (
+        <p className="text-xs text-gray-600">
+          These files have no declared CLI entry point. Add a tool here only if
+          you use it from the terminal.
+        </p>
+      )}
 
       {notice && (
         <div
@@ -507,8 +620,8 @@ export default function ClisTab({
           }
           detail={
             summary.installed === 0
-              ? "The completed scan found no catalogued or package-owned developer CLIs."
-              : "Clear a filter or search to see the rest of the cached inventory."
+              ? "The completed scan found no command-line tools in the searched locations."
+              : "Clear a filter or search to see the rest of the inventory."
           }
         />
       ) : (
@@ -518,7 +631,30 @@ export default function ClisTab({
               key={product.id}
               inventory={inventory}
               product={product}
+              now={now}
               presence={filters.presence}
+              shell={inventory.platform === "win32" ? shell : "posix"}
+              onSetIncluded={async (installation, included) => {
+                setBusyInstallationId(installation.id);
+                try {
+                  setInventory(
+                    await window.api.setCliInstallationIncluded({
+                      installationId: installation.id,
+                      inventoryRevision: inventory.revision,
+                      included,
+                    }),
+                  );
+                  setNotice(
+                    included
+                      ? `${product.displayName} was added to the CLI list.`
+                      : `${product.displayName} was removed from the CLI list. The file is unchanged.`,
+                  );
+                } catch (error) {
+                  setNotice(messageOf(error));
+                } finally {
+                  setBusyInstallationId(undefined);
+                }
+              }}
               expanded={expanded.has(product.id)}
               busyInstallationId={busyInstallationId}
               onToggle={() =>
@@ -538,7 +674,14 @@ export default function ClisTab({
                     inventoryRevision: inventory.revision,
                   });
                   setInventory(next);
-                  setNotice("Installation verification completed.");
+                  const checked = next.installations.find(
+                    (item) => item.id === installation.id,
+                  );
+                  setNotice(
+                    checked && isCliCommandVerified(checked, next)
+                      ? `${product.displayName} responded successfully.`
+                      : `${product.displayName}: file and package checks completed. Command execution has not been verified.`,
+                  );
                 } catch (error) {
                   setNotice(messageOf(error));
                 } finally {

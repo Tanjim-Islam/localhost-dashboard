@@ -116,21 +116,31 @@ export class CliUninstallController {
     const current = this.requireCurrentInventory(input.inventoryRevision);
     const before = requireInstallation(current, input.installationId);
     requireActionableCapability(before);
-    this.emit(requestId, input.installationId, "revalidating", "Revalidating ownership");
+    this.emit(
+      requestId,
+      input.installationId,
+      "revalidating",
+      "Revalidating ownership",
+    );
     const fresh = await this.options.revalidate(input.installationId);
     assertSameInstallation(before, fresh.installation);
     const identity = requirePackageIdentity(fresh.installation);
     if (
       record.fingerprint !== fresh.installation.fingerprint ||
       record.packageKey !== packageIdentityKey(identity) ||
-      record.managerFileFingerprint !== await fingerprintManagerFile(identity)
+      record.managerFileFingerprint !== (await fingerprintManagerFile(identity))
     ) {
       throw new Error("The installation changed after the preview.");
     }
     requireActionableCapability(fresh.installation);
     const plan = createCliUninstallPlan(fresh.installation);
 
-    this.emit(requestId, input.installationId, "uninstalling", "Running exact package uninstall");
+    this.emit(
+      requestId,
+      input.installationId,
+      "uninstalling",
+      "Running exact package uninstall",
+    );
     const result = await this.options.runner.run({
       ...plan,
       timeoutMs: UNINSTALL_TIMEOUT_MS,
@@ -158,15 +168,25 @@ export class CliUninstallController {
     }
 
     this.options.markFixtureUninstalled?.(input.installationId);
-    this.emit(requestId, input.installationId, "verifying", "Verifying package removal");
-    const verification = await this.options.revalidate(input.installationId).catch(
-      () => null,
+    this.emit(
+      requestId,
+      input.installationId,
+      "verifying",
+      "Verifying package removal",
     );
+    const verification = await this.options
+      .revalidate(input.installationId)
+      .catch(() => null);
     const packageStillPresent = Boolean(
       verification?.installation &&
-        verification.installation.presence === "present",
+      verification.installation.presence === "present",
     );
-    this.emit(requestId, input.installationId, "refreshing", "Refreshing CLI inventory");
+    this.emit(
+      requestId,
+      input.installationId,
+      "refreshing",
+      "Refreshing CLI inventory",
+    );
     const snapshot = await this.safeRefresh(current);
     const refreshed = snapshot.installations.find(
       (candidate) => candidate.id === input.installationId,
@@ -191,7 +211,9 @@ export class CliUninstallController {
   private requireCurrentInventory(revision: string): CliInventorySnapshot {
     const snapshot = this.options.getInventory();
     if (!snapshot || snapshot.revision !== revision) {
-      throw new Error("The CLI inventory changed. Refresh the details and try again.");
+      throw new Error(
+        "The CLI inventory changed. Refresh the details and try again.",
+      );
     }
     return snapshot;
   }
@@ -256,9 +278,10 @@ export function createCliUninstallPlan(
   const identity = requirePackageIdentity(installation);
   const executable = requireAbsoluteManager(identity);
   const packageId = validatePackageId(identity.source, identity.packageId);
-  const cwd = identity.managerRoot && path.isAbsolute(identity.managerRoot)
-    ? identity.managerRoot
-    : path.dirname(executable);
+  const cwd =
+    identity.managerRoot && path.isAbsolute(identity.managerRoot)
+      ? identity.managerRoot
+      : path.dirname(executable);
   switch (identity.source) {
     case "npm": {
       if (
@@ -268,14 +291,29 @@ export function createCliUninstallPlan(
         const cliPath = requireSafeNpmCommandPath(identity);
         return {
           executable,
-          args: [cliPath, "uninstall", "--global", "--ignore-scripts", packageId],
+          args: [
+            cliPath,
+            "uninstall",
+            "--global",
+            "--prefix",
+            cwd,
+            "--ignore-scripts",
+            packageId,
+          ],
           cwd,
           env: { npm_config_ignore_scripts: "true", npm_config_yes: "true" },
         };
       }
       return {
         executable,
-        args: ["uninstall", "--global", "--ignore-scripts", packageId],
+        args: [
+          "uninstall",
+          "--global",
+          "--prefix",
+          cwd,
+          "--ignore-scripts",
+          packageId,
+        ],
         cwd,
         env: { npm_config_ignore_scripts: "true", npm_config_yes: "true" },
       };
@@ -329,7 +367,9 @@ export function createCliUninstallPlan(
         },
       };
     default:
-      throw new Error("This package source is not supported for in-app uninstall.");
+      throw new Error(
+        "This package source is not supported for in-app uninstall.",
+      );
   }
 }
 
@@ -380,9 +420,11 @@ function requireSafeNpmCommandPath(identity: CliPackageIdentity): string {
     throw new Error("The npm command entrypoint is unavailable.");
   }
   const normalized = path.normalize(commandPath).toLowerCase();
-  const expectedSuffix = path.normalize(
-    `${path.sep}node_modules${path.sep}npm${path.sep}bin${path.sep}npm-cli.js`,
-  ).toLowerCase();
+  const expectedSuffix = path
+    .normalize(
+      `${path.sep}node_modules${path.sep}npm${path.sep}bin${path.sep}npm-cli.js`,
+    )
+    .toLowerCase();
   if (!normalized.endsWith(expectedSuffix)) {
     throw new Error("The npm command entrypoint is not recognized.");
   }
@@ -473,8 +515,6 @@ async function fingerprintManagerFile(
   }
 }
 
-function createResult(
-  value: CliUninstallResult,
-): CliUninstallResult {
+function createResult(value: CliUninstallResult): CliUninstallResult {
   return value;
 }

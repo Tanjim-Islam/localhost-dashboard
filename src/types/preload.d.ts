@@ -287,20 +287,42 @@ export interface Api {
 
   // Windows and macOS CLIs
   getCliInventory(): Promise<CliInventorySnapshot | null>;
+  getCliScanDirectories(): Promise<Array<{ id: string; path: string }>>;
+  chooseCliScanDirectory(): Promise<Array<{ id: string; path: string }>>;
+  removeCliScanDirectory(
+    id: string,
+  ): Promise<Array<{ id: string; path: string }>>;
   startCliScan(): Promise<CliScanSession>;
   cancelCliScan(scanSessionId: string): Promise<CliScanSession>;
   getCliScanState(): Promise<CliScanSession>;
-  verifyCliInstallation(input: CliInstallationRef): Promise<CliInventorySnapshot>;
+  verifyCliInstallation(
+    input: CliInstallationRef,
+  ): Promise<CliInventorySnapshot>;
+  setCliInstallationIncluded(
+    input: CliInstallationRef & { included: boolean },
+  ): Promise<CliInventorySnapshot>;
   revealCliInstallation(input: CliInstallationRef): Promise<void>;
-  getCliUninstallPreview(input: CliInstallationRef): Promise<CliUninstallPreview>;
-  uninstallCliInstallation(input: CliUninstallRequest): Promise<CliUninstallResult>;
+  getCliUninstallPreview(
+    input: CliInstallationRef,
+  ): Promise<CliUninstallPreview>;
+  uninstallCliInstallation(
+    input: CliUninstallRequest,
+  ): Promise<CliUninstallResult>;
   onCliScanProgress(cb: (payload: CliScanProgress) => void): () => void;
   onCliScanComplete(cb: (payload: CliInventorySnapshot) => void): () => void;
   onCliScanError(
-    cb: (payload: { scanSessionId?: string; status: "failed" | "cancelled"; message: string }) => void,
+    cb: (payload: {
+      scanSessionId?: string;
+      status: "failed" | "cancelled";
+      message: string;
+    }) => void,
   ): () => void;
-  onCliInventoryChanged(cb: (payload: CliInventorySnapshot) => void): () => void;
-  onCliUninstallProgress(cb: (payload: CliUninstallProgress) => void): () => void;
+  onCliInventoryChanged(
+    cb: (payload: CliInventorySnapshot) => void,
+  ): () => void;
+  onCliUninstallProgress(
+    cb: (payload: CliUninstallProgress) => void,
+  ): () => void;
   onCliUninstallComplete(cb: (payload: CliUninstallResult) => void): () => void;
 
   // meta / ui

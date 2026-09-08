@@ -118,13 +118,17 @@ The permanent CLIs tab loads its last saved inventory immediately. It never insp
 - Duplicate versions and PATH conflicts
 - Executable, shim, and canonical target paths
 - Package source and exact package identity when known
-- Separate runtime health and neutral ownership or version confidence
+- Installed status after file checks, Verified only after a successful known command probe, one Checked timestamp, and a New badge for the first 24 hours
 - Compact launcher lists grouped under one package installation
 - Embedded application or SDK tools in an optional filter, excluded from normal installed totals
 - Broken shims, missing targets, inaccessible endpoints, incomplete runtimes, and multiple current installations
 - Isolated package-source failures without discarding the last valid inventory
 
-The catalogue covers common AI coding tools, runtimes, package managers, build tools, cloud tools, containers, databases, and general developer utilities. Package inventories and exact package `bin` metadata supplement the catalogue. npm `.cmd`, `.ps1`, and extensionless launchers for one package are grouped as endpoints of one installation. Unknown PATH executables are not executed or displayed automatically.
+The catalogue supplies names and curated version probes. Discovery also finds unfamiliar console executables and scripts, declared package commands, Windows application folders, and inactive Node/Python versions. Only recognized commands and commands declared by CLI package sources enter the main list automatically. Application ownership, PATH placement, and a console executable header alone do not qualify a file as a CLI. Undeclared files appear only under **State > Other discoveries**, where **Add to CLI list** and **Remove from CLI list** save a reversible preference without running or deleting the file. Documented application commands such as PowerToys and BCUninstaller console appear under **Bundled tools**, separately from internal helpers.
+
+The scanner reads Node package manifests, Python console entry points, Windows file metadata, and installed-application ownership without executing unfamiliar tools. npm `.cmd`, `.ps1`, and extensionless companion files remain one installation, including through nvm directory links. Windows POSIX companion scripts do not count as runnable Windows launchers. **Copy command** quotes the exact installation path for PowerShell, Command Prompt, or a macOS shell, avoiding PATH differences and shell aliases. **Check again** repeats file checks and, where a curated probe is available, checks the selected command even when a package version is already known. Verified evidence expires when the executable fingerprint changes.
+
+Use **Scan folders > Add folder** for portable tools in other locations. These saved folders are inspected only during a manual scan, including up to 8 levels and 2,000 directories. Dependency, cache, and linked subfolders are skipped. Inaccessible folders or exceeded limits produce a partial scan notice. The app does not promise an exhaustive drive search. Publisher attribution and permission to uninstall are separate facts. Unsupported uninstall actions are omitted from installation cards.
 
 In-app uninstall is intentionally narrow. npm global packages, pipx applications, Cargo packages, qualified Scoop applications, and Homebrew formulas can be enabled only when current exact ownership is revalidated. Other sources are blocked or manual-only. The renderer sends only an installation ID, inventory revision, one-use preview token, and fixed confirmation value. The app never offers cache cleanup, leftover removal, configuration deletion, credential deletion, installation, updating, or PATH editing.
 

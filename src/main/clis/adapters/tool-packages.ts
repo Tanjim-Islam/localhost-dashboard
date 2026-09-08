@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { findCliByCommand, findCliByPackage } from "../catalogue";
+import { discoveredPackageId, validCliCommand } from "../discovery";
 import type {
   CliAdapterResult,
   CliCommandRunner,
@@ -92,7 +93,9 @@ export function parsePipxOutput(
     if (!mainPackage || typeof mainPackage !== "object") continue;
     const pkg = mainPackage as Record<string, unknown>;
     const packageId =
-      stringValue(pkg.package) ?? stringValue(pkg.package_or_url) ?? environmentName;
+      stringValue(pkg.package) ??
+      stringValue(pkg.package_or_url) ??
+      environmentName;
     const version = stringValue(pkg.package_version);
     const apps = Array.isArray(pkg.apps)
       ? pkg.apps.filter((value): value is string => typeof value === "string")
@@ -102,12 +105,30 @@ export function parsePipxOutput(
       apps
         .map((command) => findCliByCommand(command, environment.platform))
         .find(Boolean);
-    if (!definition) continue;
+    if (!definition && !apps.some(validCliCommand)) continue;
     records.push({
-      productId: definition.id,
+      productId:
+        definition?.id ??
+        discoveredPackageId("pipx", packageId, environment.platform),
       sourceId: "pipx",
-      commandNames: apps.length ? apps : [...definition.commands],
-      binEntries: [],
+      commandNames: apps.length
+        ? apps.filter(validCliCommand)
+        : [...(definition?.commands ?? [])],
+      binEntries: (Array.isArray(pkg.app_paths) ? pkg.app_paths : []).flatMap(
+        (value) => {
+          const target =
+            typeof value === "string"
+              ? value
+              : typeof value === "object" && value
+                ? (value as Record<string, unknown>).__Path__
+                : undefined;
+          if (typeof target !== "string" || !path.isAbsolute(target)) return [];
+          const commandName = path.basename(target).replace(/\.exe$/i, "");
+          return apps.includes(commandName)
+            ? [{ commandName, targetPath: target }]
+            : [];
+        },
+      ),
       version,
       packageIdentity: {
         source: "pipx",
@@ -192,12 +213,25 @@ async function collectCargoMetadata(
       bins
         .map((command) => findCliByCommand(command, environment.platform))
         .find(Boolean);
-    if (!definition) continue;
+    if (!definition && !bins.some(validCliCommand)) continue;
     records.push({
-      productId: definition.id,
+      productId:
+        definition?.id ??
+        discoveredPackageId("cargo", packageId, environment.platform),
       sourceId: "cargo",
-      commandNames: bins.length ? bins : [...definition.commands],
-      binEntries: [],
+      commandNames: bins.length
+        ? bins.filter(validCliCommand).map((bin) => bin.replace(/\.exe$/i, ""))
+        : [...(definition?.commands ?? [])],
+      binEntries: bins.filter(validCliCommand).map((bin) => ({
+        commandName: bin.replace(/\.exe$/i, ""),
+        targetPath: path.join(
+          cargoHome,
+          "bin",
+          environment.platform === "win32" && !bin.endsWith(".exe")
+            ? `${bin}.exe`
+            : bin,
+        ),
+      })),
       version,
       packageIdentity: {
         source: "cargo",

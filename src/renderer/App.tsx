@@ -317,7 +317,7 @@ export default function App() {
     (scriptItemCount > 0 || recentScripts.length > 0);
 
   return (
-    <div className="app-shell h-screen w-screen bg-night text-gray-900 select-none overflow-hidden">
+    <div className="app-shell flex h-screen w-screen flex-col bg-night text-gray-900 select-none">
       <TitleBar
         onRefresh={() => {
           if (activeTab === "cleaner") {
@@ -340,7 +340,7 @@ export default function App() {
         platform={platform}
       />
 
-      <div className="dashboard-content app-scrollbar px-6 py-5 overflow-y-auto overflow-x-hidden h-[calc(100vh-48px)]">
+      <div className="dashboard-content app-scrollbar min-h-0 flex-1 px-6 py-5 overflow-y-auto overflow-x-hidden">
         {error && (
           <div className="bg-mimi_pink-700/30 text-mimi_pink-200 border border-mimi_pink-400/40 px-4 py-2 rounded mb-4">
             {error}

@@ -208,6 +208,8 @@ button.rounded-2xl {
 .app-shell {
   isolation: isolate;
   position: relative;
+  /* Clip the oversized glow without creating a scrollable window shell. */
+  overflow: clip;
 }
 
 .app-shell::before {

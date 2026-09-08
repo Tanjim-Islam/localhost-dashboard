@@ -10,6 +10,7 @@ import {
 } from "../main/cleaner/ipc-validation";
 import {
   validateCliInstallationRef,
+  validateCliInclusionRequest,
   validateCliSessionId,
   validateCliUninstallRequest,
 } from "../main/clis/ipc-validation";
@@ -265,6 +266,12 @@ contextBridge.exposeInMainWorld("api", {
   },
   // Windows and macOS CLIs. Main repeats all validation.
   getCliInventory: () => ipcRenderer.invoke("clis:inventory-get"),
+  getCliScanDirectories: () => ipcRenderer.invoke("clis:scan-directories"),
+  chooseCliScanDirectory: () => ipcRenderer.invoke("clis:choose-scan-directory"),
+  removeCliScanDirectory: (id: string) => {
+    if (typeof id !== "string" || id.length > 128) throw new Error("Invalid scan folder.");
+    return ipcRenderer.invoke("clis:remove-scan-directory", id);
+  },
   startCliScan: () => ipcRenderer.invoke("clis:scan-start"),
   cancelCliScan: (scanSessionId: unknown) =>
     ipcRenderer.invoke("clis:scan-cancel", validateCliSessionId(scanSessionId)),
@@ -274,6 +281,8 @@ contextBridge.exposeInMainWorld("api", {
       "clis:installation-verify",
       validateCliInstallationRef(input),
     ),
+  setCliInstallationIncluded: (input: unknown) =>
+    ipcRenderer.invoke("clis:installation-included", validateCliInclusionRequest(input)),
   revealCliInstallation: (input: unknown) =>
     ipcRenderer.invoke(
       "clis:installation-reveal",

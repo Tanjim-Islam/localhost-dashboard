@@ -1,5 +1,6 @@
 import path from "node:path";
 import { normalizeCliPath } from "./fingerprint";
+import { getCliDefinition } from "./catalogue";
 import type {
   CliExecutableEndpoint,
   CliInstallationOrigin,
@@ -13,6 +14,8 @@ const PACKAGE_MANAGER_SOURCES = new Set([
   "yarn-classic",
   "bun",
   "pipx",
+  "pip",
+  "uv",
   "cargo",
   "winget",
   "chocolatey",
@@ -29,6 +32,15 @@ export function classifyCliOrigin(input: {
   endpoints: CliExecutableEndpoint[];
   homeDirectory?: string;
 }): CliInstallationOrigin {
+  if (getCliDefinition(input.productId)?.applicationCli)
+    return "application-embedded";
+  if (
+    input.endpoints.some(
+      (endpoint) => endpoint.bundledWith === "strawberry-perl",
+    )
+  ) {
+    return "sdk-bundled";
+  }
   const paths = input.endpoints.flatMap((endpoint) =>
     [
       endpoint.path,
@@ -80,11 +92,12 @@ function isApplicationEmbeddedPath(
 ): boolean {
   const normalized = normalizeCliPath(value, platform).replaceAll("\\", "/");
   return (
-    normalized.includes("/.cache/codex-runtimes/") &&
-    normalized.includes("/dependencies/")
-  ) || (
-    normalized.includes("/openai/codex/runtimes/") &&
-    normalized.includes("/dependencies/")
+    normalized.includes("/.codex/tmp/") ||
+    normalized.includes("/openai/codex/bin/") ||
+    (normalized.includes("/.cache/codex-runtimes/") &&
+      normalized.includes("/dependencies/")) ||
+    (normalized.includes("/openai/codex/runtimes/") &&
+      normalized.includes("/dependencies/"))
   );
 }
 
@@ -97,23 +110,26 @@ function isDockerBundledPath(value: string, platform: CliPlatform): boolean {
 function isSystemPath(value: string, platform: CliPlatform): boolean {
   const normalized = normalizeCliPath(value, platform).replaceAll("\\", "/");
   if (platform === "darwin") {
-    return normalized.startsWith("/usr/bin/") ||
+    return (
+      normalized.startsWith("/usr/bin/") ||
       normalized.startsWith("/usr/sbin/") ||
       normalized.startsWith("/opt/homebrew/") ||
-      normalized.startsWith("/usr/local/");
+      normalized.startsWith("/usr/local/")
+    );
   }
-  return normalized.includes("/program files/") ||
+  return (
+    normalized.includes("/program files/") ||
     normalized.includes("/programdata/") ||
-    normalized.includes("/windowsapps/");
+    normalized.includes("/windowsapps/")
+  );
 }
 
-function isWithin(
-  value: string,
-  root: string,
-  platform: CliPlatform,
-): boolean {
+function isWithin(value: string, root: string, platform: CliPlatform): boolean {
   const normalizedValue = normalizeCliPath(value, platform);
   const normalizedRoot = normalizeCliPath(root, platform);
   const relative = path.relative(normalizedRoot, normalizedValue);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
 }

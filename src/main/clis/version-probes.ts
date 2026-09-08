@@ -1,9 +1,6 @@
 import path from "node:path";
 import { readFile, stat } from "node:fs/promises";
-import {
-  getCliDefinition,
-  type CliDefinition,
-} from "./catalogue";
+import { getCliDefinition, type CliDefinition } from "./catalogue";
 import { compareEndpoints } from "./inventory-builder";
 import type { CliCancellationToken } from "./session";
 import type {
@@ -24,11 +21,14 @@ export async function probeVersions(input: {
   endpoints: CliExecutableEndpoint[];
   previous: CliInventorySnapshot | null;
   onProgress: (completed: number) => void;
+  verificationInstallationId?: string;
+  now?: () => number;
 }): Promise<void> {
   const candidates = input.installations.filter(
     (installation) =>
       installation.presence === "present" &&
-      !installation.version &&
+      (!installation.version ||
+        installation.id === input.verificationInstallationId) &&
       getCliDefinition(installation.productId)?.versionProbe,
   );
   let nextIndex = 0;
@@ -49,10 +49,10 @@ export async function probeVersions(input: {
             endpoint.accessible,
         )
         .sort(compareEndpoints);
-      const metadataVersion = await readPassiveVersionMetadata(
-        installation.productId,
-        endpoints,
-      );
+      const forceProbe = installation.id === input.verificationInstallationId;
+      const metadataVersion = forceProbe
+        ? undefined
+        : await readPassiveVersionMetadata(installation.productId, endpoints);
       if (metadataVersion) {
         installation.version = metadataVersion;
         installation.versionSource = "executable-metadata";
@@ -83,11 +83,22 @@ export async function probeVersions(input: {
         },
         input.cancellation.signal,
       );
+      if (forceProbe) delete installation.commandVerification;
       const version =
-        result.exitCode === 0
+        result.exitCode === 0 &&
+        !result.timedOut &&
+        !result.cancelled &&
+        !result.outputExceeded
           ? parseVersion(`${result.stdout}\n${result.stderr}`, probe.parser)
           : undefined;
       if (version) {
+        installation.commandVerification = {
+          endpointId: endpoint.id,
+          endpointFingerprint: endpoint.fingerprint,
+          checkedAt: input.now?.() ?? Date.now(),
+        };
+        installation.lastSuccessfulVerificationAt =
+          installation.commandVerification.checkedAt;
         installation.version = version;
         installation.versionSource = "version-probe";
         installation.issueCodes = installation.issueCodes.filter(
@@ -151,7 +162,7 @@ export function resolveProbeExecutable(
 ): string | undefined {
   if (platform === "darwin") {
     return endpoint.executable
-      ? endpoint.canonicalPath ?? endpoint.path
+      ? (endpoint.canonicalPath ?? endpoint.path)
       : undefined;
   }
   const candidates = [

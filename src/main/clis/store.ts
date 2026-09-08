@@ -5,14 +5,16 @@ import type {
   CliUninstallAuditSummary,
 } from "./types";
 import { normalizeCliInventory } from "./inventory-normalizer";
+import { normalizeScanDirectories } from "./scan-directories";
 
 export const MAX_CLI_SCAN_ATTEMPTS = 20;
 export const MAX_CLI_UNINSTALL_AUDITS = 100;
-export const MAX_CLI_PRODUCTS = 1_000;
-export const MAX_CLI_INSTALLATIONS = 2_000;
+export const MAX_CLI_PRODUCTS = 5_000;
+export const MAX_CLI_INSTALLATIONS = 10_000;
 
 export const DEFAULT_CLI_STORE: CliStoreSchema = {
   schemaVersion: 2,
+  scanDirectories: [],
   inventory: null,
   lastScanStartedAt: null,
   lastCompletedScanAt: null,
@@ -44,6 +46,7 @@ export function migrateCliStore(value: unknown): CliStoreSchema {
   const inventory = normalizeCliInventory(input.inventory);
   return boundCliStore({
     schemaVersion: 2,
+    scanDirectories: normalizeScanDirectories(input.scanDirectories),
     inventory,
     lastScanStartedAt: finiteOrNull(input.lastScanStartedAt),
     lastCompletedScanAt: finiteOrNull(input.lastCompletedScanAt),
@@ -54,9 +57,7 @@ export function migrateCliStore(value: unknown): CliStoreSchema {
     scanAttempts: isArray<CliScanAttemptSummary>(input.scanAttempts)
       ? structuredClone(input.scanAttempts)
       : [],
-    uninstallAudits: isArray<CliUninstallAuditSummary>(
-      input.uninstallAudits,
-    )
+    uninstallAudits: isArray<CliUninstallAuditSummary>(input.uninstallAudits)
       ? structuredClone(input.uninstallAudits)
       : [],
   });
@@ -91,8 +92,10 @@ export function boundCliStore(next: CliStoreSchema): CliStoreSchema {
     bounded.inventory.endpoints = bounded.inventory.endpoints
       .filter((item) => endpointIds.has(item.id))
       .slice(0, MAX_CLI_INSTALLATIONS * 12);
-    bounded.inventory.sourceResults =
-      bounded.inventory.sourceResults.slice(0, 64);
+    bounded.inventory.sourceResults = bounded.inventory.sourceResults.slice(
+      0,
+      64,
+    );
   }
   return bounded;
 }
@@ -105,7 +108,9 @@ function isArray<T>(value: unknown): value is T[] {
   return Array.isArray(value);
 }
 
-function isScanStatus(value: unknown): value is CliStoreSchema["lastScanStatus"] {
+function isScanStatus(
+  value: unknown,
+): value is CliStoreSchema["lastScanStatus"] {
   return (
     typeof value === "string" &&
     [

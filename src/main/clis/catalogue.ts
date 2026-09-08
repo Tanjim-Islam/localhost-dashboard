@@ -21,6 +21,7 @@ export type CliDefinition = {
   foundational?: boolean;
   preferVersionProbe?: boolean;
   alwaysProbeVersion?: boolean;
+  applicationCli?: boolean;
   incompleteProbe?: {
     commandName: string;
     args: readonly string[];
@@ -231,6 +232,42 @@ export const CLI_CATALOGUE: readonly CliDefinition[] = [
   ]),
   developer("eas", "EAS CLI", ["eas"], false, { npm: ["eas-cli"] }),
   developer("ngrok", "ngrok", ["ngrok"]),
+  developer("fd", "fd", ["fd", "fdfind"]),
+  developer("ripgrep", "ripgrep", ["rg"]),
+  developer("ast-grep", "ast-grep", ["ast-grep", "sg"], false, {
+    npm: ["@ast-grep/cli"],
+  }),
+  developer("wget", "Wget", ["wget"]),
+  {
+    id: "which",
+    displayName: "Which",
+    category: "developer-tool",
+    commands: ["which"],
+  },
+  {
+    id: "powershell",
+    displayName: "PowerShell",
+    category: "runtime",
+    commands: ["pwsh"],
+    foundational: true,
+    versionProbe: probe("pwsh"),
+  },
+  {
+    id: "powertoys-cli",
+    displayName: "PowerToys command-line tools",
+    category: "developer-tool",
+    platforms: ["win32"],
+    applicationCli: true,
+    commands: ["fancyzonescli", "filelocksmithcli", "powertoys.dsc"],
+  },
+  {
+    id: "bcu-console",
+    displayName: "BCUninstaller console",
+    category: "developer-tool",
+    platforms: ["win32"],
+    applicationCli: true,
+    commands: ["bcu-console"],
+  },
 ] as const;
 
 export function getCliDefinitions(platform: CliPlatform): CliDefinition[] {

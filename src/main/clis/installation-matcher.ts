@@ -30,16 +30,26 @@ export function matchInstallations(
 ): MutableCliInstallation[] {
   const mutableByPackage = new Map<string, MutableCliInstallation>();
   for (const record of packageRecords) {
+    const definition = getCliDefinition(record.productId);
+    const commandNames =
+      record.packageIdentity.source === "registry" && definition
+        ? record.commandNames.filter((name) =>
+            definition.commands.includes(name),
+          )
+        : record.commandNames;
+    const binEntries = record.binEntries.filter((entry) =>
+      commandNames.includes(entry.commandName),
+    );
     const key = packageRecordKey(record, environment.platform);
     const existing = mutableByPackage.get(key);
     if (existing) {
       existing.commandNames = [
-        ...new Set([...existing.commandNames, ...record.commandNames]),
+        ...new Set([...existing.commandNames, ...commandNames]),
       ];
-      existing.binEntries = dedupeBinEntries([
-        ...existing.binEntries,
-        ...record.binEntries,
-      ], environment.platform);
+      existing.binEntries = dedupeBinEntries(
+        [...existing.binEntries, ...binEntries],
+        environment.platform,
+      );
       if (!getCliDefinition(record.productId)?.preferVersionProbe) {
         existing.version ??= record.version;
       }
@@ -49,8 +59,8 @@ export function matchInstallations(
       productId: record.productId,
       packageIdentity: record.packageIdentity,
       endpoints: [],
-      commandNames: [...record.commandNames],
-      binEntries: [...record.binEntries],
+      commandNames: [...commandNames],
+      binEntries: [...binEntries],
       version: getCliDefinition(record.productId)?.preferVersionProbe
         ? undefined
         : record.version,
@@ -62,11 +72,7 @@ export function matchInstallations(
   const unmatched = new Set(pathRecords);
   for (const installation of mutable) {
     const matches = [...unmatched].filter((record) =>
-      endpointMatchesPackage(
-        record,
-        installation,
-        environment.platform,
-      ),
+      endpointMatchesPackage(record, installation, environment.platform),
     );
     for (const match of matches) {
       installation.endpoints.push(match.endpoint);
@@ -87,6 +93,11 @@ export function matchInstallations(
     pathGroups.set(key, group);
   }
   for (const records of pathGroups.values()) {
+    if (
+      environment.platform === "win32" &&
+      records.every(({ endpoint }) => !/\.[^\\/.]+$/.test(endpoint.path))
+    )
+      continue;
     mutable.push({
       productId: records[0].productId,
       endpoints: records.map((record) => record.endpoint),
@@ -102,8 +113,15 @@ export function matchInstallations(
   }
   return mutable.filter(
     (installation) =>
-      installation.endpoints.length > 0 ||
+      (installation.endpoints.length > 0 &&
+        !(
+          environment.platform === "win32" &&
+          installation.endpoints.every(
+            (endpoint) => !/\.[^\\/.]+$/.test(endpoint.path),
+          )
+        )) ||
       (installation.packageIdentity?.ownershipConfidence === "exact" &&
+        installation.endpoints.length === 0 &&
         (Boolean(installation.packageIdentity.installRoot) ||
           installation.binEntries.length > 0)),
   );
@@ -117,7 +135,22 @@ function endpointMatchesPackage(
   const identity = installation.packageIdentity;
   if (
     !identity ||
-    record.productId !== installation.productId ||
+    (record.productId !== installation.productId &&
+      !record.productId.startsWith("discovered-command:") &&
+      !installation.binEntries.some(
+        (entry) =>
+          entry.commandName === record.endpoint.commandName &&
+          [
+            record.endpoint.path,
+            record.endpoint.canonicalPath,
+            record.endpoint.shimTarget,
+          ].some(
+            (value) =>
+              value &&
+              normalizeCliPath(value, platform) ===
+                normalizeCliPath(entry.targetPath, platform),
+          ),
+      )) ||
     !installation.commandNames.some(
       (command) =>
         command.toLowerCase() === record.endpoint.commandName.toLowerCase(),
@@ -141,8 +174,8 @@ function endpointMatchesPackage(
   ) {
     return true;
   }
-  const roots = [identity.installRoot].filter(
-    (value): value is string => Boolean(value),
+  const roots = [identity.installRoot].filter((value): value is string =>
+    Boolean(value),
   );
   if (
     roots.some((root) => {
@@ -159,6 +192,7 @@ function endpointMatchesPackage(
     return true;
   }
   if (identity.installRoot) {
+    if (record.endpoint.shimPackageRoot) return false;
     const nodeModulesMarker =
       platform === "win32" ? "\\node_modules\\" : "/node_modules/";
     const normalizedRoot = normalizeCliPath(identity.installRoot, platform);
@@ -167,7 +201,10 @@ function endpointMatchesPackage(
       const globalBinRoot = normalizedRoot.slice(0, markerIndex);
       if (
         normalizeCliPath(
-          pathDirectory(record.endpoint.path, platform),
+          pathDirectory(
+            record.endpoint.canonicalPath ?? record.endpoint.path,
+            platform,
+          ),
           platform,
         ) === globalBinRoot
       ) {
@@ -233,7 +270,10 @@ function pathDirectory(
   platform: CliScanEnvironment["platform"],
 ): string {
   const separator = platform === "win32" ? "\\" : "/";
-  const normalized = value.replaceAll(platform === "win32" ? "/" : "\\", separator);
+  const normalized = value.replaceAll(
+    platform === "win32" ? "/" : "\\",
+    separator,
+  );
   const index = normalized.lastIndexOf(separator);
   return index >= 0 ? normalized.slice(0, index) : normalized;
 }

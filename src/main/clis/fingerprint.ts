@@ -6,15 +6,19 @@ import type {
   CliPlatform,
 } from "./types";
 
-export function normalizeCliPath(
-  value: string,
-  platform: CliPlatform,
-): string {
+export function normalizeCliPath(value: string, platform: CliPlatform): string {
   const normalized =
     platform === "win32"
       ? path.win32.normalize(value.trim())
       : path.posix.normalize(value.trim());
-  return platform === "win32" ? normalized.toLowerCase() : normalized;
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
+  const withoutTrailingSeparator =
+    normalized === pathApi.parse(normalized).root
+      ? normalized
+      : normalized.replace(/[\\/]+$/, "");
+  return platform === "win32"
+    ? withoutTrailingSeparator.toLowerCase()
+    : withoutTrailingSeparator;
 }
 
 export function stableCliId(
@@ -68,6 +72,7 @@ export function createEndpointFingerprint(
     canonicalPath: normalizeOptional(endpoint.canonicalPath, platform),
     symlinkTarget: normalizeOptional(endpoint.symlinkTarget, platform),
     shimTarget: normalizeOptional(endpoint.shimTarget, platform),
+    ...(endpoint.bundledWith ? { bundledWith: endpoint.bundledWith } : {}),
     fileSize: endpoint.fileSize ?? null,
     modifiedAt: endpoint.modifiedAt ?? null,
     fileIdentity: endpoint.fileIdentity ?? null,
@@ -98,9 +103,7 @@ export function createInstallationFingerprint(input: {
       input.packageIdentity?.installRoot,
       input.platform,
     ),
-    endpoints: input.endpoints
-      .map((endpoint) => endpoint.fingerprint)
-      .sort(),
+    endpoints: input.endpoints.map((endpoint) => endpoint.fingerprint).sort(),
   });
 }
 

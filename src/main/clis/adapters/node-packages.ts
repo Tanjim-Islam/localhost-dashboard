@@ -1,7 +1,9 @@
 import { access, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { groupEquivalentEndpointKey } from "./path";
-import { findCliByPackage } from "../catalogue";
+import { findCliByCommand, findCliByPackage } from "../catalogue";
+import { discoveredPackageId, validCliCommand } from "../discovery";
+import { readBoundedPackageJson } from "./windows";
 import type {
   CliAdapterResult,
   CliCommandResult,
@@ -36,6 +38,13 @@ export async function collectNodePackageInventories(input: {
     Array<(typeof input.managerEndpoints)[number]>
   >();
   for (const manager of input.managerEndpoints) {
+    // Corepack proxies can download a manager on first use. Only query installed managers.
+    if (
+      [manager.endpoint.shimPackageRoot, manager.endpoint.shimTarget].some(
+        (value) => value && /[/\\]corepack(?:[/\\]|$)/i.test(value),
+      )
+    )
+      continue;
     const key = groupEquivalentEndpointKey(
       { productId: manager.productId, endpoint: manager.endpoint },
       input.environment.platform,
@@ -72,11 +81,9 @@ export async function collectNodePackageInventories(input: {
           Number(left.prefixArgs.length > 0),
       )[0];
     const key = execution
-      ? [
-          manager.productId,
-          execution.executable,
-          ...execution.prefixArgs,
-        ].join("|")
+      ? [manager.productId, execution.executable, ...execution.prefixArgs].join(
+          "|",
+        )
       : `${manager.productId}|${manager.endpoint.canonicalPath ?? manager.endpoint.path}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -182,30 +189,36 @@ export function parseNodeManagerOutput(
   const source: CliPackageSource = manager;
   const records: CliPackageRecord[] = [];
   for (const [packageId, metadata] of Object.entries(dependencies)) {
-    const definition = findCliByPackage(source, packageId, platform);
-    if (!definition) continue;
+    const definition =
+      findCliByPackage(source, packageId, platform) ??
+      findCliByCommand(packageId, platform);
     const version =
       metadata && typeof metadata === "object"
         ? stringValue((metadata as Record<string, unknown>).version)
         : undefined;
-    const installRoot =
+    const reportedInstallRoot =
       metadata && typeof metadata === "object"
         ? stringValue((metadata as Record<string, unknown>).path)
         : undefined;
+    const installRoot =
+      reportedInstallRoot ??
+      path.join(managerRoot, "node_modules", ...packageId.split("/"));
     const packageManagerRoot =
       deriveNodeGlobalRoot(installRoot, platform) ?? managerRoot;
     const binEntries = readNodeBinEntries(
       metadata,
       installRoot,
-      definition.commands,
+      definition?.commands ?? [packageId.split("/").at(-1) ?? packageId],
     );
+    if (!definition && binEntries.length === 0) continue;
     records.push({
-      productId: definition.id,
+      productId:
+        definition?.id ?? discoveredPackageId(source, packageId, platform),
       sourceId: `${manager}|${packageManagerRoot}`,
       commandNames:
         binEntries.length > 0
           ? binEntries.map((entry) => entry.commandName)
-          : [...definition.commands],
+          : [...(definition?.commands ?? [])],
       binEntries,
       version,
       packageIdentity: {
@@ -278,23 +291,35 @@ async function collectPassiveBunInventory(
   }
   const dependencies = asStringRecord(parsed.dependencies);
   const records: CliPackageRecord[] = [];
-  for (const [packageId, version] of Object.entries(dependencies)) {
-    const definition = findCliByPackage(
-      "bun",
-      packageId,
-      environment.platform,
+  for (const packageId of Object.keys(dependencies)) {
+    const definition = findCliByPackage("bun", packageId, environment.platform);
+    const installRoot = path.join(
+      globalRoot,
+      "node_modules",
+      ...packageId.split("/"),
     );
-    if (!definition) continue;
+    const manifest = await readBoundedPackageJson(installRoot);
+    const bins = readNodeBinEntries(
+      manifest,
+      installRoot,
+      definition?.commands ?? [packageId.split("/").at(-1) ?? packageId],
+    );
+    if (!definition && !bins.length) continue;
+    const installedVersion = stringValue(manifest?.version);
     records.push({
-      productId: definition.id,
+      productId:
+        definition?.id ??
+        discoveredPackageId("bun", packageId, environment.platform),
       sourceId: "bun-passive",
-      commandNames: [...definition.commands],
-      binEntries: [],
-      version,
+      commandNames: bins.length
+        ? bins.map((bin) => bin.commandName)
+        : [...(definition?.commands ?? [])],
+      binEntries: bins,
+      version: installedVersion,
       packageIdentity: {
         source: "bun",
         packageId,
-        packageVersion: version,
+        packageVersion: installedVersion,
         scope: "user",
         managerRoot: globalRoot,
         installRoot: path.join(
@@ -339,9 +364,7 @@ export async function resolveNodeManagerExecution(
   }
   if (
     endpoint.shimTarget &&
-    [".exe", ".com"].includes(
-      path.extname(endpoint.shimTarget).toLowerCase(),
-    )
+    [".exe", ".com"].includes(path.extname(endpoint.shimTarget).toLowerCase())
   ) {
     return { executable: endpoint.shimTarget, prefixArgs: [] };
   }
@@ -423,11 +446,7 @@ function parseYarnOutput(
       if (separator <= 0) continue;
       const packageId = name.slice(0, separator);
       const version = name.slice(separator + 1);
-      const definition = findCliByPackage(
-        "yarn-classic",
-        packageId,
-        platform,
-      );
+      const definition = findCliByPackage("yarn-classic", packageId, platform);
       if (!definition) continue;
       records.push({
         productId: definition.id,
@@ -452,9 +471,7 @@ function parseYarnOutput(
   return sawStructuredLine ? records : null;
 }
 
-function extractDependencyMap(
-  parsed: unknown,
-): Record<string, unknown> | null {
+function extractDependencyMap(parsed: unknown): Record<string, unknown> | null {
   if (Array.isArray(parsed)) {
     const first = parsed[0];
     if (!first || typeof first !== "object") return {};
@@ -468,7 +485,7 @@ function extractDependencyMap(
     : {};
 }
 
-function readNodeBinEntries(
+export function readNodeBinEntries(
   metadata: unknown,
   installRoot: string | undefined,
   knownCommands: readonly string[],
@@ -482,7 +499,6 @@ function readNodeBinEntries(
     return [];
   }
   const bin = (metadata as Record<string, unknown>).bin;
-  const allowed = new Set(knownCommands.map((command) => command.toLowerCase()));
   const entries: CliPackageRecord["binEntries"] = [];
   const candidates: Array<[string, unknown]> =
     typeof bin === "string" && knownCommands.length === 1
@@ -491,10 +507,7 @@ function readNodeBinEntries(
         ? Object.entries(bin as Record<string, unknown>)
         : [];
   for (const [commandName, declaredTarget] of candidates) {
-    if (
-      !allowed.has(commandName.toLowerCase()) ||
-      typeof declaredTarget !== "string"
-    ) {
+    if (!validCliCommand(commandName) || typeof declaredTarget !== "string") {
       continue;
     }
     const targetPath = path.isAbsolute(declaredTarget)

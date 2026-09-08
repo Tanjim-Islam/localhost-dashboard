@@ -64,10 +64,7 @@ test("catalogue maps commands and exact package aliases", () => {
     findCliByPackage("npm", "@anthropic-ai/claude-code", "darwin")?.id,
     "claude-code",
   );
-  assert.equal(
-    findCliByPackage("npm", "@shopify/cli", "win32")?.id,
-    "shopify",
-  );
+  assert.equal(findCliByPackage("npm", "@shopify/cli", "win32")?.id, "shopify");
 });
 
 test("catalogue keeps Windows-only commands off macOS", () => {
@@ -144,10 +141,7 @@ test("minimal child environment omits credential-shaped variables", () => {
   assert.equal(env.PATH, "C:\\fixture");
   assert.equal(env.GH_TOKEN, undefined);
   assert.equal(env.SAFE_SETTING, "allowed");
-  assert.match(
-    sanitizeProcessText("token=abc123 error"),
-    /token=\[redacted\]/,
-  );
+  assert.match(sanitizeProcessText("token=abc123 error"), /token=\[redacted\]/);
 });
 
 test("command validation accepts the bounded Windows evidence payload", () => {
@@ -316,6 +310,8 @@ test("supported uninstall managers use fixed exact argument arrays", () => {
     "C:\\fixture\\npm\\node_modules\\npm\\bin\\npm-cli.js",
     "uninstall",
     "--global",
+    "--prefix",
+    "C:\\fixture\\npm",
     "--ignore-scripts",
     "@openai/codex",
   ]);
@@ -425,10 +421,7 @@ test("uninstall policy blocks foundational and uncertain ownership", () => {
 });
 
 function makeOwnedInstallation(
-  identity: Omit<
-    CliPackageIdentity,
-    "scope" | "ownershipConfidence"
-  >,
+  identity: Omit<CliPackageIdentity, "scope" | "ownershipConfidence">,
   platform: CliPlatform = "win32",
 ): CliInstallation {
   const packageIdentity = makeIdentity(identity);
@@ -473,10 +466,7 @@ function makeOwnedInstallation(
 }
 
 function makeIdentity(
-  identity: Omit<
-    CliPackageIdentity,
-    "scope" | "ownershipConfidence"
-  >,
+  identity: Omit<CliPackageIdentity, "scope" | "ownershipConfidence">,
 ): CliPackageIdentity {
   return {
     ...identity,

@@ -1,5 +1,7 @@
 import type {
   CliCategory,
+  CliCommand,
+  CliExecutableEndpoint,
   CliHealthStatus,
   CliInstallation,
   CliInventorySnapshot,
@@ -10,9 +12,9 @@ import type {
 export type CliFilters = {
   query: string;
   category: CliCategory | "all";
-  health: CliHealthStatus | "all";
+  health: CliHealthStatus | "verified" | "all";
   source: CliPackageSource | "all";
-  presence: "all" | "installed" | "embedded";
+  presence: "all" | "installed" | "embedded" | "candidates";
   duplicatesOnly: boolean;
 };
 
@@ -41,6 +43,8 @@ export const CLI_SOURCE_LABELS: Record<CliPackageSource, string> = {
   "yarn-classic": "Yarn Classic",
   bun: "Bun",
   pipx: "pipx",
+  pip: "Python package",
+  uv: "uv",
   cargo: "Cargo",
   winget: "Winget",
   chocolatey: "Chocolatey",
@@ -49,10 +53,147 @@ export const CLI_SOURCE_LABELS: Record<CliPackageSource, string> = {
   "homebrew-cask": "Homebrew cask",
   macports: "MacPorts",
   "appx-alias": "WindowsApps alias",
-  registry: "Windows registry",
-  standalone: "Standalone",
-  unknown: "Unknown",
+  registry: "Windows installer",
+  standalone: "Detected executable",
+  unknown: "Source not identified",
 };
+
+export function formatCliInstallationSource(
+  installation: CliInstallation,
+  endpoints: CliExecutableEndpoint[],
+): string {
+  if (
+    endpoints.some((endpoint) => endpoint.bundledWith === "strawberry-perl")
+  ) {
+    return "Bundled with Strawberry Perl";
+  }
+  if (installation.origin === "application-embedded")
+    return "Bundled with an app";
+  if (installation.origin === "sdk-bundled") return "Bundled with an SDK";
+  if (!installation.packageIdentity) {
+    return (
+      endpoints.find((endpoint) => endpoint.ownerName)?.ownerName ??
+      (endpoints.find((endpoint) => endpoint.publisher)?.publisher
+        ? `Publisher: ${endpoints.find((endpoint) => endpoint.publisher)!.publisher}`
+        : "Detected executable")
+    );
+  }
+  const identity = installation.packageIdentity;
+  return identity.source === "unknown" && identity.sourceName
+    ? identity.sourceName
+    : CLI_SOURCE_LABELS[identity.source];
+}
+
+export const CLI_NEW_BADGE_MS = 24 * 60 * 60 * 1000;
+
+export function isCliCommandVerified(
+  installation: CliInstallation,
+  inventory: CliInventorySnapshot,
+): boolean {
+  const verification = installation.commandVerification;
+  return (
+    installation.health === "healthy" &&
+    Boolean(
+      verification &&
+      inventory.endpoints.some(
+        (endpoint) =>
+          installation.endpointIds.includes(endpoint.id) &&
+          endpoint.id === verification.endpointId &&
+          endpoint.fingerprint === verification.endpointFingerprint &&
+          endpoint.targetExists &&
+          endpoint.accessible,
+      ),
+    )
+  );
+}
+
+export function formatCliHealth(
+  installation: CliInstallation,
+  inventory: CliInventorySnapshot,
+): string | undefined {
+  if (installation.discoveryKind === "candidate") return "Discovered";
+  if (installation.health === "healthy")
+    return isCliCommandVerified(installation, inventory)
+      ? "Verified"
+      : "Installed";
+  return undefined;
+}
+
+export function getPrimaryCliCommand(
+  product: CliProduct | undefined,
+  commands: CliCommand[],
+): CliCommand | undefined {
+  const names = [product?.id, product?.displayName, ...(product?.aliases ?? [])]
+    .filter((name): name is string => Boolean(name))
+    .map((name) => name.toLowerCase());
+  const preferred = commands.find(
+    (command) =>
+      names.includes(command.name.toLowerCase()) &&
+      command.pathRole === "active",
+  );
+  return (
+    preferred ??
+    commands.find((command) => command.pathRole === "active") ??
+    commands.find((command) => names.includes(command.name.toLowerCase())) ??
+    commands[0]
+  );
+}
+
+export function isNewCliProduct(
+  inventory: CliInventorySnapshot,
+  product: CliProduct,
+  now: number,
+): boolean {
+  const timestamps = inventory.installations
+    .filter((item) => product.installationIds.includes(item.id))
+    .map((item) => item.firstSeenAt);
+  const firstSeen = Math.min(...timestamps);
+  return (
+    Number.isFinite(firstSeen) &&
+    firstSeen <= now &&
+    now - firstSeen < CLI_NEW_BADGE_MS
+  );
+}
+
+export function formatCliInstallationDetails(
+  installation: CliInstallation,
+): string {
+  const scope = {
+    user: "Current user",
+    machine: "All users",
+    system: "System",
+    unknown: undefined,
+  }[installation.scope];
+  return [
+    installation.platform === "win32" ? "Windows" : "macOS",
+    installation.architecture !== "unknown"
+      ? installation.architecture
+      : undefined,
+    scope,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export function formatCliVersionDescription(
+  installation: CliInstallation,
+): string {
+  const source = installation.packageIdentity?.source;
+  switch (installation.versionSource) {
+    case "package-metadata":
+      return source && source !== "unknown" && source !== "standalone"
+        ? `Version reported by the installed ${CLI_SOURCE_LABELS[source]} package.`
+        : "Version reported by the installed package.";
+    case "version-probe":
+      return "Version reported by the command.";
+    case "executable-metadata":
+      return "Version read from the installed files.";
+    case "cached":
+      return "Version saved from an earlier scan.";
+    default:
+      return "The version has not been detected.";
+  }
+}
 
 export function summarizeCliInventory(
   inventory: CliInventorySnapshot | null,
@@ -88,7 +229,11 @@ export function filterCliProducts(
     if (filters.category !== "all" && product.category !== filters.category) {
       return false;
     }
-    if (filters.health !== "all" && product.health !== filters.health) {
+    if (
+      filters.health === "verified"
+        ? !installations.every((item) => isCliCommandVerified(item, inventory))
+        : filters.health !== "all" && product.health !== filters.health
+    ) {
       return false;
     }
     if (filters.duplicatesOnly && !isDuplicateProduct(product)) return false;
@@ -147,10 +292,12 @@ export function getVisibleCliInstallations(
       ? product.currentInstallationIds
       : presence === "embedded"
         ? product.embeddedInstallationIds
-        : [
-            ...product.currentInstallationIds,
-            ...product.embeddedInstallationIds,
-          ];
+        : presence === "candidates"
+          ? (product.candidateInstallationIds ?? [])
+          : [
+              ...product.currentInstallationIds,
+              ...product.embeddedInstallationIds,
+            ];
   const idSet = new Set(ids);
   return inventory.installations.filter((installation) =>
     idSet.has(installation.id),

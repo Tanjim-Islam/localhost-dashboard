@@ -1,5 +1,6 @@
 import {
   app,
+  dialog,
   BrowserWindow,
   nativeTheme,
   Menu,
@@ -77,6 +78,7 @@ import {
 import { createCliController, type CliController } from "./clis";
 import {
   validateCliInstallationRef,
+  validateCliInclusionRequest,
   validateCliSessionId,
   validateCliUninstallRequest,
 } from "./clis/ipc-validation";
@@ -1021,6 +1023,13 @@ ipcMain.handle("clis:inventory-get", () =>
 ipcMain.handle("clis:scan-start", () =>
   requireCliController().startScan(),
 );
+ipcMain.handle("clis:scan-directories", () => requireCliController().getScanDirectories());
+ipcMain.handle("clis:choose-scan-directory", async () => {
+  const controller = requireCliController();
+  const selected = await dialog.showOpenDialog({ title: "Add a folder to CLI scans", properties: ["openDirectory"] });
+  return selected.canceled || !selected.filePaths[0] ? controller.getScanDirectories() : controller.addScanDirectory(selected.filePaths[0]);
+});
+ipcMain.handle("clis:remove-scan-directory", (_event, id: string) => requireCliController().removeScanDirectory(id));
 ipcMain.handle("clis:scan-cancel", (_event, scanSessionId: unknown) =>
   requireCliController().cancelScan(validateCliSessionId(scanSessionId)),
 );
@@ -1032,6 +1041,10 @@ ipcMain.handle("clis:installation-verify", (_event, input: unknown) =>
     validateCliInstallationRef(input),
   ),
 );
+ipcMain.handle("clis:installation-included", (_event, input: unknown) => {
+  const value = validateCliInclusionRequest(input);
+  return requireCliController().setInstallationIncluded(value, value.included);
+});
 ipcMain.handle("clis:installation-reveal", (_event, input: unknown) => {
   const target = requireCliController().resolveRevealPath(
     validateCliInstallationRef(input),

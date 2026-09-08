@@ -1,8 +1,15 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { CliCancelledError, CliCancellationToken, CliScanSessionManager } from "./session";
+import {
+  CliCancelledError,
+  CliCancellationToken,
+  CliScanSessionManager,
+} from "./session";
 import { boundCliStore } from "./store";
+import { normalizeScanDirectories, scanDirectoryId } from "./scan-directories";
 import { CliUninstallController } from "./uninstall-controller";
+import { classifyCliAdmission } from "./admission";
+import { finalizeHealth } from "./inventory-builder";
 import type {
   CliClock,
   CliInstallationRef,
@@ -22,7 +29,9 @@ import type { CliScanner } from "./scanner";
 type CliControllerEventMap = {
   "scan-progress": [CliScanProgress];
   "scan-complete": [CliInventorySnapshot];
-  "scan-error": [{ scanSessionId?: string; status: "failed" | "cancelled"; message: string }];
+  "scan-error": [
+    { scanSessionId?: string; status: "failed" | "cancelled"; message: string },
+  ];
   "inventory-changed": [CliInventorySnapshot];
   "uninstall-progress": [CliUninstallProgress];
   "uninstall-complete": [CliUninstallResult];
@@ -44,14 +53,18 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
     super();
     this.sessions = new CliScanSessionManager(options.clock);
     const initial = options.persistence.read();
-    if (initial.lastScanStatus === "scanning" || initial.lastScanStatus === "cancelling") {
+    if (
+      initial.lastScanStatus === "scanning" ||
+      initial.lastScanStatus === "cancelling"
+    ) {
       options.persistence.write({ ...initial, lastScanStatus: "failed" });
     }
     this.uninstallController = new CliUninstallController({
       clock: options.clock,
       runner: options.runner,
       getInventory: () => this.readInventory(false),
-      revalidate: (installationId) => this.revalidateFromFreshEvidence(installationId),
+      revalidate: (installationId) =>
+        this.revalidateFromFreshEvidence(installationId),
       refreshAfterAction: () => this.scanAndPublish(`refresh-${randomUUID()}`),
       markFixtureUninstalled: (installationId) =>
         options.scanner.markFixtureUninstalled(installationId),
@@ -64,16 +77,52 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
     return this.readInventory(true);
   }
 
+  getScanDirectories(): Array<{ id: string; path: string }> {
+    return (this.options.persistence.read().scanDirectories ?? []).map(
+      (directory) => ({ id: scanDirectoryId(directory), path: directory }),
+    );
+  }
+
+  addScanDirectory(directory: string): Array<{ id: string; path: string }> {
+    const store = this.options.persistence.read();
+    if ((store.scanDirectories?.length ?? 0) >= 20)
+      throw new Error("You can add up to 20 scan folders.");
+    this.options.persistence.write({
+      ...store,
+      scanDirectories: normalizeScanDirectories([
+        ...(store.scanDirectories ?? []),
+        directory,
+      ]),
+    });
+    return this.getScanDirectories();
+  }
+
+  removeScanDirectory(id: string): Array<{ id: string; path: string }> {
+    if (typeof id !== "string" || id.length > 128)
+      throw new Error("Invalid scan folder.");
+    const store = this.options.persistence.read();
+    this.options.persistence.write({
+      ...store,
+      scanDirectories: (store.scanDirectories ?? []).filter(
+        (directory) => scanDirectoryId(directory) !== id,
+      ),
+    });
+    return this.getScanDirectories();
+  }
+
   getScanState(): CliScanSession {
-    return this.sessions.getActive()?.toJSON() ?? this.lastSession ?? {
-      id: "scan-idle",
-      status: "idle",
-      startedAt: 0,
-      completedSources: 0,
-      totalSources: 0,
-      completedProbes: 0,
-      totalProbes: 0,
-    };
+    return (
+      this.sessions.getActive()?.toJSON() ??
+      this.lastSession ?? {
+        id: "scan-idle",
+        status: "idle",
+        startedAt: 0,
+        completedSources: 0,
+        totalSources: 0,
+        completedProbes: 0,
+        totalProbes: 0,
+      }
+    );
   }
 
   startScan(): CliScanSession {
@@ -97,9 +146,61 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
     return session.toJSON();
   }
 
-  async verifyInstallation(input: CliInstallationRef): Promise<CliInventorySnapshot> {
-    this.requireRevision(input.inventoryRevision);
-    return this.scanAndPublish(`verify-${randomUUID()}`);
+  async verifyInstallation(
+    input: CliInstallationRef,
+  ): Promise<CliInventorySnapshot> {
+    const snapshot = this.requireRevision(input.inventoryRevision);
+    if (
+      !snapshot.installations.some((item) => item.id === input.installationId)
+    )
+      throw new Error("The CLI installation was not found.");
+    return this.scanAndPublish(`verify-${randomUUID()}`, input.installationId);
+  }
+
+  setInstallationIncluded(
+    input: CliInstallationRef,
+    included: boolean,
+  ): CliInventorySnapshot {
+    if (typeof included !== "boolean")
+      throw new Error("Invalid CLI list preference.");
+    if (["scanning", "cancelling"].includes(this.getScanState().status))
+      throw new Error(
+        "Wait for the scan to finish before changing the CLI list.",
+      );
+    const snapshot = this.requireRevision(input.inventoryRevision);
+    const installation = snapshot.installations.find(
+      (item) => item.id === input.installationId,
+    );
+    if (
+      !installation ||
+      classifyCliAdmission({ ...installation, includedByUser: false }) !==
+        "candidate"
+    )
+      throw new Error(
+        "Only other discoveries can be added to or removed from the CLI list.",
+      );
+    if (
+      included &&
+      !snapshot.endpoints.some(
+        (endpoint) =>
+          installation.endpointIds.includes(endpoint.id) &&
+          endpoint.accessible &&
+          endpoint.executable &&
+          endpoint.targetExists &&
+          (snapshot.platform !== "win32" ||
+            /\.(exe|com|cmd|bat|ps1)$/i.test(endpoint.path)),
+      )
+    )
+      throw new Error("No supported launcher is available for this tool.");
+    installation.includedByUser = included;
+    finalizeHealth(snapshot);
+    snapshot.revision = `revision-${randomUUID()}`;
+    this.options.persistence.write({
+      ...this.options.persistence.read(),
+      inventory: snapshot,
+    });
+    this.emit("inventory-changed", snapshot);
+    return snapshot;
   }
 
   resolveRevealPath(input: CliInstallationRef): string {
@@ -111,7 +212,8 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
     const endpoint = snapshot.endpoints.find((candidate) =>
       installation.endpointIds.includes(candidate.id),
     );
-    if (!endpoint) throw new Error("This installation has no local executable to reveal.");
+    if (!endpoint)
+      throw new Error("This installation has no local executable to reveal.");
     return endpoint.path;
   }
 
@@ -141,13 +243,20 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
           this.emit("scan-progress", progress);
         },
       });
-      session.status = snapshot.completeness === "partial" ? "partial" : "complete";
+      session.status =
+        snapshot.completeness === "partial" ? "partial" : "complete";
       session.finishedAt = this.options.clock.now();
-      const publishedSnapshot = this.publishSnapshot(snapshot, session.toJSON());
+      const publishedSnapshot = this.publishSnapshot(
+        snapshot,
+        session.toJSON(),
+      );
       this.emit("scan-complete", publishedSnapshot);
     } catch (error) {
       session.finishedAt = this.options.clock.now();
-      if (error instanceof CliCancelledError || session.cancellation.isCancelled) {
+      if (
+        error instanceof CliCancelledError ||
+        session.cancellation.isCancelled
+      ) {
         session.status = "cancelled";
         session.message = "CLI scan cancelled. Cached inventory was kept.";
       } else {
@@ -165,19 +274,24 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
     }
   }
 
-  private async scanAndPublish(scanSessionId: string): Promise<CliInventorySnapshot> {
+  private async scanAndPublish(
+    scanSessionId: string,
+    verificationInstallationId?: string,
+  ): Promise<CliInventorySnapshot> {
     const snapshot = await this.options.scanner.scan({
       previous: this.readInventory(false),
       cancellation: new CliCancellationToken(),
       scanSessionId,
+      verificationInstallationId,
       onProgress: () => undefined,
     });
     return this.publishSnapshot(snapshot);
   }
 
-  private async revalidateFromFreshEvidence(
-    installationId: string,
-  ): Promise<{ snapshot: CliInventorySnapshot; installation: import("./types").CliInstallation }> {
+  private async revalidateFromFreshEvidence(installationId: string): Promise<{
+    snapshot: CliInventorySnapshot;
+    installation: import("./types").CliInstallation;
+  }> {
     const snapshot = await this.options.scanner.scan({
       previous: this.readInventory(false),
       cancellation: new CliCancellationToken(),
@@ -188,13 +302,16 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
       (candidate) => candidate.id === installationId,
     );
     if (!installation || installation.presence !== "present") {
-      throw new Error("The installation is no longer confirmed by its package source.");
+      throw new Error(
+        "The installation is no longer confirmed by its package source.",
+      );
     }
     const passive = await this.options.scanner.revalidateInstallation(
       snapshot,
       installationId,
     );
-    if (!passive.current) throw new Error(passive.reason ?? "The installation changed.");
+    if (!passive.current)
+      throw new Error(passive.reason ?? "The installation changed.");
     return { snapshot, installation };
   }
 
@@ -207,42 +324,50 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
     const lastSuccessfulScanAt =
       snapshot.completeness === "complete"
         ? now
-        : store.lastSuccessfulScanAt ?? snapshot.lastSuccessfulScanAt;
+        : (store.lastSuccessfulScanAt ?? snapshot.lastSuccessfulScanAt);
     const publishedSnapshot: CliInventorySnapshot = {
       ...snapshot,
       ...(lastSuccessfulScanAt ? { lastSuccessfulScanAt } : {}),
       cached: false,
     };
-    const attempt: CliScanAttemptSummary | undefined = session && session.finishedAt
-      ? {
-          scanSessionId: session.id,
-          startedAt: session.startedAt,
-          finishedAt: session.finishedAt,
-          status: session.status as CliScanAttemptSummary["status"],
-          sourceFailureCount: snapshot.sourceResults.filter(
-            (source) => source.status === "failed",
-          ).length,
-          ...(session.message ? { message: session.message } : {}),
-        }
-      : undefined;
-    this.options.persistence.write(boundCliStore({
-      ...store,
-      inventory: publishedSnapshot,
-      lastCompletedScanAt: now,
-      lastSuccessfulScanAt:
-        lastSuccessfulScanAt ?? null,
-      lastScanStatus:
-        snapshot.completeness === "complete" ? "complete" : "partial",
-      scanAttempts: attempt
-        ? [attempt, ...store.scanAttempts]
-        : store.scanAttempts,
-    }));
+    const attempt: CliScanAttemptSummary | undefined =
+      session && session.finishedAt
+        ? {
+            scanSessionId: session.id,
+            startedAt: session.startedAt,
+            finishedAt: session.finishedAt,
+            status: session.status as CliScanAttemptSummary["status"],
+            sourceFailureCount: snapshot.sourceResults.filter(
+              (source) => source.status === "failed",
+            ).length,
+            ...(session.message ? { message: session.message } : {}),
+          }
+        : undefined;
+    this.options.persistence.write(
+      boundCliStore({
+        ...store,
+        inventory: publishedSnapshot,
+        lastCompletedScanAt: now,
+        lastSuccessfulScanAt: lastSuccessfulScanAt ?? null,
+        lastScanStatus:
+          snapshot.completeness === "complete" ? "complete" : "partial",
+        scanAttempts: attempt
+          ? [attempt, ...store.scanAttempts]
+          : store.scanAttempts,
+      }),
+    );
     this.emit("inventory-changed", publishedSnapshot);
     return publishedSnapshot;
   }
 
   private recordFailedAttempt(session: CliScanSession): void {
-    if (!session.finishedAt || session.status === "idle" || session.status === "scanning" || session.status === "cancelling") return;
+    if (
+      !session.finishedAt ||
+      session.status === "idle" ||
+      session.status === "scanning" ||
+      session.status === "cancelling"
+    )
+      return;
     const store = this.options.persistence.read();
     const attempt: CliScanAttemptSummary = {
       scanSessionId: session.id,
@@ -252,20 +377,24 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
       sourceFailureCount: 0,
       ...(session.message ? { message: session.message } : {}),
     };
-    this.options.persistence.write(boundCliStore({
-      ...store,
-      lastCompletedScanAt: session.finishedAt,
-      lastScanStatus: session.status,
-      scanAttempts: [attempt, ...store.scanAttempts],
-    }));
+    this.options.persistence.write(
+      boundCliStore({
+        ...store,
+        lastCompletedScanAt: session.finishedAt,
+        lastScanStatus: session.status,
+        scanAttempts: [attempt, ...store.scanAttempts],
+      }),
+    );
   }
 
   private recordUninstallAudit(audit: CliUninstallAuditSummary): void {
     const store = this.options.persistence.read();
-    this.options.persistence.write(boundCliStore({
-      ...store,
-      uninstallAudits: [audit, ...store.uninstallAudits],
-    }));
+    this.options.persistence.write(
+      boundCliStore({
+        ...store,
+        uninstallAudits: [audit, ...store.uninstallAudits],
+      }),
+    );
   }
 
   private requireRevision(revision: string): CliInventorySnapshot {

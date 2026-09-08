@@ -56,7 +56,7 @@ export default function TitleBar({
   };
   return (
     <div
-      className={`title-bar flex items-center h-12 bg-gray-100/95 text-gray-900 pr-3 border-b border-gray-300 select-none backdrop-blur-xl ${
+      className={`title-bar flex shrink-0 items-center h-12 bg-gray-100/95 text-gray-900 pr-3 border-b border-gray-300 select-none backdrop-blur-xl ${
         layout.rootPaddingClass
       }`}
       style={{ WebkitAppRegion: "drag" as any }}

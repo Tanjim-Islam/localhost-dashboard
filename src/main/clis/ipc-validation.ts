@@ -1,7 +1,4 @@
-import type {
-  CliInstallationRef,
-  CliUninstallRequest,
-} from "./types";
+import type { CliInstallationRef, CliUninstallRequest } from "./types";
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{7,95}$/i;
 
@@ -9,15 +6,10 @@ export function validateCliSessionId(value: unknown): string {
   return validateId(value, "CLI scan session ID");
 }
 
-export function validateCliInstallationRef(
-  value: unknown,
-): CliInstallationRef {
+export function validateCliInstallationRef(value: unknown): CliInstallationRef {
   const record = requireRecord(value, "CLI installation reference");
   return {
-    installationId: validateId(
-      record.installationId,
-      "CLI installation ID",
-    ),
+    installationId: validateId(record.installationId, "CLI installation ID"),
     inventoryRevision: validateId(
       record.inventoryRevision,
       "CLI inventory revision",
@@ -33,17 +25,26 @@ export function validateCliUninstallRequest(
     throw new Error("CLI uninstall confirmation is invalid.");
   }
   return {
-    installationId: validateId(
-      record.installationId,
-      "CLI installation ID",
-    ),
+    installationId: validateId(record.installationId, "CLI installation ID"),
     inventoryRevision: validateId(
       record.inventoryRevision,
       "CLI inventory revision",
     ),
-    previewToken: validateId(record.previewToken, "CLI uninstall preview token"),
+    previewToken: validateId(
+      record.previewToken,
+      "CLI uninstall preview token",
+    ),
     confirmation: "uninstall-exact-cli-installation",
   };
+}
+
+export function validateCliInclusionRequest(
+  value: unknown,
+): CliInstallationRef & { included: boolean } {
+  const record = requireRecord(value, "CLI list preference");
+  if (typeof record.included !== "boolean")
+    throw new Error("Invalid CLI list preference.");
+  return { ...validateCliInstallationRef(record), included: record.included };
 }
 
 function validateId(value: unknown, label: string): string {
@@ -57,10 +58,7 @@ function validateId(value: unknown, label: string): string {
   return value;
 }
 
-function requireRecord(
-  value: unknown,
-  label: string,
-): Record<string, unknown> {
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} is required.`);
   }

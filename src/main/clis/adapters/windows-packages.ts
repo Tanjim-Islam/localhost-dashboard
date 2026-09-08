@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { discoveredPackageId } from "../discovery";
 import { findCliByCommand, findCliByPackage } from "../catalogue";
 import type {
   CliAdapterResult,
@@ -27,11 +28,7 @@ export async function collectWindowsPackageInventories(input: {
       sourceId: "winget",
       label: "Winget packages",
       endpoint: winget,
-      args: [
-        "list",
-        "--disable-interactivity",
-        "--accept-source-agreements",
-      ],
+      args: ["list", "--disable-interactivity", "--accept-source-agreements"],
       timeoutMs: 45_000,
       input,
       parser: (stdout) => parseWingetOutput(stdout, input.environment),
@@ -81,20 +78,27 @@ export function parseChocolateyOutput(
       findCliByPackage("chocolatey", packageId, environment.platform) ??
       findCliByCommand(packageId, environment.platform);
     if (!definition) continue;
-    records.push(packageRecord(definition.id, definition.commands, {
-      source: "chocolatey",
-      packageId,
-      packageVersion: version,
-      scope: "machine",
-      managerRoot:
-        environment.env.PROGRAMDATA &&
-        path.join(environment.env.PROGRAMDATA, "chocolatey"),
-      managerExecutablePath:
-        environment.env.PROGRAMDATA &&
-        path.join(environment.env.PROGRAMDATA, "chocolatey", "bin", "choco.exe"),
-      ownershipConfidence: "exact",
-      uninstallEvidence: "manager-owned",
-    }));
+    records.push(
+      packageRecord(definition.id, definition.commands, {
+        source: "chocolatey",
+        packageId,
+        packageVersion: version,
+        scope: "machine",
+        managerRoot:
+          environment.env.PROGRAMDATA &&
+          path.join(environment.env.PROGRAMDATA, "chocolatey"),
+        managerExecutablePath:
+          environment.env.PROGRAMDATA &&
+          path.join(
+            environment.env.PROGRAMDATA,
+            "chocolatey",
+            "bin",
+            "choco.exe",
+          ),
+        ownershipConfidence: "exact",
+        uninstallEvidence: "manager-owned",
+      }),
+    );
   }
   return sawRecord || stdout.trim() === "" ? records : null;
 }
@@ -116,34 +120,38 @@ export function parseWingetOutput(
       findCliByPackage("winget", packageId, environment.platform) ??
       findCliByCommand(name.toLowerCase(), environment.platform);
     if (!definition) continue;
-    records.push(packageRecord(definition.id, definition.commands, {
-      source: "winget",
-      packageId,
-      packageVersion: version,
-      scope: "unknown",
-      sourceName: columns.at(-1),
-      managerRoot: path.dirname(
-        environment.env.LOCALAPPDATA
+    records.push(
+      packageRecord(definition.id, definition.commands, {
+        source: "winget",
+        packageId,
+        packageVersion: version,
+        scope: "unknown",
+        sourceName: columns.at(-1),
+        managerRoot: path.dirname(
+          environment.env.LOCALAPPDATA
+            ? path.join(
+                environment.env.LOCALAPPDATA,
+                "Microsoft",
+                "WindowsApps",
+                "winget.exe",
+              )
+            : "winget.exe",
+        ),
+        managerExecutablePath: environment.env.LOCALAPPDATA
           ? path.join(
               environment.env.LOCALAPPDATA,
               "Microsoft",
               "WindowsApps",
               "winget.exe",
             )
-          : "winget.exe",
-      ),
-      managerExecutablePath: environment.env.LOCALAPPDATA
-        ? path.join(
-            environment.env.LOCALAPPDATA,
-            "Microsoft",
-            "WindowsApps",
-            "winget.exe",
-          )
-        : undefined,
-      ownershipConfidence:
-        columns.at(-1)?.toLowerCase() === "winget" ? "corroborated" : "uncertain",
-      uninstallEvidence: "none",
-    }));
+          : undefined,
+        ownershipConfidence:
+          columns.at(-1)?.toLowerCase() === "winget"
+            ? "corroborated"
+            : "uncertain",
+        uninstallEvidence: "none",
+      }),
+    );
   }
   return records;
 }
@@ -186,24 +194,29 @@ async function collectScoopInventory(
       commands
         .map((command) => findCliByCommand(command, environment.platform))
         .find(Boolean);
-    if (!definition) continue;
-    const hasHooks = [
-      "pre_uninstall",
-      "post_uninstall",
-      "uninstaller",
-    ].some((key) => manifest[key] !== undefined);
-    records.push(packageRecord(definition.id, commands.length ? commands : definition.commands, {
-      source: "scoop",
-      packageId: appId,
-      packageVersion:
-        typeof manifest.version === "string" ? manifest.version : undefined,
-      scope: "user",
-      managerRoot: root,
-      managerExecutablePath: path.join(root, "bin", "scoop.ps1"),
-      installRoot: currentRoot,
-      ownershipConfidence: "exact",
-      uninstallEvidence: hasHooks ? "none" : "simple-manifest",
-    }));
+    if (!definition && !commands.length) continue;
+    const hasHooks = ["pre_uninstall", "post_uninstall", "uninstaller"].some(
+      (key) => manifest[key] !== undefined,
+    );
+    records.push(
+      packageRecord(
+        definition?.id ??
+          discoveredPackageId("scoop", appId, environment.platform),
+        commands.length ? commands : (definition?.commands ?? []),
+        {
+          source: "scoop",
+          packageId: appId,
+          packageVersion:
+            typeof manifest.version === "string" ? manifest.version : undefined,
+          scope: "user",
+          managerRoot: root,
+          managerExecutablePath: path.join(root, "bin", "scoop.ps1"),
+          installRoot: currentRoot,
+          ownershipConfidence: "exact",
+          uninstallEvidence: hasHooks ? "none" : "simple-manifest",
+        },
+      ),
+    );
   }
   return {
     packageRecords: records,
@@ -221,7 +234,8 @@ async function collectScoopInventory(
 }
 
 function parseScoopBins(value: unknown): string[] {
-  if (typeof value === "string") return [path.basename(value, path.extname(value))];
+  if (typeof value === "string")
+    return [path.basename(value, path.extname(value))];
   if (!Array.isArray(value)) return [];
   const commands: string[] = [];
   for (const item of value) {

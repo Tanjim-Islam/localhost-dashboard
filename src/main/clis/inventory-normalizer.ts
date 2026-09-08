@@ -10,6 +10,7 @@ import {
   finalizeHealth,
 } from "./inventory-builder";
 import { classifyCliOrigin } from "./origin";
+import { classifyCliAdmission } from "./admission";
 import { calculateUninstallCapability } from "./uninstall-policy";
 import type {
   CliExecutableEndpoint,
@@ -78,10 +79,16 @@ export function normalizeCliInventory(
     }
     const rawId = raw.id;
     const productId = raw.productId;
+    const definition = getCliDefinition(productId);
+    const admittedCommand = (name: string): boolean =>
+      raw.packageIdentity?.source !== "registry" ||
+      !definition ||
+      definition.commands.includes(name);
     const installationEndpoints = raw.endpointIds
       .map((id) => endpointById.get(id))
-      .filter((endpoint): endpoint is CliExecutableEndpoint =>
-        Boolean(endpoint),
+      .filter(
+        (endpoint): endpoint is CliExecutableEndpoint =>
+          Boolean(endpoint) && admittedCommand(endpoint!.commandName),
       );
     const identity = isPackageIdentity(raw.packageIdentity)
       ? structuredClone(raw.packageIdentity)
@@ -109,7 +116,7 @@ export function normalizeCliInventory(
         ...(raw.uninstallCapability?.providedCommands ?? []),
         ...installationEndpoints.map((endpoint) => endpoint.commandName),
       ]),
-    ];
+    ].filter(admittedCommand);
     const candidate: CliInstallation = {
       id,
       productId,
@@ -121,14 +128,31 @@ export function normalizeCliInventory(
             ? value.architecture
             : "unknown",
       scope: identity?.scope ?? normalizeScope(raw.scope),
-      origin: isOrigin(raw.origin)
-        ? raw.origin
-        : classifyCliOrigin({
-            platform,
-            productId,
-            packageIdentity: identity,
-            endpoints: installationEndpoints,
-          }),
+      origin: getCliDefinition(productId)?.applicationCli
+        ? "application-embedded"
+        : isOrigin(raw.origin)
+          ? raw.origin
+          : classifyCliOrigin({
+              platform,
+              productId,
+              packageIdentity: identity,
+              endpoints: installationEndpoints,
+            }),
+      discoveryKind: classifyCliAdmission({
+        productId,
+        packageIdentity: identity,
+        includedByUser: raw.includedByUser === true,
+      }),
+      ...(raw.includedByUser === true ? { includedByUser: true } : {}),
+      ...(raw.commandVerification &&
+      Number.isFinite(raw.commandVerification.checkedAt) &&
+      installationEndpoints.some(
+        (endpoint) =>
+          endpoint.id === raw.commandVerification?.endpointId &&
+          endpoint.fingerprint === raw.commandVerification.endpointFingerprint,
+      )
+        ? { commandVerification: structuredClone(raw.commandVerification) }
+        : {}),
       ...(version ? { version } : {}),
       versionSource,
       verificationStatus: isVerificationStatus(raw.verificationStatus)
@@ -185,7 +209,15 @@ export function normalizeCliInventory(
   }
 
   const installations = [...groups.values()].filter(
-    (installation) => installation.presence !== "missing",
+    (installation) =>
+      installation.presence !== "missing" &&
+      !(
+        platform === "win32" &&
+        installation.endpointIds.length > 0 &&
+        installation.endpointIds.every(
+          (id) => !/\.[^\\/.]+$/.test(endpointById.get(id)!.path),
+        )
+      ),
   );
   const retainedEndpointIds = new Set(
     installations.flatMap((installation) => installation.endpointIds),
@@ -252,6 +284,8 @@ function mergeInstallations(
     endpointIds,
     presence,
     origin: left.origin === "unknown" ? right.origin : left.origin,
+    includedByUser: left.includedByUser || right.includedByUser,
+    commandVerification: left.commandVerification ?? right.commandVerification,
     issueCodes: [...new Set([...left.issueCodes, ...right.issueCodes])],
     firstSeenAt: Math.min(left.firstSeenAt, right.firstSeenAt),
     lastSeenAt: maxDefined(left.lastSeenAt, right.lastSeenAt),

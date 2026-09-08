@@ -1,10 +1,18 @@
-import type { CliDefinition } from "./catalogue";
+import { getCliDefinitions, type CliDefinition } from "./catalogue";
 import type {
   CliInstallation,
   CliPackageIdentity,
   CliInstallationOrigin,
   CliUninstallCapability,
 } from "./types";
+
+const FOUNDATIONAL_COMMANDS = new Set(
+  [...getCliDefinitions("win32"), ...getCliDefinitions("darwin")]
+    .filter((definition) => definition.foundational)
+    .flatMap((definition) =>
+      definition.commands.map((command) => command.toLowerCase()),
+    ),
+);
 
 export function calculateUninstallCapability(input: {
   definition: CliDefinition | undefined;
@@ -50,7 +58,12 @@ export function calculateUninstallCapability(input: {
       warnings: [],
     };
   }
-  if (input.definition?.foundational) {
+  if (
+    input.definition?.foundational ||
+    input.commands.some((command) =>
+      FOUNDATIONAL_COMMANDS.has(command.toLowerCase()),
+    )
+  ) {
     return {
       ...base,
       status: "manual-only",
@@ -64,7 +77,7 @@ export function calculateUninstallCapability(input: {
       ...base,
       status: "blocked",
       reasonCode: "standalone-binary",
-      reason: "Standalone binaries do not have a proven uninstall owner.",
+      reason: "No package manager was identified for this executable.",
       warnings: [],
     };
   }
@@ -92,7 +105,9 @@ export function calculateUninstallCapability(input: {
       status: "requires-warning",
       reasonCode: "multiple-commands",
       reason: "Cargo removes the exact package and every binary it provides.",
-      warnings: ["Every command provided by this Cargo package will be removed."],
+      warnings: [
+        "Every command provided by this Cargo package will be removed.",
+      ],
     };
   }
   if (
@@ -122,7 +137,8 @@ export function calculateUninstallCapability(input: {
     ...base,
     status: "manual-only",
     reasonCode: "manager-policy",
-    reason: "This package source is inventory-only in the current safety policy.",
+    reason:
+      "This package source is inventory-only in the current safety policy.",
     warnings: [],
   };
 }
