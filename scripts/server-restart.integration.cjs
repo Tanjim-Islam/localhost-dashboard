@@ -183,7 +183,8 @@ async function main() {
 
   await test("real Vite CLI retains explicit port, host and project config", async () => {
     const fixture = await createFixture("Vite project");
-    await fs.writeFile(path.join(fixture.dir, "vite.config.mjs"), `import fs from 'node:fs'; const boot=JSON.parse(fs.readFileSync('boot.json','utf8')); export default { plugins:[{name:'fixture-response',configureServer(server){ const data=JSON.stringify({pid:process.pid,value:boot.value,cwd:process.cwd()}); server.middlewares.use((req,res)=>{res.setHeader('content-type','application/json');res.end(data)});}}] };`);
+    // Polling avoids a libuv fs-event assertion on hosted Windows runner drives.
+    await fs.writeFile(path.join(fixture.dir, "vite.config.mjs"), `import fs from 'node:fs'; const boot=JSON.parse(fs.readFileSync('boot.json','utf8')); export default { server:{watch:{usePolling:true}}, plugins:[{name:'fixture-response',configureServer(server){ const data=JSON.stringify({pid:process.pid,value:boot.value,cwd:process.cwd()}); server.middlewares.use((req,res)=>{res.setHeader('content-type','application/json');res.end(data)});}}] };`);
     await start(fixture, process.execPath, [path.join(repo, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", String(fixture.port), "--strictPort"]);
     const before = await waitHttp(fixture.port);
     await fs.writeFile(path.join(fixture.dir, "boot.json"), JSON.stringify({ value: "Vite after" }));
@@ -239,7 +240,8 @@ async function main() {
   if (python) {
     await test("Python server preserves interpreter, relative script, environment and cwd", async () => {
       const fixture = await createFixture("Python project");
-      await fs.writeFile(path.join(fixture.dir, "server.py"), `import os,json,sys\nfrom http.server import HTTPServer,BaseHTTPRequestHandler\nboot=json.load(open('boot.json'))\ndata=json.dumps(dict(pid=os.getpid(),cwd=os.getcwd(),args=sys.argv[1:],value=boot['value'],env=os.environ['DASHBOARD_FIXTURE_VALUE'])).encode()\nclass Handler(BaseHTTPRequestHandler):\n def do_GET(self):\n  self.send_response(200); self.end_headers(); self.wfile.write(data)\n def log_message(self,*args): pass\nHTTPServer(('127.0.0.1',int(os.environ['DASHBOARD_FIXTURE_PORT'])),Handler).serve_forever()\n`);
+      // This loopback fixture does not need HTTPServer's hostname DNS lookup.
+      await fs.writeFile(path.join(fixture.dir, "server.py"), `import os,json,sys\nfrom http.server import BaseHTTPRequestHandler\nfrom socketserver import TCPServer\nboot=json.load(open('boot.json'))\ndata=json.dumps(dict(pid=os.getpid(),cwd=os.getcwd(),args=sys.argv[1:],value=boot['value'],env=os.environ['DASHBOARD_FIXTURE_VALUE'])).encode()\nclass Handler(BaseHTTPRequestHandler):\n def do_GET(self):\n  self.send_response(200); self.end_headers(); self.wfile.write(data)\n def log_message(self,*args): pass\nTCPServer.allow_reuse_address=True\nTCPServer(('127.0.0.1',int(os.environ['DASHBOARD_FIXTURE_PORT'])),Handler).serve_forever()\n`);
       await start(fixture, python, ["server.py", "two words"]);
       const before = await waitHttp(fixture.port);
       await fs.writeFile(path.join(fixture.dir, "boot.json"), JSON.stringify({ value: "python after" }));
@@ -256,7 +258,10 @@ main().catch((error) => { console.error(error); process.exitCode = 1; }).finally
   try {
     const state = await inspector.snapshot();
     for (const original of [...owned.values()]) {
-      for (const member of descendants(original, state.processes)) owned.set(member.pid, member);
+      // Interpreter launchers can exec another binary while retaining their PID.
+      const current = state.processes.find((p) => p.pid === original.pid && p.started === original.started);
+      if (!current) continue;
+      for (const member of descendants(current, state.processes)) owned.set(member.pid, member);
     }
     await inspector.stop([...owned.values()]);
     await pause(300);
@@ -266,6 +271,6 @@ main().catch((error) => { console.error(error); process.exitCode = 1; }).finally
     if (path.dirname(absoluteRoot) === path.resolve(os.tmpdir()) && path.basename(absoluteRoot).startsWith("local-dashboard-restart-")) await fs.rm(absoluteRoot, { recursive: true, force: true });
   } catch (error) { console.error("Fixture cleanup did not complete.", error.message); process.exitCode = 1; }
   inspector.dispose();
-  for (const child of liveChildren) child.unref();
-  console.log(`${passed} live scenarios passed, ${skipped} skipped. Fixture processes checked and removed.`);
+  for (const child of liveChildren) { child.stderr.destroy(); child.unref(); }
+  console.log(`${passed} live scenarios passed, ${skipped} skipped. ${process.exitCode ? "See failure details above." : "Fixture processes checked and removed."}`);
 });
