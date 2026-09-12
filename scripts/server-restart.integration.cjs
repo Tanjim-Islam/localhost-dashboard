@@ -71,7 +71,12 @@ process.on('SIGINT', () => { fs.appendFileSync('interrupts.txt', 'SIGINT\\n'); p
 }
 
 async function start(fixture, executable = process.execPath, args = ["server.cjs"]) {
-  const child = spawn(executable, args, { cwd: fixture.dir, env: fixture.env, detached: true, windowsHide: true, stdio: "ignore" });
+  const child = spawn(executable, args, { cwd: fixture.dir, env: fixture.env, detached: true, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+  let fixtureError = "";
+  child.stderr.on("data", (chunk) => { fixtureError = (fixtureError + chunk.toString()).slice(-8192); });
+  child.once("exit", (code) => {
+    if (code && fixtureError) console.error(`Fixture launcher exited with code ${code}: ${fixtureError}`);
+  });
   await new Promise((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
   liveChildren.push(child);
   await remember(child.pid);
