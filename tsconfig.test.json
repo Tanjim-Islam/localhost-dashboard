@@ -17,6 +17,7 @@
     "src/main/environment-variables.ts",
     "src/main/platform-features.ts",
     "src/main/server-detection.ts",
+    "src/main/server-restart/**/*.ts",
     "src/main/cleaner/**/*.ts",
     "src/main/clis/**/*.ts",
     "src/renderer/cleaner-*.ts",

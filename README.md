@@ -11,7 +11,7 @@ A simple Electron app that shows all my running local dev servers in one place. 
 - Scans for TCP listeners on common dev ports (3000, 5173, 8080, etc.)
 - Shows process name, CPU/memory usage, uptime
 - Detects frameworks (Vite, Next.js, Angular, etc.) and color-codes them
-- Quick actions: open in browser, copy URL, kill the process
+- Quick actions: open in browser, copy URL, restart the project, kill the process
 - Project actions: open terminal, explorer, or VS Code at project directory
 - Health monitoring with response time indicators
 - AutoHotkey script detection (Windows) with kill/restart/edit
@@ -22,7 +22,9 @@ A simple Electron app that shows all my running local dev servers in one place. 
 
 ## Screenshots
 
-The app has a custom frameless window with a dark theme. Server cards show port, process info, framework badge, and quick action buttons.
+The app has a custom frameless window with light and dark palettes. Server cards show port, process info, framework badge, and quick action buttons.
+
+Success and completed actions use green. Errors and destructive actions use red. These status colors are independent of the selected palette, with readable shades for light and dark modes.
 
 ## Install
 
@@ -80,8 +82,32 @@ Uses `systeminformation` to find listening TCP connections. On Windows, falls ba
 
 - **Open** - Opens the URL in default browser
 - **Copy URL** - Copies `http://localhost:PORT` to clipboard
+- **Restart** - Stops and reruns the project's launch command on Windows and macOS
 - **Kill** - Terminates the process
 - **Kill All** - Batch kill all detected servers
+
+### Restarting a server
+
+**Restart** starts a fresh process, so boot-time configuration and code are loaded again. It recovers the executable, arguments, working directory, and environment from the running process. For npm scripts, it follows the script's launcher so hooks, workspace selection, and forwarded arguments run again. It also follows development watchers and Python reloaders when their process tree can be identified.
+
+The original process and its children must stop before a replacement starts. Success requires the replacement process tree to own every original listening port for at least one second. Duplicate restart clicks and Kill actions are blocked while restart is in progress. A shared launcher with another server on a different port is left running, with an explanation.
+
+The replacement runs in the background independently of the dashboard. It does not reconnect to the original terminal or its output. Environment values and launch commands are held in memory only for the operation. Package scripts reread their configuration on launch. Directly launched processes that modify their own environment can retain those values on Windows; use the original terminal if a dotenv loader would need those values cleared.
+
+Windows attempts Ctrl+C only when the console contains exclusively the selected process tree. Otherwise it uses termination of the verified processes. macOS sends SIGINT. Processes that do not stop within five seconds are terminated. System services, containers, persistent service supervisors, unreadable launch details, and ambiguous arguments require restarting through their original owner. A TCP listener alone cannot prove how to restart every application.
+
+If a project exits or its port does not return within 45 seconds, the dashboard reports that failure. A slow replacement may still be starting; check it before launching another copy.
+
+Restart checks:
+
+```bash
+npm run test:servers
+npm run test:servers:live
+```
+
+The live checks create temporary Node, npm, npm workspace, watcher, and Vite projects, including multiple ports, separate projects, shared-launcher refusal, startup failure, special characters, and repeated clicks. Set `DASHBOARD_TEST_PYTHON` to an absolute Python interpreter to include the Python case. All fixture processes and directories are removed afterward. Run the suite on each target OS before claiming native verification.
+
+The macOS build compiles `native/server-process.m` into a universal helper using Apple Command Line Tools. The packaged app includes that helper and needs no compiler at runtime. Windows uses its built-in 64-bit PowerShell helper. The implementation lives in `src/main/server-restart/`; private process contexts never cross preload IPC.
 
 ### Project Actions
 

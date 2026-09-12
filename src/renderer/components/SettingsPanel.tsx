@@ -322,7 +322,7 @@ export default function SettingsPanel({
                     : parseAccelerator(globalHotkey || "Ctrl+Shift+D"),
                 )}
                 {recording && (
-                  <span className="flex items-center gap-1 text-xs text-mimi_pink-700 animate-pulse">
+                  <span className="flex items-center gap-1 text-xs text-danger-text animate-pulse">
                     <span className="h-2 w-2 rounded-full bg-mimi_pink-500"></span>
                     Recording...
                   </span>
@@ -334,7 +334,7 @@ export default function SettingsPanel({
                 </div>
               )}
               {hotkeyError && (
-                <div className="mt-2 text-xs text-mimi_pink-700">
+                <div role="alert" className="mt-2 text-xs text-danger-text">
                   {hotkeyError}
                 </div>
               )}
@@ -370,7 +370,7 @@ export default function SettingsPanel({
                   await onReset();
                 }
               }}
-              className="rounded-full bg-mimi_pink-600/20 px-3 py-1.5 text-mimi_pink-800 hover:bg-mimi_pink-600/30"
+              className="rounded-full bg-danger-surface px-3 py-1.5 text-danger-text hover:brightness-95"
             >
               Reset to defaults
             </button>

@@ -43,10 +43,11 @@ body,
   --highlight-rgb: 43 43 43;
   --glow: #404040ff;
   --glow-rgb: 64 64 64;
-  --danger: #a14f55ff;
-  --danger-rgb: 161 79 85;
-  --danger-foreground: #ffffffff;
-  --danger-foreground-rgb: 255 255 255;
+  /* Compatibility for existing destructive controls using the mimi_pink scale. */
+  --danger: var(--cleaner-danger);
+  --danger-rgb: var(--cleaner-danger-rgb);
+  --danger-foreground: var(--cleaner-danger-contrast);
+  --danger-foreground-rgb: var(--cleaner-danger-contrast-rgb);
   --cleaner-safe: #57c982ff;
   --cleaner-safe-rgb: 87 201 130;
   --cleaner-safe-surface: #142e20ff;

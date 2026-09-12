@@ -197,18 +197,18 @@ export default function EnvironmentKeysTab({
       </div>
 
       {notice && (
-        <div className="env-status-enter flex items-center gap-2 rounded-xl border border-celadon-400/30 bg-celadon-300/10 px-4 py-3 text-sm text-celadon-600">
+        <div role="status" className="env-status-enter flex items-center gap-2 rounded-xl border border-success-border bg-success-surface px-4 py-3 text-sm text-success-text">
           <Check className="h-4 w-4" />
           {notice}
         </div>
       )}
 
       {error && (
-        <div className="flex items-start gap-2.5 rounded-xl border border-mimi_pink-400/35 bg-mimi_pink-300/10 px-4 py-3 text-sm text-mimi_pink-500">
+        <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger-text">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <div className="font-semibold">Could not load ENV keys</div>
-            <div className="mt-0.5 text-mimi_pink-500/80">{error}</div>
+            <div className="mt-0.5">{error}</div>
           </div>
         </div>
       )}
@@ -411,7 +411,7 @@ function EnvironmentKeyCard({
               onClick={() => setCopyMenuOpen((open) => !open)}
             >
               {copiedReference ? (
-                <Check className="h-3.5 w-3.5 text-celadon-400" />
+                <Check className="h-3.5 w-3.5 text-success-icon" />
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}
@@ -492,7 +492,7 @@ function EnvironmentKeyCard({
             onClick={() => void copyValue()}
           >
             {copied ? (
-              <Check className="h-3.5 w-3.5 text-celadon-400" />
+              <Check className="h-3.5 w-3.5 text-success-icon" />
             ) : (
               <Copy className="h-3.5 w-3.5" />
             )}
@@ -501,7 +501,7 @@ function EnvironmentKeyCard({
       </div>
 
       {valueError && (
-        <div className="mt-2 text-xs text-mimi_pink-500">{valueError}</div>
+        <div role="alert" className="mt-2 text-xs text-danger-text">{valueError}</div>
       )}
     </article>
   );
@@ -706,7 +706,7 @@ function EnvironmentKeyEditor({
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 rounded-xl border border-mimi_pink-400/30 bg-mimi_pink-300/10 px-3 py-2.5 text-xs text-mimi_pink-500">
+            <div role="alert" className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-surface px-3 py-2.5 text-xs text-danger-text">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               {error}
             </div>
@@ -794,7 +794,7 @@ function DeleteEnvironmentKeyDialog({
         </p>
 
         {error && (
-          <div className="mt-4 flex items-start gap-2 rounded-xl border border-mimi_pink-400/30 bg-mimi_pink-300/10 px-3 py-2.5 text-xs text-mimi_pink-500">
+          <div role="alert" className="mt-4 flex items-start gap-2 rounded-xl border border-danger-border bg-danger-surface px-3 py-2.5 text-xs text-danger-text">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {error}
           </div>
@@ -888,7 +888,7 @@ function SessionBadge({
 }) {
   if (status === "active") {
     return (
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-celadon-400">
+      <div className="mt-2 flex items-center gap-1.5 text-xs text-success-text">
         <Check className="h-3.5 w-3.5" />
         Active in this app session
       </div>
@@ -932,7 +932,7 @@ function IconButton({
       aria-label={label}
       className={`flex h-8 w-8 items-center justify-center rounded-full border transition-all disabled:cursor-wait disabled:opacity-50 ${
         danger
-          ? "border-mimi_pink-400/20 bg-mimi_pink-300/10 text-mimi_pink-400 hover:bg-mimi_pink-300/25"
+          ? "border-danger-border bg-danger-surface text-danger-icon hover:brightness-95"
           : "border-gray-300 bg-gray-100/70 text-gray-600 hover:border-gray-400 hover:bg-gray-300 hover:text-gray-900"
       }`}
     >

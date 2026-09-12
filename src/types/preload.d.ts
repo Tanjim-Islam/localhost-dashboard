@@ -9,6 +9,7 @@ export type ServerInfo = {
   command?: string;
   path?: string;
   cwd?: string;
+  processStarted?: string;
   firstSeen: number;
   lastSeen: number;
   url: string;
@@ -196,6 +197,9 @@ export interface Api {
   // actions
   openUrl(url: string): void;
   killPid(pid: number): void;
+  restartServer(ref: { key: string; firstSeen: number }): Promise<import("../main/server-restart/types").RestartResult>;
+  getServerRestartState(): Promise<import("../main/server-restart/types").RestartProgress | null>;
+  onServerRestartProgress(cb: (state: import("../main/server-restart/types").RestartProgress) => void): () => void;
   killAllServers(): Promise<number>;
   copyText(text: string): void;
   openInVSCode(payload: any): Promise<void>;

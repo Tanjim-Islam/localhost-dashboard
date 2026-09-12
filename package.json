@@ -1,6 +1,6 @@
 {
   "name": "local-dashboard",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "An Electron dashboard that discovers and manages local dev servers.",
   "type": "module",
   "main": "out/main/index.js",
@@ -11,14 +11,16 @@
     "url": "https://github.com/Tanjim-Islam/localhost-dashboard.git"
   },
   "scripts": {
-    "dev": "node scripts/prepare-macos-dev-app.mjs && electron-vite dev",
-    "build": "electron-vite build",
+    "dev": "node scripts/build-server-helper.mjs && node scripts/prepare-macos-dev-app.mjs && electron-vite dev",
+    "build": "node scripts/build-server-helper.mjs && electron-vite build",
     "package": "npm run build && electron-builder",
     "publish": "npm run build && electron-builder --publish always",
     "test": "tsc -p tsconfig.test.json && node -e \"require('node:fs').writeFileSync('.tmp-tests/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\n')\" && node --test .tmp-tests/tests/*.test.js",
     "test:env-keys": "node --experimental-strip-types scripts/environment-variables.integration.mts",
     "lint": "eslint --ext .ts,.tsx src",
     "test:startup": "node --experimental-strip-types --test scripts/startup-visibility.test.mts",
+    "test:servers": "npm run test:clis:compile && node --test .tmp-tests/tests/server-*.test.js",
+    "test:servers:live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-restart.integration.cjs",
     "test:cleaner:compile": "tsc -p tsconfig.test.json && node -e \"require('node:fs').writeFileSync('.tmp-tests/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\n')\"",
     "test:cleaner": "npm run test:cleaner:compile && node --test .tmp-tests/tests/cleaner-*.test.js",
     "test:cleaner:detectors": "npm run test:cleaner:compile && node --test --test-name-pattern=\"detector\" .tmp-tests/tests/cleaner-*.test.js",
@@ -88,9 +90,16 @@
       "dist/**",
       "out/**",
       "resources/**",
+      "!resources/server-restart/**",
       "package.json"
     ],
     "asar": true,
+    "extraResources": [
+      {
+        "from": "resources/server-restart",
+        "to": "server-restart"
+      }
+    ],
     "directories": {
       "buildResources": "resources"
     },

@@ -59,7 +59,10 @@ export default function ClisTab({
   const [progress, setProgress] = useState<CliScanProgress | null>(null);
   const [filters, setFilters] = useState<CliFilters>(DEFAULT_FILTERS);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNoticeState] = useState<{ message: string; tone: "success" | "danger" | "neutral" } | null>(null);
+  function setNotice(message: string | null, tone: "success" | "danger" | "neutral" = "danger") {
+    setNoticeState(message ? { message, tone } : null);
+  }
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [preview, setPreview] = useState<CliUninstallPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -127,6 +130,7 @@ export default function ClisTab({
         next.completeness === "partial"
           ? "Scan completed with isolated source failures."
           : "CLI inventory is up to date.",
+        next.completeness === "partial" ? "danger" : "success",
       );
     });
     const offError = window.api.onCliScanError((error) => {
@@ -139,7 +143,7 @@ export default function ClisTab({
       window.api.onCliUninstallProgress(setUninstallProgress);
     const offUninstallComplete = window.api.onCliUninstallComplete((result) => {
       setUninstallProgress(null);
-      setNotice(result.message);
+      setNotice(result.message, result.status === "succeeded" ? "success" : "danger");
     });
     return () => {
       mounted.current = false;
@@ -247,7 +251,7 @@ export default function ClisTab({
         previewToken: preview.token,
         confirmation: "uninstall-exact-cli-installation",
       });
-      setNotice(result.message);
+      setNotice(result.message, result.status === "succeeded" ? "success" : "danger");
       setUninstallProgress(null);
       const trigger = dialog.trigger;
       setDialog(null);
@@ -567,14 +571,14 @@ export default function ClisTab({
 
       {notice && (
         <div
-          className="flex items-center justify-between gap-3 rounded-xl border border-gray-300 bg-gray-200/55 px-3 py-2 text-xs text-gray-700"
-          role="status"
+          className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs ${notice.tone === "success" ? "border-success-border bg-success-surface text-success-text" : notice.tone === "danger" ? "border-danger-border bg-danger-surface text-danger-text" : "border-gray-300 bg-gray-200/55 text-gray-700"}`}
+          role={notice.tone === "danger" ? "alert" : "status"}
         >
-          <span>{notice}</span>
+          <span>{notice.message}</span>
           <button
             type="button"
             onClick={() => setNotice(null)}
-            className="rounded p-1 outline-none hover:bg-gray-300 focus-visible:ring-2 focus-visible:ring-night-700/25"
+            className="rounded p-1 hover:opacity-75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
             aria-label="Dismiss status"
           >
             <CircleSlash2 className="h-3.5 w-3.5" />
@@ -648,6 +652,7 @@ export default function ClisTab({
                     included
                       ? `${product.displayName} was added to the CLI list.`
                       : `${product.displayName} was removed from the CLI list. The file is unchanged.`,
+                    "success",
                   );
                 } catch (error) {
                   setNotice(messageOf(error));
@@ -681,6 +686,7 @@ export default function ClisTab({
                     checked && isCliCommandVerified(checked, next)
                       ? `${product.displayName} responded successfully.`
                       : `${product.displayName}: file and package checks completed. Command execution has not been verified.`,
+                    checked && isCliCommandVerified(checked, next) ? "success" : "neutral",
                   );
                 } catch (error) {
                   setNotice(messageOf(error));

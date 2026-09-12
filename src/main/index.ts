@@ -21,6 +21,7 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 import { Scanner } from "./scanner";
+import { createRestartDependencies, ServerRestartController } from "./server-restart/controller";
 import { AHKScanner } from "./ahk-scanner";
 import { AutomatorScanner } from "./automator-scanner";
 import { HealthChecker } from "./health-checker";
@@ -90,6 +91,19 @@ let currentGlobalHotkey: string | null = null;
 let cleanerController: CleanerController | null = null;
 let cliController: CliController | null = null;
 const scanner = new Scanner();
+const serverRestarter = new ServerRestartController(createRestartDependencies(
+  app.isPackaged
+    ? path.join(process.resourcesPath, "server-restart")
+    : path.join(app.getAppPath(), "resources/server-restart"),
+  {
+    getServer: (ref) => scanner.getItems().find((item) => item.key === ref.key && item.firstSeen === ref.firstSeen),
+    progress: (state) => win?.webContents.send("servers:restart-progress", state),
+    completed: async (oldPids) => {
+      await scanner.scanFresh();
+      scanner.removePids(oldPids);
+    },
+  },
+));
 const healthChecker = new HealthChecker();
 let isQuitting = false;
 
@@ -837,7 +851,15 @@ ipcMain.handle("scanner:refresh", async () => {
   await automatorScanner?.scan();
 });
 ipcMain.on("app:open-url", (_evt, url: string) => shell.openExternal(url));
+ipcMain.handle("servers:restart", async (event, ref: unknown) => {
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
+    throw new Error("Server restart is only available from the dashboard.");
+  }
+  return serverRestarter.restart(ref);
+});
+ipcMain.handle("servers:restart-state", () => serverRestarter.getState());
 ipcMain.on("app:kill-pid", (_evt, pid: number) => {
+  if (serverRestarter.isBusy()) return;
   if (process.platform === "win32") {
     // On Windows, use taskkill directly with /F (force) and /T (tree - kill child processes)
     // This is more reliable than process.kill() for Windows processes
@@ -861,6 +883,7 @@ ipcMain.on("app:kill-pid", (_evt, pid: number) => {
   }
 });
 ipcMain.handle("app:kill-all-servers", async () => {
+  if (serverRestarter.isBusy()) return 0;
   const pids = scanner.getAllPids();
   for (const pid of pids) {
     try {

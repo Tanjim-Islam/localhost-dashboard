@@ -100,7 +100,7 @@ export default function AHKCard({
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-celadon-400 animate-pulse" />
+          <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-success animate-pulse" />
           <div
             className="truncate text-lg font-semibold text-night-900"
             title={item.scriptName || item.processName}
@@ -142,7 +142,7 @@ export default function AHKCard({
                   editState === "idle" &&
                     "bg-night-700 text-night-100 hover:bg-night-800 active:scale-95",
                   editState === "active" && "bg-night-800 text-night-100",
-                  editState === "done" && "bg-night-600 text-celadon-300",
+                  editState === "done" && "bg-success text-success-contrast",
                 )}
                 title="Edit script"
               >
@@ -176,7 +176,7 @@ export default function AHKCard({
                     "bg-celadon-400/80 text-night-900 hover:bg-celadon-400 active:scale-95",
                   restartState === "active" &&
                     "bg-celadon-500 text-night-900 animate-pulse",
-                  restartState === "done" && "bg-celadon-500 text-white",
+                  restartState === "done" && "bg-success text-success-contrast",
                 )}
                 title="Restart script"
               >
@@ -210,7 +210,7 @@ export default function AHKCard({
               copyState === "idle" &&
                 "bg-gray-200 text-gray-900 hover:bg-gray-300 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50",
               copyState === "active" && "bg-gray-300 text-gray-900",
-              copyState === "done" && "bg-celadon-400 text-white",
+              copyState === "done" && "bg-success text-success-contrast",
             )}
             title="Copy path"
           >

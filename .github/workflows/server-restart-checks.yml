@@ -1,0 +1,52 @@
+name: Server restart checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - "src/main/server-restart/**"
+      - "src/main/scanner.ts"
+      - "native/server-process.m"
+      - "resources/server-restart/**"
+      - "scripts/*server*.cjs"
+      - "scripts/build-server-helper.mjs"
+      - "tests/server-*.test.ts"
+      - "package.json"
+      - ".github/workflows/server-restart-checks.yml"
+  pull_request:
+    paths:
+      - "src/main/server-restart/**"
+      - "src/main/scanner.ts"
+      - "native/server-process.m"
+      - "resources/server-restart/**"
+      - "scripts/*server*.cjs"
+      - "scripts/build-server-helper.mjs"
+      - "tests/server-*.test.ts"
+      - "package.json"
+      - ".github/workflows/server-restart-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  native-restart:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:servers
+      - name: Resolve runner Python
+        shell: bash
+        run: python3 -c 'import sys; print("DASHBOARD_TEST_PYTHON=" + sys.executable)' >> "$GITHUB_ENV"
+      - run: npm run test:servers:live
+      - run: npm run build

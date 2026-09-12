@@ -133,7 +133,7 @@ export default function RecentScriptsDrawer({
           </header>
 
           {error && (
-            <div className="mx-5 mt-4 rounded-lg border border-mimi_pink-400/40 bg-mimi_pink-300/15 px-3 py-2 text-xs text-mimi_pink-500">
+            <div role="alert" className="mx-5 mt-4 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger-text">
               {error}
             </div>
           )}
@@ -216,8 +216,8 @@ export default function RecentScriptsDrawer({
                           className={cx(
                             "flex h-8 items-center justify-center gap-1.5 rounded-full text-xs font-semibold transition-all",
                             isDeleting
-                              ? "bg-mimi_pink-300 text-white"
-                              : "bg-mimi_pink-300/25 text-mimi_pink-500 hover:bg-mimi_pink-300/40",
+                              ? "bg-danger text-danger-contrast"
+                              : "bg-danger-surface text-danger-text hover:brightness-95",
                             busy && !isDeleting && "opacity-60",
                           )}
                         >

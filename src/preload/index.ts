@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, clipboard } from "electron";
+import { validateServerRef, type RestartProgress } from "../main/server-restart/types";
 import {
   validateCleanerCleanupRequestId,
   validateCleanerPreferences,
@@ -104,6 +105,13 @@ contextBridge.exposeInMainWorld("api", {
   // actions
   openUrl: (url: string) => ipcRenderer.send("app:open-url", url),
   killPid: (pid: number) => ipcRenderer.send("app:kill-pid", pid),
+  restartServer: (ref: unknown) => ipcRenderer.invoke("servers:restart", validateServerRef(ref)),
+  getServerRestartState: () => ipcRenderer.invoke("servers:restart-state"),
+  onServerRestartProgress: (cb: (state: RestartProgress) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, state: RestartProgress) => cb(state);
+    ipcRenderer.on("servers:restart-progress", listener);
+    return () => ipcRenderer.removeListener("servers:restart-progress", listener);
+  },
   killAllServers: () => ipcRenderer.invoke("app:kill-all-servers"),
   copyText: (text: string) => clipboard.writeText(text),
   openInVSCode: (payload: any) =>

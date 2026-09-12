@@ -16,8 +16,6 @@ export type SemanticThemeTokens = {
   accentForeground: string;
   highlight: string;
   glow: string;
-  danger: string;
-  dangerForeground: string;
 };
 
 export type ThemePalette = {
@@ -55,8 +53,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#262421ff",
       highlight: "#e1dbd6ff",
       glow: "#e1dbd6ff",
-      danger: "#a64f4fff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -86,8 +82,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#2d2925ff",
       highlight: "#e3d5caff",
       glow: "#e3d5caff",
-      danger: "#a64f4fff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -116,8 +110,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#302525ff",
       highlight: "#fbc3bcff",
       glow: "#fbc3bcff",
-      danger: "#9f3f3fff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -146,8 +138,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#302923ff",
       highlight: "#f3e7e4ff",
       glow: "#e7d1c9ff",
-      danger: "#a44f4fff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -181,8 +171,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#342622ff",
       highlight: "#f9dcc4ff",
       glow: "#fec89aff",
-      danger: "#9f3f3fff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -215,8 +203,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#ffffffff",
       highlight: "#2c2c2cff",
       glow: "#383838ff",
-      danger: "#9f4f55ff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -249,8 +235,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#ffffffff",
       highlight: "#033933ff",
       glow: "#017365ff",
-      danger: "#a45057ff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -284,8 +268,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#ffffffff",
       highlight: "#2b2b2bff",
       glow: "#404040ff",
-      danger: "#a14f55ff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -316,8 +298,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#ffffffff",
       highlight: "#14452fff",
       glow: "#066839ff",
-      danger: "#a34f55ff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -346,8 +326,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#ffffffff",
       highlight: "#1b2413ff",
       glow: "#5f6556ff",
-      danger: "#a55252ff",
-      dangerForeground: "#ffffffff",
     },
   },
   {
@@ -381,8 +359,6 @@ export const THEME_REGISTRY = [
       accentForeground: "#01110aff",
       highlight: "#ffd9ceff",
       glow: "#0ccc79ff",
-      danger: "#9f3f49ff",
-      dangerForeground: "#fff7f5ff",
     },
   },
 ] as const satisfies readonly ThemePalette[];

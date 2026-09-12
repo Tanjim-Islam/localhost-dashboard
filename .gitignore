@@ -56,3 +56,4 @@ resources/icons/*.icns
 *.local
 AGENTS.md
 release-mac/
+resources/server-restart/darwin-process-helper

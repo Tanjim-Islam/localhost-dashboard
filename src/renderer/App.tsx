@@ -31,6 +31,8 @@ type Item = {
   memoryHistory?: number[];
 };
 
+type ServerRestartProgress = Parameters<Parameters<Window["api"]["onServerRestartProgress"]>[0]>[0];
+
 type AHKItem = {
   key: string;
   pid: number;
@@ -117,6 +119,20 @@ export default function App() {
   >({});
   const [portNotes, setPortNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [serverRestart, setServerRestart] = useState<ServerRestartProgress | null>(null);
+  const restartPending = React.useRef(false);
+  const restartBusy = !!serverRestart && ["preparing", "stopping", "starting"].includes(serverRestart.phase);
+  const restartServer = async (item: Item) => {
+    if (restartPending.current || restartBusy) return;
+    restartPending.current = true;
+    setServerRestart({ key: item.key, port: item.port, phase: "preparing", message: "Checking the server's launch settings..." });
+    try {
+      const result = await window.api.restartServer({ key: item.key, firstSeen: item.firstSeen });
+      setServerRestart({ key: item.key, port: item.port, phase: result.ok ? "ready" : "failed", message: result.message });
+    } catch {
+      setServerRestart({ key: item.key, port: item.port, phase: "failed", message: "Restart could not be confirmed. Refresh and check the server before retrying." });
+    } finally { restartPending.current = false; }
+  };
   const [settings, setSettings] = useState<any>(null);
   const [openSettings, setOpenSettings] = useState(false);
   const [query, setQuery] = useState("");
@@ -169,6 +185,8 @@ export default function App() {
       setHealthResults(map);
     });
     const offRecent = window.api.onRecentScriptsUpdate(setRecentScripts);
+    const offRestart = window.api.onServerRestartProgress(setServerRestart);
+    window.api.getServerRestartState().then(setServerRestart);
     window.api.getSettings().then((s) =>
       setSettings({
         ...s,
@@ -194,6 +212,7 @@ export default function App() {
       offAutomator?.();
       offHealth?.();
       offRecent?.();
+      offRestart?.();
     };
   }, []);
 
@@ -342,7 +361,7 @@ export default function App() {
 
       <div className="dashboard-content app-scrollbar min-h-0 flex-1 px-6 py-5 overflow-y-auto overflow-x-hidden">
         {error && (
-          <div className="bg-mimi_pink-700/30 text-mimi_pink-200 border border-mimi_pink-400/40 px-4 py-2 rounded mb-4">
+          <div role="alert" className="bg-danger-surface text-danger-text border border-danger-border px-4 py-2 rounded mb-4">
             {error}
           </div>
         )}
@@ -423,6 +442,7 @@ export default function App() {
             {/* Kill All button - only on Servers tab */}
             {activeTab === "servers" && filtered.length > 0 && (
               <KillAllButton
+                disabled={restartBusy}
                 onKillAll={() => {
                   window.api.killAllServers();
                   // Optimistically hide all servers
@@ -440,6 +460,12 @@ export default function App() {
         {/* Server Tab Content */}
         {activeTab === "servers" && (
           <>
+            {serverRestart && (
+              <div role={serverRestart.phase === "failed" ? "alert" : "status"} className={`mb-5 flex items-start justify-between gap-3 rounded-xl border p-3 text-sm ${serverRestart.phase === "failed" ? "border-danger-border bg-danger-surface text-danger-text" : serverRestart.phase === "ready" ? "border-success-border bg-success-surface text-success-text" : "border-gray-300/50 bg-gray-200 text-gray-900"}`}>
+                <span><strong>:{serverRestart.port}</strong> {serverRestart.message}</span>
+                {!restartBusy && <button type="button" aria-label="Dismiss restart status" onClick={() => setServerRestart(null)} className="rounded px-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Dismiss</button>}
+              </div>
+            )}
             {Object.keys(grouped).length === 0 && (
               <div className="text-gray-600 text-center mt-20">
                 No servers detected yet. Start a dev server and it will show up
@@ -463,6 +489,9 @@ export default function App() {
                       <ServerCard
                         key={it.key}
                         item={it}
+                        onRestart={platform === "win32" || platform === "darwin" ? () => { void restartServer(it); } : undefined}
+                        restartBusy={restartBusy}
+                        restarting={restartBusy && serverRestart?.key === it.key}
                         health={healthResults[it.key]}
                         note={portNotes[String(it.port)] || ""}
                         onNoteChange={async (port, note) => {
@@ -689,10 +718,11 @@ function TabButton({
   );
 }
 
-function KillAllButton({ onKillAll }: { onKillAll: () => void }) {
+function KillAllButton({ onKillAll, disabled }: { onKillAll: () => void; disabled?: boolean }) {
   const [state, setState] = useState<"idle" | "confirm" | "done">("idle");
 
   const handleClick = () => {
+    if (disabled) return;
     if (state === "idle") {
       setState("confirm");
       // Auto-reset after 3 seconds if not confirmed
@@ -708,18 +738,18 @@ function KillAllButton({ onKillAll }: { onKillAll: () => void }) {
     <button
       type="button"
       onClick={handleClick}
-      disabled={state === "done"}
+      disabled={disabled || state === "done"}
       className={`
         h-9 px-4 rounded-full text-sm font-medium transition-all duration-200 transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mimi_pink-400/45 disabled:cursor-not-allowed disabled:opacity-70
         ${
           state === "idle" &&
-          "bg-mimi_pink-400/20 text-mimi_pink-100 hover:bg-mimi_pink-400/40 hover:text-mimi_pink-100 hover:scale-105 active:text-mimi_pink-100"
+          "bg-danger-surface text-danger-text hover:brightness-95 hover:scale-105"
         }
         ${
           state === "confirm" &&
           "bg-mimi_pink-400 text-mimi_pink-100 animate-pulse scale-105"
         }
-        ${state === "done" && "bg-gray-200 text-gray-900"}
+        ${state === "done" && "bg-success text-success-contrast"}
       `}
     >
       {state === "idle" && "Kill All"}
