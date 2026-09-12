@@ -110,6 +110,7 @@
     },
     "mac": {
       "category": "public.app-category.developer-tools",
+      "x64ArchFiles": "Contents/Resources/server-restart/darwin-process-helper",
       "target": [
         "dmg",
         "zip"
