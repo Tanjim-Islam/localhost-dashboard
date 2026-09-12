@@ -122,7 +122,8 @@ async function main() {
     assert.equal(result.ok, true, result.message);
     const after = await waitHttp(fixture.port, (data) => data.pid !== before.pid);
     assert.equal(after.value, "after");
-    assert.equal(after.cwd.toLowerCase(), fixture.dir.toLowerCase());
+    assert.equal(after.cwd, before.cwd, "restart preserves the actual working directory");
+    assert.equal(await fs.realpath(after.cwd), await fs.realpath(fixture.dir));
     assert.deepEqual(after.args, args.slice(1));
     assert.equal(after.env, fixture.env.DASHBOARD_FIXTURE_VALUE);
     const repeated = await restart(fixture, after.pid, { double: true });
