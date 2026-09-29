@@ -102,7 +102,7 @@ export default function AutomatorCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="h-2.5 w-2.5 rounded-full bg-celadon-400 animate-pulse shrink-0"></div>
+            <div className="h-2.5 w-2.5 rounded-full bg-success animate-pulse shrink-0"></div>
             <div
               className="text-lg font-semibold text-night-900 truncate"
               title={item.scriptName}
@@ -115,7 +115,7 @@ export default function AutomatorCard({
               className={cx(
                 "rounded-md px-2 py-0.5",
                 isRunning
-                  ? "bg-celadon-400/20 text-celadon-700"
+                  ? "bg-success-surface text-success-text"
                   : "bg-gray-300/70 text-gray-700",
               )}
             >
@@ -257,7 +257,7 @@ function ActionButton({
           state === "idle" &&
           "bg-gray-200 text-gray-900 hover:bg-gray-300 hover:scale-105 active:scale-95",
         state === "active" && "bg-gray-300 text-gray-900 scale-95",
-        state === "done" && "bg-celadon-400 text-white scale-100",
+        state === "done" && "bg-success text-success-contrast scale-100",
         disabled && "opacity-50 cursor-not-allowed hover:scale-100",
       )}
     >

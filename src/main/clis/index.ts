@@ -21,6 +21,7 @@ export async function createCliController(): Promise<{
   const platform = process.platform as CliPlatform;
   const fixtureRoot = process.env.LOCAL_DASHBOARD_CLIS_TEST_ROOT;
   const testMode = Boolean(fixtureRoot);
+  const persistence = new ElectronCliPersistence();
   const neutralWorkingDirectory = path.join(
     fixtureRoot ?? app.getPath("temp"),
     "local-dashboard-clis-neutral",
@@ -41,10 +42,9 @@ export async function createCliController(): Promise<{
           path.join(fixtureRoot, "path-a"),
           path.join(fixtureRoot, "path-b"),
         ].join(platform === "win32" ? ";" : ":")
-      : process.env.PATH ?? "",
-    pathExtValue:
-      process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD;.PS1",
-    knownDirectories: [],
+      : (process.env.PATH ?? ""),
+    pathExtValue: process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD;.PS1",
+    knownDirectories: persistence.read().scanDirectories ?? [],
     neutralWorkingDirectory,
     testMode,
   });
@@ -69,7 +69,7 @@ export async function createCliController(): Promise<{
   return {
     controller: new CliController({
       scanner,
-      persistence: new ElectronCliPersistence(),
+      persistence,
       clock: systemClock,
       runner,
     }),

@@ -3,13 +3,15 @@ import type { Stats } from "node:fs";
 import {
   access,
   lstat,
+  open,
   readFile,
   readdir,
   realpath,
   stat,
 } from "node:fs/promises";
 import path from "node:path";
-import { findCliByCommand, getCliDefinitions } from "../catalogue";
+import { findCliByCommand } from "../catalogue";
+import { discoveredCommandId, validCliCommand } from "../discovery";
 import {
   createEndpointFingerprint,
   normalizeCliPath,
@@ -20,6 +22,7 @@ import type {
   CliExecutableEndpoint,
   CliPathEndpointRecord,
   CliPlatform,
+  CliPackageRecord,
 } from "../types";
 import type { CliCancellationToken } from "../session";
 
@@ -74,18 +77,53 @@ export function createPathSnapshot(input: {
   return { directories, pathExt, pathDirectoryCount };
 }
 
+export async function collectPackageEndpoints(input: {
+  platform: CliPlatform;
+  packageRecords: CliPackageRecord[];
+  pathRecords: CliPathEndpointRecord[];
+  cancellation: CliCancellationToken;
+}): Promise<CliPathEndpointRecord[]> {
+  const results: CliPathEndpointRecord[] = [];
+  const seen = new Set(
+    input.pathRecords.flatMap(({ endpoint }) =>
+      [endpoint.path, endpoint.canonicalPath, endpoint.shimTarget]
+        .filter((value): value is string => Boolean(value))
+        .map(
+          (value) =>
+            `${endpoint.commandName}|${normalizeCliPath(value, input.platform)}`,
+        ),
+    ),
+  );
+  for (const record of input.packageRecords) {
+    for (const entry of record.binEntries) {
+      input.cancellation.throwIfCancelled();
+      const key = `${entry.commandName}|${normalizeCliPath(entry.targetPath, input.platform)}`;
+      if (
+        seen.has(key) ||
+        !validCliCommand(entry.commandName) ||
+        !path.isAbsolute(entry.targetPath)
+      )
+        continue;
+      const endpoint = await inspectEndpoint({
+        platform: input.platform,
+        commandName: entry.commandName,
+        endpointPath: entry.targetPath,
+      });
+      if (!endpoint.accessible || !endpoint.targetExists) continue;
+      seen.add(key);
+      results.push({ productId: record.productId, endpoint });
+    }
+  }
+  return results;
+}
+
 export async function enumerateCliPathEndpoints(input: {
   platform: CliPlatform;
   snapshot: CliPathSnapshot;
   cancellation: CliCancellationToken;
   concurrency?: number;
+  systemRoot?: string;
 }): Promise<CliPathEndpointRecord[]> {
-  const definitions = getCliDefinitions(input.platform);
-  const knownCommands = new Set(
-    definitions.flatMap((definition) =>
-      definition.commands.map((command) => command.toLowerCase()),
-    ),
-  );
   const results: CliPathEndpointRecord[] = [];
   const concurrency = Math.max(1, Math.min(input.concurrency ?? 8, 8));
   let nextIndex = 0;
@@ -108,12 +146,19 @@ export async function enumerateCliPathEndpoints(input: {
       for (const name of names) {
         input.cancellation.throwIfCancelled();
         const parsed = parseCommandName(name, input.platform);
-        if (!parsed || !knownCommands.has(parsed.commandName)) continue;
-        const definition = findCliByCommand(
-          parsed.commandName,
-          input.platform,
-        );
-        if (!definition) continue;
+        if (!parsed || !validCliCommand(parsed.commandName)) continue;
+        const definition = findCliByCommand(parsed.commandName, input.platform);
+        if (
+          !definition &&
+          input.systemRoot &&
+          isPathWithin(directory, input.systemRoot)
+        )
+          continue;
+        if (
+          !definition &&
+          !(await isConsoleLauncher(path.join(directory, name), input.platform))
+        )
+          continue;
         const endpoint = await inspectEndpoint({
           platform: input.platform,
           commandName: parsed.commandName,
@@ -129,7 +174,10 @@ export async function enumerateCliPathEndpoints(input: {
               ? input.snapshot.pathExt.indexOf(parsed.extension)
               : undefined,
         });
-        results.push({ productId: definition.id, endpoint });
+        results.push({
+          productId: definition?.id ?? discoveredCommandId(parsed.commandName),
+          endpoint,
+        });
       }
     }
   };
@@ -149,18 +197,17 @@ export function groupEquivalentEndpointKey(
 ): string {
   const endpoint = record.endpoint;
   const packageRoot =
-    endpoint.shimPackageRoot &&
-    !/[%$]/.test(endpoint.shimPackageRoot)
+    endpoint.shimPackageRoot && !/[%$]/.test(endpoint.shimPackageRoot)
       ? endpoint.shimPackageRoot
       : undefined;
   const identity =
     platform === "win32"
-      ? path.dirname(endpoint.path)
-      : packageRoot ??
+      ? path.dirname(endpoint.canonicalPath ?? endpoint.path)
+      : (packageRoot ??
         endpoint.shimTarget ??
         endpoint.symlinkTarget ??
         endpoint.canonicalPath ??
-        endpoint.path;
+        endpoint.path);
   return `${record.productId}|${normalizeCliPath(identity, platform)}`;
 }
 
@@ -187,7 +234,7 @@ function parseCommandName(
   return { commandName: filename.toLowerCase(), extension };
 }
 
-async function inspectEndpoint(input: {
+export async function inspectEndpoint(input: {
   platform: CliPlatform;
   commandName: string;
   endpointPath: string;
@@ -207,17 +254,15 @@ async function inspectEndpoint(input: {
 
   try {
     linkStats = await lstat(input.endpointPath, { bigint: false });
-    if (linkStats.isSymbolicLink()) {
-      try {
-        canonicalPath = await realpath(input.endpointPath);
-        symlinkTarget = canonicalPath;
-      } catch {
-        if (!executionAlias) targetExists = false;
-      }
-    } else {
-      canonicalPath = input.endpointPath;
+    try {
+      // Parent directories can be junctions too, as with nvm's nodejs path.
+      canonicalPath = await realpath(input.endpointPath);
+      if (linkStats.isSymbolicLink()) symlinkTarget = canonicalPath;
+    } catch {
+      if (!executionAlias) targetExists = false;
     }
-    if (targetExists) targetStats = await stat(canonicalPath ?? input.endpointPath);
+    if (targetExists)
+      targetStats = await stat(canonicalPath ?? input.endpointPath);
     await access(
       canonicalPath ?? input.endpointPath,
       input.platform === "darwin" ? fsConstants.X_OK : fsConstants.F_OK,
@@ -234,6 +279,11 @@ async function inspectEndpoint(input: {
     input.commandName,
     targetStats?.size,
   );
+  const [shimTarget, shimPackageRoot, bundledWith] = await Promise.all([
+    resolveExistingPath(shim.target),
+    resolveExistingPath(shim.packageRoot),
+    detectBundledDistribution(input.platform, input.commandName, canonicalPath),
+  ]);
   const kind = classifyEndpointKind(
     input.endpointPath,
     input.platform,
@@ -241,14 +291,19 @@ async function inspectEndpoint(input: {
     shim.isShim,
     shim.scriptLike,
   );
+  // POSIX shebang files can accompany Windows shims, but are not launchers for
+  // PowerShell or cmd. Keep them as evidence without assigning PATH precedence.
+  if (input.platform === "win32" && !path.extname(input.endpointPath))
+    executable = false;
   const base = {
     commandName: input.commandName,
     kind,
     path: input.endpointPath,
     ...(canonicalPath ? { canonicalPath } : {}),
     ...(symlinkTarget ? { symlinkTarget } : {}),
-    ...(shim.target ? { shimTarget: shim.target } : {}),
-    ...(shim.packageRoot ? { shimPackageRoot: shim.packageRoot } : {}),
+    ...(shimTarget ? { shimTarget } : {}),
+    ...(shimPackageRoot ? { shimPackageRoot } : {}),
+    ...(bundledWith ? { bundledWith } : {}),
     ...(input.pathIndex !== undefined ? { pathIndex: input.pathIndex } : {}),
     ...(input.pathextIndex !== undefined && input.pathextIndex >= 0
       ? { pathextIndex: input.pathextIndex }
@@ -272,6 +327,104 @@ async function inspectEndpoint(input: {
     ...base,
     fingerprint,
   };
+}
+
+async function resolveExistingPath(
+  value?: string,
+): Promise<string | undefined> {
+  return value ? realpath(value).catch(() => value) : undefined;
+}
+
+async function detectBundledDistribution(
+  platform: CliPlatform,
+  commandName: string,
+  canonicalPath?: string,
+): Promise<CliExecutableEndpoint["bundledWith"]> {
+  if (platform !== "win32" || commandName === "perl" || !canonicalPath)
+    return undefined;
+  const bin = path.dirname(canonicalPath);
+  const tools = path.dirname(bin);
+  if (
+    path.basename(bin).toLowerCase() !== "bin" ||
+    !["c", "perl"].includes(path.basename(tools).toLowerCase())
+  )
+    return undefined;
+  const root = path.dirname(tools);
+  try {
+    // Bounded, passive distribution evidence. A folder called Strawberry is insufficient.
+    const readme = path.join(root, "README.txt");
+    const [readmeStat, perlStat] = await Promise.all([
+      stat(readme),
+      stat(path.join(root, "perl", "bin", "perl.exe")),
+    ]);
+    if (
+      !readmeStat.isFile() ||
+      readmeStat.size > 64 * 1024 ||
+      !perlStat.isFile()
+    )
+      return undefined;
+    if (
+      /^=== Strawberry Perl \([^\r\n]+\) [\d.]+[^\r\n]* README ===\r?$/m.test(
+        await readFile(readme, "utf8"),
+      )
+    ) {
+      return "strawberry-perl";
+    }
+  } catch {
+    // Missing or unreadable evidence leaves the distributor unidentified.
+  }
+  return undefined;
+}
+
+function isPathWithin(value: string, root: string): boolean {
+  const relative = path.relative(root.toLowerCase(), value.toLowerCase());
+  return (
+    !relative || (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
+// Inspect file headers only. Discovering an unfamiliar command never executes it.
+export async function isConsoleLauncher(
+  file: string,
+  platform: CliPlatform,
+): Promise<boolean> {
+  let handle;
+  try {
+    const info = await stat(file);
+    if (!info.isFile()) return false;
+    if (platform === "darwin") {
+      await access(file, fsConstants.X_OK);
+      return true;
+    }
+    const extension = path.extname(file).toLowerCase();
+    if ([".cmd", ".bat", ".ps1"].includes(extension)) return true;
+    handle = await open(file, "r");
+    const header = Buffer.alloc(64);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    if (!extension)
+      return bytesRead >= 2 && header.toString("ascii", 0, 2) === "#!";
+    if (
+      extension !== ".exe" ||
+      bytesRead < 64 ||
+      header.toString("ascii", 0, 2) !== "MZ"
+    )
+      return false;
+    const peOffset = header.readUInt32LE(60);
+    if (peOffset < 64 || peOffset > 1024 * 1024 || peOffset + 94 > info.size)
+      return false;
+    const pe = Buffer.alloc(94);
+    const read = await handle.read(pe, 0, pe.length, peOffset);
+    return (
+      read.bytesRead === pe.length &&
+      pe.readUInt32LE(0) === 0x4550 &&
+      [0x10b, 0x20b].includes(pe.readUInt16LE(24)) &&
+      pe.readUInt16LE(92) === 3
+    );
+  } catch {
+    return false;
+  } finally {
+    await handle?.close();
+  }
 }
 
 async function inspectShim(
@@ -303,7 +456,11 @@ async function inspectShim(
   const expanded = expandLauncherVariables(content, path.dirname(endpointPath));
   const packageRoots = extractNodePackageRoots(expanded);
   for (const packageRoot of packageRoots) {
-    const packageTarget = await readPackageBinTarget(packageRoot, commandName);
+    const packageTarget = await readPackageBinTarget(
+      packageRoot,
+      commandName,
+      platform,
+    );
     if (packageTarget) {
       return {
         isShim: true,
@@ -355,7 +512,10 @@ function classifyEndpointKind(
   return "native";
 }
 
-function expandLauncherVariables(content: string, launcherRoot: string): string {
+function expandLauncherVariables(
+  content: string,
+  launcherRoot: string,
+): string {
   const rootWithSeparator = `${launcherRoot}${path.sep}`;
   return content
     .replace(/%dp0%/gi, rootWithSeparator)
@@ -382,6 +542,7 @@ function extractNodePackageRoots(content: string): string[] {
 async function readPackageBinTarget(
   packageRoot: string,
   commandName: string,
+  platform: CliPlatform,
 ): Promise<{ path: string; exists: boolean } | null> {
   try {
     const manifestPath = path.join(packageRoot, "package.json");
@@ -406,7 +567,16 @@ async function readPackageBinTarget(
     const target = path.resolve(packageRoot, relativeTarget);
     const relative = path.relative(packageRoot, target);
     if (relative.startsWith("..") || path.isAbsolute(relative)) return null;
-    return { path: target, exists: await pathExists(target) };
+    if (await pathExists(target)) return { path: target, exists: true };
+    // npm can declare a native bin without its Windows extension. cmd and
+    // PowerShell resolve that declaration to the neighboring .exe.
+    if (
+      platform === "win32" &&
+      !path.extname(target) &&
+      (await pathExists(`${target}.exe`))
+    )
+      return { path: `${target}.exe`, exists: true };
+    return { path: target, exists: false };
   } catch {
     return null;
   }
@@ -423,8 +593,8 @@ async function findDirectLauncherTarget(
   ) {
     return null;
   }
-  const quoted = [...content.matchAll(/["']([^"'\r\n]+)["']/g)].map(
-    (match) => match[1].trim(),
+  const quoted = [...content.matchAll(/["']([^"'\r\n]+)["']/g)].map((match) =>
+    match[1].trim(),
   );
   const candidates = new Map<string, string>();
   for (const candidate of quoted) {

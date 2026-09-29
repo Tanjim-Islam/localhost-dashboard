@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, clipboard } from "electron";
+import { validateServerRef, type RestartProgress } from "../main/server-restart/types";
 import {
   validateCleanerCleanupRequestId,
   validateCleanerPreferences,
@@ -10,6 +11,7 @@ import {
 } from "../main/cleaner/ipc-validation";
 import {
   validateCliInstallationRef,
+  validateCliInclusionRequest,
   validateCliSessionId,
   validateCliUninstallRequest,
 } from "../main/clis/ipc-validation";
@@ -103,6 +105,13 @@ contextBridge.exposeInMainWorld("api", {
   // actions
   openUrl: (url: string) => ipcRenderer.send("app:open-url", url),
   killPid: (pid: number) => ipcRenderer.send("app:kill-pid", pid),
+  restartServer: (ref: unknown) => ipcRenderer.invoke("servers:restart", validateServerRef(ref)),
+  getServerRestartState: () => ipcRenderer.invoke("servers:restart-state"),
+  onServerRestartProgress: (cb: (state: RestartProgress) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, state: RestartProgress) => cb(state);
+    ipcRenderer.on("servers:restart-progress", listener);
+    return () => ipcRenderer.removeListener("servers:restart-progress", listener);
+  },
   killAllServers: () => ipcRenderer.invoke("app:kill-all-servers"),
   copyText: (text: string) => clipboard.writeText(text),
   openInVSCode: (payload: any) =>
@@ -265,6 +274,12 @@ contextBridge.exposeInMainWorld("api", {
   },
   // Windows and macOS CLIs. Main repeats all validation.
   getCliInventory: () => ipcRenderer.invoke("clis:inventory-get"),
+  getCliScanDirectories: () => ipcRenderer.invoke("clis:scan-directories"),
+  chooseCliScanDirectory: () => ipcRenderer.invoke("clis:choose-scan-directory"),
+  removeCliScanDirectory: (id: string) => {
+    if (typeof id !== "string" || id.length > 128) throw new Error("Invalid scan folder.");
+    return ipcRenderer.invoke("clis:remove-scan-directory", id);
+  },
   startCliScan: () => ipcRenderer.invoke("clis:scan-start"),
   cancelCliScan: (scanSessionId: unknown) =>
     ipcRenderer.invoke("clis:scan-cancel", validateCliSessionId(scanSessionId)),
@@ -274,6 +289,8 @@ contextBridge.exposeInMainWorld("api", {
       "clis:installation-verify",
       validateCliInstallationRef(input),
     ),
+  setCliInstallationIncluded: (input: unknown) =>
+    ipcRenderer.invoke("clis:installation-included", validateCliInclusionRequest(input)),
   revealCliInstallation: (input: unknown) =>
     ipcRenderer.invoke(
       "clis:installation-reveal",

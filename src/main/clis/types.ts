@@ -17,6 +17,8 @@ export type CliPackageSource =
   | "yarn-classic"
   | "bun"
   | "pipx"
+  | "pip"
+  | "uv"
   | "cargo"
   | "winget"
   | "chocolatey"
@@ -61,6 +63,12 @@ export type CliInstallationOrigin =
   | "application-embedded"
   | "sdk-bundled"
   | "unknown";
+
+export type CliDiscoveryKind =
+  | "catalogue"
+  | "package-command"
+  | "user"
+  | "candidate";
 
 export type CliIssueCode =
   | "duplicate-version"
@@ -120,11 +128,12 @@ export type CliProduct = {
   aliases: string[];
   commandNames: string[];
   supportedPlatforms: CliPlatform[];
-  discoveryConfidence: "catalogued" | "package-owned";
+  discoveryConfidence: "catalogued" | "package-owned" | "executable";
   installationIds: string[];
   currentInstallationIds: string[];
   removedInstallationIds: string[];
   embeddedInstallationIds: string[];
+  candidateInstallationIds?: string[];
   health: CliProductStatus;
   verificationStatus: CliVerificationStatus;
   issueCodes: CliIssueCode[];
@@ -153,6 +162,10 @@ export type CliExecutableEndpoint = {
   symlinkTarget?: string;
   shimTarget?: string;
   shimPackageRoot?: string;
+  ownerName?: string;
+  publisher?: string;
+  fileVersion?: string;
+  bundledWith?: "strawberry-perl";
   pathIndex?: number;
   pathextIndex?: number;
   accessible: boolean;
@@ -205,6 +218,13 @@ export type CliInstallation = {
   architecture: string;
   scope: CliPackageIdentity["scope"];
   origin: CliInstallationOrigin;
+  discoveryKind?: CliDiscoveryKind;
+  includedByUser?: boolean;
+  commandVerification?: {
+    endpointId: string;
+    endpointFingerprint: string;
+    checkedAt: number;
+  };
   version?: string;
   versionSource: CliVersionSource;
   verificationStatus: CliVerificationStatus;
@@ -295,6 +315,7 @@ export type CliUninstallAuditSummary = {
 };
 
 export type CliStoreSchema = {
+  scanDirectories?: string[];
   schemaVersion: 2;
   inventory: CliInventorySnapshot | null;
   lastScanStartedAt: number | null;
@@ -374,6 +395,12 @@ export type CliPackageRecord = {
 };
 
 export type CliAdapterResult = {
+  applicationRoots?: Array<{
+    path: string;
+    name: string;
+    publisher?: string;
+    version?: string;
+  }>;
   sourceResults: CliSourceResult[];
   packageRecords: CliPackageRecord[];
   extraPathDirectories?: string[];

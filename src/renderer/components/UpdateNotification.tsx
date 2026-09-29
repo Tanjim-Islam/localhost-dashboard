@@ -87,12 +87,12 @@ export default function UpdateNotification() {
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-4 py-3 border-b border-gray-300 bg-gray-200"
+          className={`flex items-center justify-between px-4 py-3 border-b ${status.state === "error" ? "border-danger-border bg-danger-surface text-danger-text" : status.state === "downloaded" || status.state === "not-available" ? "border-success-border bg-success-surface text-success-text" : "border-gray-300 bg-gray-200 text-gray-900"}`}
         >
           <div className="flex items-center gap-2">
             <UpdateIcon state={status.state} />
             <span
-              className="font-semibold text-sm text-gray-900"
+              className="font-semibold text-sm"
             >
               {status.state === "checking" && "Checking for updates..."}
               {status.state === "available" && "Update Available"}
@@ -146,7 +146,7 @@ export default function UpdateNotification() {
           {/* Not available state */}
           {status.state === "not-available" && (
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-celadon-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-5 h-5 text-success-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               <span className="text-gray-700 text-sm">
@@ -187,7 +187,7 @@ export default function UpdateNotification() {
           {status.state === "downloaded" && (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-celadon-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-5 h-5 text-success-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
                 <span className="text-gray-700 text-sm">
@@ -196,7 +196,7 @@ export default function UpdateNotification() {
               </div>
               <button
                 onClick={handleInstall}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-celadon-400 to-celadon-500 text-white font-medium text-sm hover:from-celadon-500 hover:to-celadon-600 active:scale-[0.98] transition-all duration-150 shadow-sm flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-xl bg-success text-success-contrast font-medium text-sm hover:brightness-95 active:scale-[0.98] transition-all duration-150 shadow-sm flex items-center justify-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -208,12 +208,12 @@ export default function UpdateNotification() {
 
           {/* Error state */}
           {status.state === "error" && (
-            <div className="space-y-3">
+            <div role="alert" className="space-y-3 text-danger-text">
               <div className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-mimi_pink-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-5 h-5 text-danger-icon shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
-                <span className="text-gray-700 text-sm">{status.message}</span>
+                <span className="text-sm">{status.message}</span>
               </div>
               <button
                 onClick={handleCheckAgain}
@@ -244,7 +244,7 @@ function UpdateIcon({ state }: { state: string }) {
 
   if (state === "downloaded" || state === "not-available") {
     return (
-      <svg className="w-5 h-5 text-celadon-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-5 h-5 text-success-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     );
@@ -252,7 +252,7 @@ function UpdateIcon({ state }: { state: string }) {
 
   if (state === "error") {
     return (
-      <svg className="w-5 h-5 text-mimi_pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-5 h-5 text-danger-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     );

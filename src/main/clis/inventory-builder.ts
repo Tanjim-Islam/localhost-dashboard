@@ -23,6 +23,7 @@ import type {
 } from "./types";
 import { calculateUninstallCapability } from "./uninstall-policy";
 import { classifyCliOrigin, isEmbeddedCliOrigin } from "./origin";
+import { classifyCliAdmission, isCliCandidate } from "./admission";
 
 export function assembleInventory(input: {
   environment: CliScanEnvironment;
@@ -69,14 +70,21 @@ export function assembleInventory(input: {
         definition?.preferVersionProbe &&
         ["package-metadata", "cached"].includes(previous.versionSource)
       );
+    const fileVersion =
+      definition?.preferVersionProbe || definition?.alwaysProbeVersion
+        ? undefined
+        : uniqueEndpoints.find((endpoint) => endpoint.fileVersion)?.fileVersion;
     const version =
       record.version ??
+      fileVersion ??
       (canReusePreviousVersion ? previous?.version : undefined);
     const versionSource = record.version
       ? "package-metadata"
-      : canReusePreviousVersion
-        ? "cached"
-        : "unknown";
+      : fileVersion
+        ? "executable-metadata"
+        : canReusePreviousVersion
+          ? "cached"
+          : "unknown";
     const issueCodes = collectEndpointIssues(uniqueEndpoints);
     if (!version) issueCodes.push("version-unverified");
     const commandNames = [
@@ -103,7 +111,18 @@ export function assembleInventory(input: {
       sourceFailed: false,
       origin,
     });
-    const hasUsableEndpoint = uniqueEndpoints.some(isUsableEndpoint);
+    const includedByUser =
+      previous?.includedByUser === true ||
+      Boolean(
+        input.previous?.installations.some(
+          (item) =>
+            item.includedByUser &&
+            item.endpointIds.some((id) =>
+              uniqueEndpoints.some((endpoint) => endpoint.id === id),
+            ),
+        ),
+      );
+    const commandVerification = previous?.commandVerification;
     const presence =
       uniqueEndpoints.length > 0 &&
       !uniqueEndpoints.some((endpoint) => endpoint.accessible)
@@ -116,6 +135,16 @@ export function assembleInventory(input: {
       architecture: input.environment.architecture,
       scope: record.packageIdentity?.scope ?? "unknown",
       origin,
+      discoveryKind: classifyCliAdmission({ ...record, includedByUser }),
+      ...(includedByUser ? { includedByUser: true } : {}),
+      ...(commandVerification &&
+      uniqueEndpoints.some(
+        (endpoint) =>
+          endpoint.id === commandVerification.endpointId &&
+          endpoint.fingerprint === commandVerification.endpointFingerprint,
+      )
+        ? { commandVerification }
+        : {}),
       version,
       versionSource,
       verificationStatus: deriveVerificationStatus({
@@ -131,12 +160,21 @@ export function assembleInventory(input: {
       presence,
       health: "unknown",
       issueCodes: [...new Set(issueCodes)],
-      firstSeenAt: previous?.firstSeenAt ?? input.now,
+      firstSeenAt: Math.min(
+        input.now,
+        ...(input.previous?.installations ?? [])
+          .filter(
+            (item) =>
+              item.productId === record.productId ||
+              item.endpointIds.some((id) =>
+                uniqueEndpoints.some((endpoint) => endpoint.id === id),
+              ),
+          )
+          .map((item) => item.firstSeenAt),
+      ),
       lastSeenAt: input.now,
       lastVerifiedAt: input.now,
-      lastSuccessfulVerificationAt: hasUsableEndpoint
-        ? input.now
-        : previous?.lastSuccessfulVerificationAt,
+      lastSuccessfulVerificationAt: commandVerification?.checkedAt,
       uninstallCapability: capability,
     });
   }
@@ -275,16 +313,21 @@ export function assignCommandResolution(
 ): void {
   commands.splice(0, commands.length);
   const activeByName = new Map<string, string>();
+  const isPathLauncher = (endpoint: CliExecutableEndpoint): boolean =>
+    endpoint.pathIndex !== undefined &&
+    (installations[0]?.platform !== "win32" ||
+      /\.(exe|com|cmd|bat|ps1)$/i.test(endpoint.path));
   const currentEndpointIds = new Set(
     installations
-      .filter(isCurrentInstallation)
+      .filter((installation) =>
+        ["present", "inaccessible"].includes(installation.presence),
+      )
       .flatMap((installation) => installation.endpointIds),
   );
   for (const endpoint of endpoints
     .filter(
       (candidate) =>
-        currentEndpointIds.has(candidate.id) &&
-        candidate.pathIndex !== undefined,
+        currentEndpointIds.has(candidate.id) && isPathLauncher(candidate),
     )
     .sort(compareEndpoints)) {
     if (!activeByName.has(endpoint.commandName)) {
@@ -296,10 +339,11 @@ export function assignCommandResolution(
       installation.endpointIds.includes(endpoint.id),
     );
     const names = [
-      ...new Set([
-        ...installation.uninstallCapability.providedCommands,
-        ...installEndpoints.map((endpoint) => endpoint.commandName),
-      ]),
+      ...new Set(
+        installEndpoints.length
+          ? installEndpoints.map((endpoint) => endpoint.commandName)
+          : installation.uninstallCapability.providedCommands,
+      ),
     ];
     installation.commandIds = [];
     for (const name of names) {
@@ -309,7 +353,7 @@ export function assignCommandResolution(
       const pathEndpointIds = installEndpoints
         .filter(
           (endpoint) =>
-            endpoint.commandName === name && endpoint.pathIndex !== undefined,
+            endpoint.commandName === name && isPathLauncher(endpoint),
         )
         .map((endpoint) => endpoint.id);
       const activeEndpointId = activeByName.get(name);
@@ -348,6 +392,7 @@ export function finalizeHealth(
   >,
 ): void {
   for (const installation of assembled.installations) {
+    installation.discoveryKind = classifyCliAdmission(installation);
     installation.issueCodes = installation.issueCodes.filter(
       (issue) => issue !== "path-conflict" && issue !== "duplicate-version",
     );
@@ -483,9 +528,8 @@ export function buildProducts(
   const products: CliProduct[] = [];
   for (const productId of productIds) {
     const definition = getCliDefinition(productId);
-    if (!definition) continue;
     const supportedPlatforms = [
-      ...(definition.platforms ?? ["win32", "darwin"]),
+      ...(definition?.platforms ?? ["win32", "darwin"]),
     ];
     if (!supportedPlatforms.includes(platform)) continue;
     const productInstallations = installations.filter(
@@ -511,22 +555,39 @@ export function buildProducts(
           isEmbeddedCliOrigin(installation.origin),
       )
       .map((installation) => installation.id);
+    const candidateInstallationIds = productInstallations
+      .filter(
+        (installation) =>
+          isCliCandidate(installation) &&
+          ["present", "inaccessible"].includes(installation.presence),
+      )
+      .map((installation) => installation.id);
     products.push({
-      id: definition.id,
-      displayName: definition.displayName,
-      category: definition.category,
-      aliases: [...(definition.aliases ?? [])],
+      id: productId,
+      displayName:
+        definition?.displayName ??
+        productInstallations.find((item) => item.packageIdentity)
+          ?.packageIdentity?.packageId ??
+        productCommands[0]?.name ??
+        productId,
+      category: definition?.category ?? "developer-tool",
+      aliases: [...(definition?.aliases ?? [])],
       commandNames: [
         ...new Set(productCommands.map((command) => command.name)),
       ],
       supportedPlatforms,
-      discoveryConfidence: "catalogued",
+      discoveryConfidence: definition
+        ? "catalogued"
+        : productInstallations.some((item) => item.packageIdentity)
+          ? "package-owned"
+          : "executable",
       installationIds: [
         ...new Set(productInstallations.map((installation) => installation.id)),
       ],
       currentInstallationIds: [...new Set(currentInstallationIds)],
       removedInstallationIds: [...new Set(removedInstallationIds)],
       embeddedInstallationIds: [...new Set(embeddedInstallationIds)],
+      candidateInstallationIds,
       health: deriveProductStatus(
         productInstallations.filter((installation) =>
           currentInstallationIds.includes(installation.id),
@@ -777,8 +838,9 @@ function meaningfulInstallationKey(
 
 function isCurrentInstallation(installation: CliInstallation): boolean {
   return (
-    installation.presence === "present" ||
-    installation.presence === "inaccessible"
+    !isCliCandidate(installation) &&
+    (installation.presence === "present" ||
+      installation.presence === "inaccessible")
   );
 }
 

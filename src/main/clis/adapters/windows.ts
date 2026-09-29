@@ -1,10 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  findCliByCommand,
-  findCliByPackage,
-  getCliDefinitions,
-} from "../catalogue";
+import { findCliByPackage, getCliDefinitions } from "../catalogue";
 import type {
   CliAdapterResult,
   CliCommandRunner,
@@ -33,8 +29,7 @@ export function getWindowsKnownDirectories(
   const localAppData = environment.env.LOCALAPPDATA;
   const userProfile = environment.env.USERPROFILE ?? environment.homeDirectory;
   const programData = environment.env.PROGRAMDATA;
-  const scoopRoot =
-    environment.env.SCOOP ?? path.join(userProfile, "scoop");
+  const scoopRoot = environment.env.SCOOP ?? path.join(userProfile, "scoop");
   return [
     appData ? path.join(appData, "npm") : "",
     path.join(userProfile, ".cargo", "bin"),
@@ -42,12 +37,17 @@ export function getWindowsKnownDirectories(
     path.join(userProfile, "bin"),
     path.join(scoopRoot, "shims"),
     programData ? path.join(programData, "chocolatey", "bin") : "",
-    localAppData
-      ? path.join(localAppData, "Microsoft", "WindowsApps")
-      : "",
+    localAppData ? path.join(localAppData, "Microsoft", "WindowsApps") : "",
     localAppData ? path.join(localAppData, "Programs", "Python") : "",
     path.join(userProfile, ".bun", "bin"),
-    path.join(userProfile, "AppData", "Local", "Android", "Sdk", "platform-tools"),
+    path.join(
+      userProfile,
+      "AppData",
+      "Local",
+      "Android",
+      "Sdk",
+      "platform-tools",
+    ),
   ].filter(Boolean);
 }
 
@@ -149,17 +149,46 @@ export async function collectWindowsEvidence(input: {
     });
   }
 
+  const applicationRoots = (evidence.uninstallRecords ?? []).flatMap(
+    (record) => {
+      const root = normalizeSafeWindowsInstallLocation(record.installLocation);
+      const excluded = [
+        input.environment.homeDirectory,
+        path.dirname(input.environment.homeDirectory),
+        input.environment.env.ProgramFiles,
+        input.environment.env.LOCALAPPDATA,
+        input.environment.env.APPDATA,
+      ]
+        .filter(Boolean)
+        .map((value) => path.normalize(value as string).toLowerCase());
+      return root &&
+        path.parse(root).root !== root &&
+        !excluded.includes(root.toLowerCase())
+        ? [
+            {
+              path: root,
+              name: record.displayName.slice(0, 256),
+              publisher: record.publisher?.slice(0, 256),
+              version: record.displayVersion?.slice(0, 128),
+            },
+          ]
+        : [];
+    },
+  );
   const extraPathDirectories = [
     ...(evidence.userPath?.split(";") ?? []),
     ...(evidence.machinePath?.split(";") ?? []),
-    ...(evidence.appPaths ?? [])
-      .filter((record) =>
-        Boolean(findCliByCommand(record.command.replace(/\.[^.]+$/, ""), "win32")),
-      )
-      .map((record) => path.dirname(record.targetPath)),
+    ...(evidence.appPaths ?? []).map((record) =>
+      path.dirname(record.targetPath),
+    ),
+    ...applicationRoots.flatMap((record) => [
+      record.path,
+      ...["bin", "cmd", "Scripts"].map((leaf) => path.join(record.path, leaf)),
+    ]),
   ];
   return {
     packageRecords,
+    applicationRoots,
     extraPathDirectories,
     sourceResults: [
       {
@@ -168,8 +197,7 @@ export async function collectWindowsEvidence(input: {
         status: "success",
         startedAt,
         finishedAt: input.now(),
-        recordCount:
-          packageRecords.length + (evidence.appPaths?.length ?? 0),
+        recordCount: packageRecords.length + (evidence.appPaths?.length ?? 0),
       },
     ],
   };
@@ -201,19 +229,14 @@ function getPowerShellPath(environment: CliScanEnvironment): string | null {
     : null;
 }
 
-function createWindowsEvidenceScript(commands: string[]): string {
-  const encodedCommands = commands
-    .slice(0, 256)
-    .map((command) => `'${command.replaceAll("'", "''")}.exe'`)
-    .join(",");
+function createWindowsEvidenceScript(_commands: string[]): string {
   return `
 $ErrorActionPreference='Stop'
-$commands=@(${encodedCommands})
 $appPaths=@()
 foreach($root in @('Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths','Registry::HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths')){
-  foreach($command in $commands){
-    $item=Get-ItemProperty -LiteralPath (Join-Path $root $command) -ErrorAction SilentlyContinue
-    if($item){$appPaths += [pscustomobject]@{command=$command;targetPath=[string]$item.'(default)'}}
+  foreach($key in (Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue | Select-Object -First 500)){
+    $item=Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+    if($item){$appPaths += [pscustomobject]@{command=$key.PSChildName;targetPath=[string]$item.'(default)'}}
   }
 }
 $uninstall=@()

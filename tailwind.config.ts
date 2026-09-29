@@ -8,6 +8,24 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Status colors keep their meaning in every palette. Reuse the existing
+        // accessible green/red ramps, with separate light and dark shades.
+        success: {
+          DEFAULT: themed("cleaner-safe"),
+          surface: themed("cleaner-safe-surface"),
+          border: themed("cleaner-safe-border"),
+          text: themed("cleaner-safe-text"),
+          icon: themed("cleaner-safe-icon"),
+          contrast: themed("cleaner-safe-contrast"),
+        },
+        danger: {
+          DEFAULT: themed("cleaner-danger"),
+          surface: themed("cleaner-danger-surface"),
+          border: themed("cleaner-danger-border"),
+          text: themed("cleaner-danger-text"),
+          icon: themed("cleaner-danger-icon"),
+          contrast: themed("cleaner-danger-contrast"),
+        },
         gray: {
           DEFAULT: themed("muted-foreground"),
           100: themed("card"),

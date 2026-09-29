@@ -9,6 +9,12 @@ import {
 } from "./store";
 
 const schema: Schema<CliStoreSchema> = {
+  scanDirectories: {
+    type: "array",
+    default: [],
+    maxItems: 20,
+    items: { type: "string", maxLength: 1024 },
+  },
   schemaVersion: { type: "number", enum: [1, 2], default: 2 },
   inventory: {
     type: ["object", "null"],
@@ -61,6 +67,7 @@ export class ElectronCliPersistence implements CliPersistence {
   read(): CliStoreSchema {
     return migrateCliStore({
       schemaVersion: this.store.get("schemaVersion"),
+      scanDirectories: this.store.get("scanDirectories"),
       inventory: structuredClone(this.store.get("inventory")),
       lastScanStartedAt: this.store.get("lastScanStartedAt"),
       lastCompletedScanAt: this.store.get("lastCompletedScanAt"),

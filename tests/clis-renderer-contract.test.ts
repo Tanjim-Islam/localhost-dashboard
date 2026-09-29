@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   filterCliProducts,
   getVisibleCliInstallations,
@@ -9,6 +11,8 @@ import {
 } from "../src/renderer/cli-view-model";
 import { FixtureCliProvider } from "../src/main/clis/fixture";
 import { CliCancellationToken } from "../src/main/clis/session";
+import { InstallationPanel } from "../src/renderer/components/clis/CliProductRow";
+import type {} from "../src/types/preload";
 
 test("renderer view model summarizes and searches products, commands, package IDs, and paths", async () => {
   const provider = new FixtureCliProvider(
@@ -138,6 +142,74 @@ test("renderer keeps embedded tools out of installed state and includes them in 
   );
 });
 
+test("installation cards show source and health without repeated cache or unknown badges", async () => {
+  const provider = new FixtureCliProvider(
+    path.join(process.cwd(), ".tmp-tests", "clis-renderer-labels-fixture"),
+    "win32",
+    "x64",
+    () => 1_750_000_000_000,
+  );
+  const inventory = await provider.scan({
+    previous: null,
+    cancellation: new CliCancellationToken(),
+    scanSessionId: "scan-labels",
+    onProgress: () => undefined,
+  });
+  const installation = inventory.installations.find(
+    (item) => item.packageIdentity?.source === "npm",
+  );
+  assert(installation);
+  const render = () =>
+    renderToStaticMarkup(
+      createElement(InstallationPanel, {
+        inventory,
+        installation,
+        busy: false,
+        onVerify: () => undefined,
+        onReveal: () => undefined,
+        onUninstall: () => undefined,
+      }),
+    );
+  const text = (markup: string) => markup.replace(/<[^>]*>/g, " ");
+  assert.match(text(render()), /npm/);
+  assert.match(
+    render(),
+    /title="Version reported by the installed npm package\."/,
+  );
+  assert.doesNotMatch(
+    text(render()),
+    /package metadata|cached|unknown|verified\s+verified/i,
+  );
+
+  installation.packageIdentity = undefined;
+  installation.scope = "unknown";
+  installation.origin = "unknown";
+  installation.versionSource = "cached";
+  installation.verificationStatus = "cached";
+  installation.uninstallCapability = {
+    ...installation.uninstallCapability,
+    status: "blocked",
+    reasonCode: "standalone-binary",
+    reason: "No package manager was identified for this executable.",
+  };
+  assert.match(text(render()), /Detected executable/);
+  assert.doesNotMatch(
+    text(render()),
+    /Uninstall|manual.only|blocked|Last seen|Last verified/i,
+  );
+  assert.equal((text(render()).match(/Checked/g) ?? []).length, 1);
+  assert.doesNotMatch(text(render()), /cached|unknown|unproven|not proven/i);
+  assert.match(render(), /title="Version saved from an earlier scan\."/);
+
+  installation.origin = "sdk-bundled";
+  for (const endpoint of inventory.endpoints) {
+    if (installation.endpointIds.includes(endpoint.id))
+      endpoint.bundledWith = "strawberry-perl";
+  }
+  assert.match(text(render()), /Bundled with Strawberry Perl/);
+  assert.doesNotMatch(text(render()), /Standalone|unknown|cached/i);
+});
+
 test("tab, preload, and modal contracts expose no raw destructive input", async () => {
   const [app, preload, types, tab, row, dialog] = await Promise.all([
     readFile(path.join(process.cwd(), "src/renderer/App.tsx"), "utf8"),
@@ -174,7 +246,7 @@ test("tab, preload, and modal contracts expose no raw destructive input", async 
     /path|arguments|manager/i,
   );
   assert.match(tab, /Nothing is scanned automatically/);
-  assert.match(tab, /Embedded tools/);
+  assert.match(tab, /Bundled tools/);
   assert.match(tab, /Multiple installs/);
   assert.match(tab, /const DEFAULT_FILTERS:[\s\S]*?presence: "installed"/);
   assert.doesNotMatch(tab, /label="Missing"|value: "removed"/);
@@ -188,7 +260,6 @@ test("tab, preload, and modal contracts expose no raw destructive input", async 
   assert.match(row, /copyWithFeedback/);
   assert.match(row, /confirmed=\{copiedKey === "command"\}/);
   assert.match(row, /confirmed=\{copiedKey === "primary-path"\}/);
-  assert.match(row, /VerificationPill/);
   assert.match(row, /Runtime only, no SDK/);
   assert.doesNotMatch(row, /removedCount|current installations/);
   assert.doesNotMatch(row, /installation\.issueCodes\.map/);

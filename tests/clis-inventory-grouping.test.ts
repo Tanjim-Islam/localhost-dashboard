@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -61,6 +61,102 @@ test("npm package metadata groups cmd, PowerShell, and extensionless launchers",
     assert.equal(installation.version, "0.145.0");
     assert.equal(installation.versionSource, "package-metadata");
     assert.equal(installation.uninstallCapability.status, "supported");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("npm launchers under an nvm directory junction join the real package installation", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "clis-nvm-junction-"));
+  try {
+    const fixture = await createNpmFixture({
+      root: path.join(root, "nvm", "v24.19.0"),
+      packageId: "@anthropic-ai/claude-code",
+      commandName: "claude",
+      relativeTarget: "bin/claude.exe",
+      version: "2.1.260",
+    });
+    const alias = path.join(root, "nodejs");
+    await symlink(fixture.globalRoot, alias, "junction");
+    const inventory = await buildInventory({
+      environment: environment(root, alias),
+      directories: [alias],
+      packages: [fixture.packageRecord],
+    });
+    const product = requireProduct(inventory, "claude-code");
+    assert.equal(product.currentInstallationIds.length, 1);
+    const installation = requireInstallation(
+      inventory,
+      product.currentInstallationIds[0],
+    );
+    assert.equal(installation.packageIdentity?.source, "npm");
+    assert.equal(installation.endpointIds.length, 3);
+    assert.equal(installation.health, "healthy");
+    assert.equal(installation.uninstallCapability.status, "supported");
+    assert(inventory.endpoints.every((item) => item.path.startsWith(alias)));
+    assert(
+      inventory.endpoints.every(
+        (item) =>
+          item.shimPackageRoot ===
+          fixture.packageRecord.packageIdentity.installRoot,
+      ),
+    );
+    assert.equal(inventory.commands[0].pathRole, "active");
+    assert(!product.issueCodes.includes("path-conflict"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Ninja is bundled only when the adjacent Strawberry Perl distribution is verified", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "clis-strawberry-"));
+  try {
+    // A folder name alone must not identify the distributor.
+    const distribution = path.join(root, "Strawberry");
+    const bin = path.join(distribution, "c", "bin");
+    await mkdir(bin, { recursive: true });
+    await writeFile(path.join(bin, "ninja.exe"), "fixture");
+    const scan = () =>
+      buildInventory({
+        environment: environment(root, bin),
+        directories: [bin],
+        packages: [],
+      });
+    assert.equal(
+      requireProduct(await scan(), "ninja").currentInstallationIds.length,
+      1,
+    );
+    await writeFile(
+      path.join(distribution, "README.txt"),
+      "=== Strawberry Perl (64-bit) 5.42.0.1-64bit README ===\n",
+    );
+    assert.equal(
+      requireProduct(await scan(), "ninja").currentInstallationIds.length,
+      1,
+    );
+    await mkdir(path.join(distribution, "perl", "bin"), { recursive: true });
+    await writeFile(
+      path.join(distribution, "perl", "bin", "perl.exe"),
+      "fixture",
+    );
+    const inventory = await scan();
+    const product = requireProduct(inventory, "ninja");
+    assert.equal(product.currentInstallationIds.length, 0);
+    assert.equal(product.embeddedInstallationIds.length, 1);
+    const installation = requireInstallation(
+      inventory,
+      product.embeddedInstallationIds[0],
+    );
+    assert.equal(installation.origin, "sdk-bundled");
+    assert.equal(installation.health, "healthy");
+    assert.equal(installation.uninstallCapability.reasonCode, "embedded-tool");
+    const restored = normalizeCliInventory(inventory);
+    assert(restored);
+    assert.equal(
+      requireProduct(restored, "ninja").embeddedInstallationIds.length,
+      1,
+    );
+    assert.equal(restored.endpoints[0].bundledWith, "strawberry-perl");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -8,7 +8,6 @@ import {
   ExternalLink,
   FolderOpen,
   RefreshCw,
-  ShieldAlert,
   TerminalSquare,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -19,15 +18,21 @@ import type {
   CliProduct,
   CliProductStatus,
   CliRuntimeHealth,
-  CliVerificationStatus,
 } from "../../../main/clis/types";
 import {
   CLI_CATEGORY_LABELS,
-  CLI_SOURCE_LABELS,
   formatCliAge,
+  formatCliInstallationDetails,
+  formatCliInstallationSource,
+  formatCliVersionDescription,
   getVisibleCliInstallations,
+  getPrimaryCliCommand,
+  isNewCliProduct,
+  formatCliHealth,
+  isCliCommandVerified,
   type CliFilters,
 } from "../../cli-view-model";
+import { getCliInvocation, type CliShell } from "../../cli-invocation";
 
 export function CliProductRow({
   inventory,
@@ -39,16 +44,22 @@ export function CliProductRow({
   onVerify,
   onReveal,
   onUninstall,
+  now = Date.now(),
+  onSetIncluded,
+  shell,
 }: {
   inventory: CliInventorySnapshot;
   product: CliProduct;
   presence: CliFilters["presence"];
   expanded: boolean;
   busyInstallationId?: string;
+  now?: number;
   onToggle(): void;
   onVerify(installation: CliInstallation): void;
   onReveal(installation: CliInstallation): void;
   onUninstall(installation: CliInstallation, trigger: HTMLButtonElement): void;
+  onSetIncluded?(installation: CliInstallation, included: boolean): void;
+  shell?: CliShell;
 }) {
   const installations = getVisibleCliInstallations(
     inventory,
@@ -66,10 +77,11 @@ export function CliProductRow({
     installations.find((installation) => installation.presence === "present") ??
     installations[0];
   const activeCommand = primary
-    ? inventory.commands.find(
-        (command) =>
-          command.installationId === primary.id &&
-          command.pathRole === "active",
+    ? getPrimaryCliCommand(
+        product,
+        inventory.commands.filter(
+          (command) => command.installationId === primary.id,
+        ),
       )
     : undefined;
   const activeEndpoint = primary
@@ -82,13 +94,28 @@ export function CliProductRow({
         primary.endpointIds.includes(endpoint.id),
       ))
     : undefined;
-  const source = primary?.packageIdentity?.source ?? "standalone";
+  const sourceLabel = primary
+    ? formatCliInstallationSource(
+        primary,
+        inventory.endpoints.filter((endpoint) =>
+          primary.endpointIds.includes(endpoint.id),
+        ),
+      )
+    : "Source not identified";
   const currentCount = product.currentInstallationIds.length;
+  const displayedHealth =
+    currentCount === 0 && primary ? primary.health : product.health;
   const productHealthLabel =
     product.id === "dotnet" &&
     product.issueCodes.includes("incomplete-installation")
       ? "Runtime only, no SDK"
-      : undefined;
+      : presence === "candidates"
+        ? "Discovered"
+        : displayedHealth === "healthy"
+          ? installations.every((item) => isCliCommandVerified(item, inventory))
+            ? "Verified"
+            : "Installed"
+          : undefined;
 
   return (
     <article className="app-card overflow-hidden border border-gray-300 bg-gray-100/90 shadow-soft">
@@ -106,7 +133,16 @@ export function CliProductRow({
             <span className="font-semibold text-gray-900">
               {product.displayName}
             </span>
-            <StatusPill status={product.health} label={productHealthLabel} />
+            {presence !== "candidates" &&
+              isNewCliProduct(inventory, product, now) && (
+                <span
+                  className="rounded-full border border-cleaner-review-border bg-cleaner-review-surface px-2 py-0.5 text-[10px] font-semibold text-cleaner-review-text"
+                  title="First discovered in the last 24 hours"
+                >
+                  New
+                </span>
+              )}
+            <StatusPill status={displayedHealth} label={productHealthLabel} />
             {currentCount > 1 && (
               <span
                 className="rounded-full border border-gray-300 bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-700"
@@ -118,15 +154,12 @@ export function CliProductRow({
           </span>
           <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
             <span>{CLI_CATEGORY_LABELS[product.category]}</span>
-            <span>{primary?.version ?? "Version unknown"}</span>
-            <span>{CLI_SOURCE_LABELS[source]}</span>
+            {primary?.version && <span>{primary.version}</span>}
+            <span>{sourceLabel}</span>
             <span className="min-w-0 max-w-[48vw] truncate font-mono">
               {activeEndpoint?.path ?? "No active PATH endpoint"}
             </span>
           </span>
-        </span>
-        <span className="shrink-0 text-xs text-gray-600">
-          {formatCliAge(primary?.lastSuccessfulVerificationAt)}
         </span>
         {expanded ? (
           <ChevronDown className="h-4 w-4 shrink-0" />
@@ -147,6 +180,12 @@ export function CliProductRow({
                 onVerify={() => onVerify(installation)}
                 onReveal={() => onReveal(installation)}
                 onUninstall={(trigger) => onUninstall(installation, trigger)}
+                onSetIncluded={
+                  onSetIncluded
+                    ? (included) => onSetIncluded(installation, included)
+                    : undefined
+                }
+                shell={shell}
               />
             ))}
           </div>
@@ -163,6 +202,8 @@ export function InstallationPanel({
   onVerify,
   onReveal,
   onUninstall,
+  onSetIncluded,
+  shell = inventory.platform === "win32" ? "powershell" : "posix",
 }: {
   inventory: CliInventorySnapshot;
   installation: CliInstallation;
@@ -170,6 +211,8 @@ export function InstallationPanel({
   onVerify(): void;
   onReveal(): void;
   onUninstall(trigger: HTMLButtonElement): void;
+  onSetIncluded?(included: boolean): void;
+  shell?: CliShell;
 }) {
   const endpoints = inventory.endpoints.filter((endpoint) =>
     installation.endpointIds.includes(endpoint.id),
@@ -204,14 +247,15 @@ export function InstallationPanel({
     installation.productId === "dotnet" &&
     installation.issueCodes.includes("incomplete-installation")
       ? "Runtime only, no SDK"
-      : undefined;
-  const commandText = commands.map((command) => command.name).join(", ");
+      : formatCliHealth(installation, inventory);
+  const commandText = getCliInvocation(inventory, installation, shell);
   const primaryPath = endpoints[0]?.path;
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const copyResetTimer = useRef<number | null>(null);
   const canUninstall = ["supported", "requires-warning"].includes(
     installation.uninstallCapability.status,
   );
+  const [showAllCommands, setShowAllCommands] = useState(false);
 
   useEffect(
     () => () => {
@@ -245,38 +289,58 @@ export function InstallationPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <strong>{installation.version ?? "Unknown version"}</strong>
-            <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700">
-              {installation.versionSource.replaceAll("-", " ")}
-            </span>
+            <strong title={formatCliVersionDescription(installation)}>
+              {installation.version ?? commands[0]?.name ?? "Installed tool"}
+            </strong>
             <StatusPill
               status={installation.health}
-              label={installationHealthLabel}
+              label={
+                installationHealthLabel ??
+                (installation.health === "unknown" && endpoints.length === 0
+                  ? "No launcher found"
+                  : undefined)
+              }
             />
-            <VerificationPill status={installation.verificationStatus} />
           </div>
           <p className="mt-1 break-all text-xs text-gray-700">
             <strong>
-              {CLI_SOURCE_LABELS[identity?.source ?? "standalone"]}
+              {formatCliInstallationSource(installation, endpoints)}
             </strong>
-            {identity?.packageId
-              ? ` · ${identity.packageId}`
-              : " · Package owner not proven"}
+            {identity?.packageId ? ` · ${identity.packageId}` : null}
           </p>
           <p className="mt-0.5 text-[11px] text-gray-600">
-            {installation.platform} · {installation.architecture} ·{" "}
-            {installation.scope} scope · {formatOrigin(installation.origin)}
+            {formatCliInstallationDetails(installation)}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           <SmallButton
             label="Copy command"
+            title={commandText ?? "No launcher is available for this terminal."}
             icon={<Clipboard className="h-3.5 w-3.5" />}
-            onClick={() => copyWithFeedback("command", commandText)}
+            onClick={() =>
+              commandText && copyWithFeedback("command", commandText)
+            }
             disabled={!commandText}
             confirmable
             confirmed={copiedKey === "command"}
           />
+          {onSetIncluded &&
+            ["candidate", "user"].includes(
+              installation.discoveryKind ?? "",
+            ) && (
+              <SmallButton
+                label={
+                  installation.includedByUser
+                    ? "Remove from CLI list"
+                    : "Add to CLI list"
+                }
+                icon={<Check className="h-3.5 w-3.5" />}
+                onClick={() => onSetIncluded(!installation.includedByUser)}
+                disabled={
+                  busy || (!installation.includedByUser && !commandText)
+                }
+              />
+            )}
           {primaryPath && (
             <SmallButton
               label="Copy path"
@@ -293,7 +357,7 @@ export function InstallationPanel({
             disabled={!endpoints[0]}
           />
           <SmallButton
-            label={busy ? "Verifying" : "Verify"}
+            label={busy ? "Checking" : "Check again"}
             icon={
               <RefreshCw
                 className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`}
@@ -302,31 +366,46 @@ export function InstallationPanel({
             onClick={onVerify}
             disabled={busy}
           />
-          <button
-            type="button"
-            onClick={(event) => onUninstall(event.currentTarget)}
-            disabled={!canUninstall || busy}
-            title={
-              canUninstall
-                ? "Preview exact uninstall"
-                : installation.uninstallCapability.reason
-            }
-            className="h-8 rounded-lg border border-cleaner-danger-border bg-cleaner-danger-surface px-2.5 text-xs font-medium text-cleaner-danger-text outline-none transition hover:brightness-105 focus-visible:ring-2 focus-visible:ring-cleaner-danger-border disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            Uninstall
-          </button>
+          {canUninstall && (
+            <button
+              type="button"
+              onClick={(event) => onUninstall(event.currentTarget)}
+              disabled={!canUninstall || busy}
+              title={
+                canUninstall
+                  ? "Preview exact uninstall"
+                  : installation.uninstallCapability.reason
+              }
+              className="h-8 rounded-lg border border-cleaner-danger-border bg-cleaner-danger-surface px-2.5 text-xs font-medium text-cleaner-danger-text outline-none transition hover:brightness-105 focus-visible:ring-2 focus-visible:ring-cleaner-danger-border disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Uninstall
+            </button>
+          )}
         </div>
       </div>
 
       <dl className="mt-3 grid gap-x-5 gap-y-2 text-xs sm:grid-cols-2">
-        <Detail
-          label="Commands"
-          value={
-            commands
-              .map((command) => `${command.name} (${command.pathRole})`)
-              .join(", ") || "None"
-          }
-        />
+        <div className="min-w-0">
+          <Detail
+            label="Commands"
+            value={
+              (showAllCommands ? commands : commands.slice(0, 8))
+                .map((command) => command.name)
+                .join(", ") || "None"
+            }
+          />
+          {commands.length > 8 && (
+            <button
+              type="button"
+              className="mt-1 font-medium text-gray-800 underline"
+              onClick={() => setShowAllCommands((value) => !value)}
+            >
+              {showAllCommands
+                ? "Show fewer commands"
+                : `Show all ${commands.length} commands`}
+            </button>
+          )}
+        </div>
         <Detail
           label="PATH position"
           value={pathPosition(commands, endpoints)}
@@ -348,12 +427,10 @@ export function InstallationPanel({
           />
         )}
         <Detail
-          label="Last seen"
-          value={formatCliAge(installation.lastSeenAt)}
-        />
-        <Detail
-          label="Last verified"
-          value={formatCliAge(installation.lastSuccessfulVerificationAt)}
+          label="Checked"
+          value={formatCliAge(
+            installation.lastVerifiedAt ?? installation.lastSeenAt,
+          )}
         />
       </dl>
 
@@ -369,17 +446,6 @@ export function InstallationPanel({
             </span>
           ))}
         </div>
-      )}
-      {!canUninstall && (
-        <p className="mt-3 flex items-start gap-2 text-xs text-gray-600">
-          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            <strong className="text-gray-800">
-              {installation.uninstallCapability.status.replaceAll("-", " ")}:
-            </strong>{" "}
-            {installation.uninstallCapability.reason}
-          </span>
-        </p>
       )}
     </section>
   );
@@ -414,29 +480,6 @@ function StatusPill({
       className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${classes}`}
     >
       {label ?? capitalizeStatus(status)}
-    </span>
-  );
-}
-
-function VerificationPill({ status }: { status: CliVerificationStatus }) {
-  const label = {
-    verified: "Verified",
-    "partially-verified": "Partially verified",
-    "ownership-unknown": "Ownership unverified",
-    "version-unverified": "Version unverified",
-    cached: "Cached",
-  }[status];
-  const classes =
-    status === "verified"
-      ? "border-cleaner-safe-border bg-cleaner-safe-surface text-cleaner-safe-text"
-      : status === "cached"
-        ? "border-gray-300 bg-gray-200 text-gray-700"
-        : "border-cleaner-review-border bg-cleaner-review-surface text-cleaner-review-text";
-  return (
-    <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${classes}`}
-    >
-      {label}
     </span>
   );
 }
@@ -483,6 +526,7 @@ function CopyablePathsDetail({
   onCopy(key: string, value: string): void;
 }) {
   const reduceMotion = useReducedMotion();
+  const [showAll, setShowAll] = useState(false);
 
   return (
     <div className="min-w-0">
@@ -493,7 +537,7 @@ function CopyablePathsDetail({
         {paths.length === 0 ? (
           <span className="text-gray-900">Missing</span>
         ) : (
-          paths.map((pathValue, index) => {
+          (showAll ? paths : paths.slice(0, 3)).map((pathValue, index) => {
             const pathKey = `${pathKind}:${index}:${pathValue}`;
             const copied = copiedKey === pathKey;
             return (
@@ -544,6 +588,15 @@ function CopyablePathsDetail({
             );
           })
         )}
+        {paths.length > 3 && (
+          <button
+            type="button"
+            className="pt-1 font-medium text-gray-800 underline"
+            onClick={() => setShowAll((value) => !value)}
+          >
+            {showAll ? "Show fewer paths" : `Show all ${paths.length} paths`}
+          </button>
+        )}
       </dd>
     </div>
   );
@@ -556,6 +609,7 @@ function SmallButton({
   disabled,
   confirmable = false,
   confirmed = false,
+  title,
 }: {
   label: string;
   icon: React.ReactNode;
@@ -563,6 +617,7 @@ function SmallButton({
   disabled?: boolean;
   confirmable?: boolean;
   confirmed?: boolean;
+  title?: string;
 }) {
   const reduceMotion = useReducedMotion();
 
@@ -571,6 +626,7 @@ function SmallButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={`inline-flex h-8 items-center justify-center rounded-lg border px-2.5 text-xs font-medium outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-night-700/25 disabled:opacity-45 motion-reduce:transition-none ${
         confirmable ? "min-w-[7.25rem]" : ""
       } ${
@@ -635,6 +691,7 @@ const ACTIONABLE_ISSUES = new Set<CliIssueCode>([
 ]);
 
 function capitalizeStatus(status: string): string {
+  if (status === "unknown" || status === "unverified") return "Not checked";
   return `${status.charAt(0).toUpperCase()}${status.slice(1)}`;
 }
 
@@ -643,15 +700,4 @@ function samePath(left: string, right: string): boolean {
     left.replaceAll("/", "\\").toLowerCase() ===
     right.replaceAll("/", "\\").toLowerCase()
   );
-}
-
-function formatOrigin(origin: CliInstallation["origin"]): string {
-  return {
-    user: "User installation",
-    system: "System installation",
-    "package-manager": "Package-managed",
-    "application-embedded": "Application embedded",
-    "sdk-bundled": "SDK bundled",
-    unknown: "Origin unknown",
-  }[origin];
 }

@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { getCliDefinition } from "./catalogue";
 import { access, stat } from "node:fs/promises";
-import { createPathSnapshot, enumerateCliPathEndpoints } from "./adapters/path";
+import {
+  createPathSnapshot,
+  enumerateCliPathEndpoints,
+  collectPackageEndpoints,
+} from "./adapters/path";
 import {
   collectWindowsEvidence,
   getWindowsKnownDirectories,
@@ -28,6 +33,16 @@ import type {
   CliSourceResult,
 } from "./types";
 import { probeVersions } from "./version-probes";
+import {
+  collectPythonEntryPoints,
+  collectUvToolReceipts,
+} from "./adapters/python-metadata";
+import {
+  attributeDiscoveredFiles,
+  collectShimPackageMetadata,
+  discoverVersionedBinDirectories,
+  discoverAdditionalDirectories,
+} from "./adapters/discovered-files";
 
 const SCAN_SOURCE_COUNT = 6;
 
@@ -56,6 +71,7 @@ export class CliScanner {
     cancellation: CliCancellationToken;
     scanSessionId: string;
     onProgress: (progress: CliScanProgress) => void;
+    verificationInstallationId?: string;
   }): Promise<CliInventorySnapshot> {
     if (this.options.fixtureProvider) {
       return this.options.fixtureProvider.scan({
@@ -110,12 +126,18 @@ export class CliScanner {
 
     emit("enumerating-path", "Enumerating PATH directories", 1);
     const pathStartedAt = this.options.clock.now();
+    const additional = await discoverAdditionalDirectories(
+      environment.knownDirectories,
+      input.cancellation,
+    );
     const pathSnapshot = createPathSnapshot({
       platform: environment.platform,
       pathValue: environment.pathValue,
       pathExtValue: environment.pathExtValue,
       extraDirectories: [
         ...knownDirectories,
+        ...additional.directories,
+        ...(await discoverVersionedBinDirectories(environment)),
         ...(osEvidence.extraPathDirectories ?? []),
       ],
     });
@@ -124,6 +146,7 @@ export class CliScanner {
       snapshot: pathSnapshot,
       cancellation: input.cancellation,
       concurrency: 8,
+      systemRoot: environment.env.SystemRoot ?? environment.env.WINDIR,
     });
     const sourceResults: CliSourceResult[] = [
       ...osEvidence.sourceResults,
@@ -140,6 +163,22 @@ export class CliScanner {
       },
     ];
     const endpointsByProduct = indexEndpoints(pathRecords);
+    if (environment.knownDirectories.length)
+      sourceResults.push({
+        sourceId: "additional-folders",
+        label: "Added scan folders",
+        status: additional.incomplete ? "failed" : "success",
+        startedAt: pathStartedAt,
+        finishedAt: this.options.clock.now(),
+        recordCount: additional.directories.length,
+        ...(additional.incomplete
+          ? {
+              errorCode: "SCAN_COVERAGE_LIMIT",
+              message:
+                "Some subfolders could not be read or exceeded the scan limits. Add a more specific tool folder to include them.",
+            }
+          : {}),
+      });
     input.cancellation.throwIfCancelled();
 
     emit("reading-package-sources", "Reading package sources", 2);
@@ -203,6 +242,56 @@ export class CliScanner {
       ...toolInventory.packageRecords,
       ...platformInventory.packageRecords,
     ];
+    const passiveStartedAt = this.options.clock.now();
+    const shimPackages = await collectShimPackageMetadata(
+      pathRecords,
+      environment,
+      packageRecords,
+      input.cancellation.signal,
+    );
+    packageRecords.push(...shimPackages);
+    const pythonPackages = await collectPythonEntryPoints({
+      records: pathRecords,
+      environment,
+      signal: input.cancellation.signal,
+      now: () => this.options.clock.now(),
+    });
+    packageRecords.push(...pythonPackages.packageRecords);
+    sourceResults.push(...pythonPackages.sourceResults);
+    const uvTools = await collectUvToolReceipts({
+      records: pathRecords,
+      environment,
+      signal: input.cancellation.signal,
+      now: () => this.options.clock.now(),
+    });
+    packageRecords.push(...uvTools.packageRecords);
+    sourceResults.push(...uvTools.sourceResults);
+    pathRecords.push(
+      ...(await collectPackageEndpoints({
+        platform: environment.platform,
+        packageRecords,
+        pathRecords,
+        cancellation: input.cancellation,
+      })),
+    );
+    sourceResults.push({
+      sourceId: "node-shim-metadata",
+      label: "Node.js launcher packages",
+      status: "success",
+      startedAt: passiveStartedAt,
+      finishedAt: this.options.clock.now(),
+      recordCount: shimPackages.length,
+    });
+    const fileDetails = await attributeDiscoveredFiles({
+      records: pathRecords,
+      environment,
+      applicationRoots: osEvidence.applicationRoots ?? [],
+      runner: this.options.runner,
+      signal: input.cancellation.signal,
+      now: () => this.options.clock.now(),
+    });
+    sourceResults.push(...fileDetails.sourceResults);
+    packageRecords.push(...fileDetails.packageRecords);
     input.cancellation.throwIfCancelled();
 
     emit("matching-installations", "Matching installations", 5);
@@ -232,8 +321,9 @@ export class CliScanner {
     const needsProbe = assembled.installations.filter(
       (installation) =>
         installation.presence === "present" &&
-        !installation.version &&
-        installation.issueCodes.includes("version-unverified"),
+        (!installation.version ||
+          installation.id === input.verificationInstallationId) &&
+        Boolean(getCliDefinition(installation.productId)?.versionProbe),
     );
     emit(
       "checking-versions",
@@ -259,6 +349,8 @@ export class CliScanner {
           completed,
           needsProbe.length,
         ),
+      verificationInstallationId: input.verificationInstallationId,
+      now: () => this.options.clock.now(),
     });
     input.cancellation.throwIfCancelled();
 
@@ -308,7 +400,10 @@ export class CliScanner {
       (candidate) => candidate.id === installationId,
     );
     if (!installation || installation.presence !== "present") {
-      return { current: false, reason: "The installation is no longer present." };
+      return {
+        current: false,
+        reason: "The installation is no longer present.",
+      };
     }
     const endpoints = snapshot.endpoints.filter((endpoint) =>
       installation.endpointIds.includes(endpoint.id),
@@ -342,7 +437,10 @@ export class CliScanner {
       try {
         await access(identity.managerExecutablePath);
       } catch {
-        return { current: false, reason: "The package manager is unavailable." };
+        return {
+          current: false,
+          reason: "The package manager is unavailable.",
+        };
       }
     }
     if (identity?.managerCommandPath) {

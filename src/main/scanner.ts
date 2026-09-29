@@ -22,6 +22,7 @@ export type ServerInfo = {
   command?: string;
   path?: string;
   cwd?: string; // Current working directory of the process
+  processStarted?: string;
   firstSeen: number;
   lastSeen: number;
   url: string;
@@ -155,6 +156,15 @@ export class Scanner extends EventEmitter {
   private timer?: NodeJS.Timeout;
   private items = new Map<string, ServerInfo>();
   private lastSnapshot = new Set<string>();
+  private inFlight?: Promise<void>;
+
+  removePids(pids: number[]): void {
+    const removed = new Set(pids);
+    for (const [key, item] of this.items) {
+      if (removed.has(item.pid)) this.items.delete(key);
+    }
+    this.emit("update", this.getItems().sort((a, b) => a.port - b.port));
+  }
 
   getAllPids(): number[] {
     return Array.from(
@@ -178,7 +188,19 @@ export class Scanner extends EventEmitter {
     this.timer = undefined;
   }
 
-  async scan() {
+  scan(): Promise<void> {
+    if (this.inFlight) return this.inFlight;
+    this.inFlight = this.scanOnce().finally(() => { this.inFlight = undefined; });
+    return this.inFlight;
+  }
+
+  async scanFresh(): Promise<void> {
+    // A restart must not reuse a scan that captured listeners before relaunch.
+    if (this.inFlight) await this.inFlight;
+    await this.scan();
+  }
+
+  private async scanOnce() {
     try {
       const now = Date.now();
       const listening = await getListening();
@@ -237,6 +259,14 @@ export class Scanner extends EventEmitter {
       for (const rec of this.items.values()) {
         const p = byPid.get(rec.pid);
         if (p) {
+          if (rec.processStarted && rec.processStarted !== p.started &&
+              Math.abs(new Date(rec.processStarted).getTime() - new Date(p.started).getTime()) > 2000) {
+            rec.firstSeen = now;
+            rec.cwd = undefined;
+            rec.cpuHistory = [];
+            rec.memoryHistory = [];
+          }
+          rec.processStarted = p.started;
           rec.processName = p.name;
           rec.command = p.command;
           rec.path = p.path;

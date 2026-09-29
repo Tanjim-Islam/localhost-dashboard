@@ -1,6 +1,7 @@
 import React from "react";
 import cx from "classnames";
 import dayjs from "dayjs";
+import { RotateCw } from "lucide-react";
 
 type ButtonState = "idle" | "active" | "done";
 
@@ -44,12 +45,18 @@ export default function ServerCard({
   note,
   onNoteChange,
   onOptimisticKill,
+  onRestart,
+  restartBusy,
+  restarting,
 }: {
   item: any;
   health?: HealthStatus;
   note?: string;
   onNoteChange?: (port: number, note: string) => void;
   onOptimisticKill?: (key: string) => void;
+  onRestart?: () => void;
+  restartBusy?: boolean;
+  restarting?: boolean;
 }) {
   const uptime = dayjs(item.lastSeen).from(item.firstSeen, true);
   const cpu = item.cpu ? `${item.cpu.toFixed(1)}%` : "—";
@@ -58,11 +65,11 @@ export default function ServerCard({
 
   const healthColor =
     health?.status === "healthy"
-      ? "bg-celadon-400"
+      ? "bg-success"
       : health?.status === "slow"
       ? "bg-yellow-400"
       : health?.status === "down"
-      ? "bg-mimi_pink-400"
+      ? "bg-danger"
       : "bg-gray-400";
   const responseTimeText =
     health?.responseTime !== undefined ? `${health.responseTime}ms` : null;
@@ -104,7 +111,7 @@ export default function ServerCard({
   };
 
   const kill = () => {
-    if (exiting) return;
+    if (exiting || restartBusy) return;
     const rect = ref.current?.getBoundingClientRect();
     const centerX = (rect?.left ?? 0) + (rect?.width ?? 0) / 2;
     const dir = centerX < window.innerWidth / 2 ? "left" : "right";
@@ -161,10 +168,10 @@ export default function ServerCard({
               className={cx(
                 "text-xs px-1.5 py-0.5 rounded-md",
                 health?.status === "healthy" &&
-                  "text-celadon-700 bg-celadon-400/20",
+                  "text-success-text bg-success-surface",
                 health?.status === "slow" && "text-yellow-700 bg-yellow-400/20",
                 health?.status === "down" &&
-                  "text-mimi_pink-200 bg-mimi_pink-400/20"
+                  "text-danger-text bg-danger-surface"
               )}
             >
               {responseTimeText}
@@ -273,7 +280,7 @@ export default function ServerCard({
               openState === "idle" &&
                 "bg-night-700 text-night-100 hover:-translate-y-0.5 hover:bg-night-800 active:translate-y-0",
               openState === "active" && "bg-night-800 text-night-100",
-              openState === "done" && "bg-night-600 text-night-100",
+              openState === "done" && "bg-success text-success-contrast",
             )}
           >
             <span className="flex items-center gap-1.5">
@@ -315,7 +322,7 @@ export default function ServerCard({
               copyState === "idle" &&
                 "bg-gray-200 text-gray-900 hover:-translate-y-0.5 hover:bg-gray-300 active:translate-y-0",
               copyState === "active" && "bg-gray-300 text-gray-900",
-              copyState === "done" && "bg-celadon-400 text-celadon-100",
+              copyState === "done" && "bg-success text-success-contrast",
             )}
           >
             <span className="flex items-center gap-1.5 min-w-[72px] justify-center">
@@ -343,12 +350,27 @@ export default function ServerCard({
               )}
             </span>
           </button>
+          {onRestart && (
+            <button
+              type="button"
+              onClick={onRestart}
+              disabled={restartBusy || !!exiting}
+              title="Stop and rerun this project using its original launch settings"
+              className="h-10 rounded-xl bg-gray-200 px-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-celadon-400/50 disabled:cursor-wait disabled:opacity-60"
+            >
+              <span className="flex items-center gap-1.5">
+                <RotateCw aria-hidden="true" className={cx("h-4 w-4", restarting && "animate-spin motion-reduce:animate-none")} />
+                {restarting ? "Restarting..." : "Restart"}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Kill Button */}
         <button
           type="button"
           onClick={kill}
+          disabled={restartBusy}
           className="h-10 min-w-[68px] rounded-xl bg-mimi_pink-300 px-4 text-sm font-medium text-mimi_pink-100 transition-all duration-200 hover:-translate-y-0.5 hover:bg-mimi_pink-300/85 hover:text-mimi_pink-100 active:translate-y-0 active:bg-mimi_pink-300 active:text-mimi_pink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mimi_pink-400/45 disabled:cursor-not-allowed disabled:bg-mimi_pink-300/55 disabled:text-mimi_pink-100 disabled:opacity-70"
         >
           Kill
@@ -388,7 +410,7 @@ function QuickActionButton({
         disabled
           ? "text-gray-400 cursor-not-allowed opacity-50"
           : "text-gray-600 hover:bg-gray-300/60 hover:text-gray-900 active:scale-90",
-        clicked && !disabled && "bg-celadon-400/30 text-celadon-700 scale-110"
+        clicked && !disabled && "bg-success-surface text-success-text scale-110"
       )}
     >
       {icon}

@@ -56,7 +56,7 @@ export default function TitleBar({
   };
   return (
     <div
-      className={`title-bar flex items-center h-12 bg-gray-100/95 text-gray-900 pr-3 border-b border-gray-300 select-none backdrop-blur-xl ${
+      className={`title-bar flex shrink-0 items-center h-12 bg-gray-100/95 text-gray-900 pr-3 border-b border-gray-300 select-none backdrop-blur-xl ${
         layout.rootPaddingClass
       }`}
       style={{ WebkitAppRegion: "drag" as any }}
@@ -161,7 +161,7 @@ function WinButtons() {
       </button>
       <button
         onClick={() => (window as any).windowControls?.close()}
-        className="w-8 h-8 rounded-full text-gray-700 hover:text-night-100 hover:bg-mimi_pink-400/80 transition-colors"
+        className="w-8 h-8 rounded-full text-gray-700 hover:text-danger-contrast hover:bg-danger transition-colors"
         style={{ WebkitAppRegion: "no-drag" as any }}
         aria-label="Close"
       >
