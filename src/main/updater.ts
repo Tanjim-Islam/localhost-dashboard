@@ -1,6 +1,6 @@
 /**
  * Auto-updater module for Localhost Dashboard
- * Uses electron-updater to check for and apply updates from GitHub Releases
+ * Uses Sparkle on macOS and electron-updater on Windows/Linux.
  */
 
 import {
@@ -8,9 +8,17 @@ import {
   type UpdateInfo,
   type ProgressInfo,
 } from "electron-updater";
-import { BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
+import type {
+  SparkleBridge,
+  SparkleBridgeEvent,
+} from "electron-sparkle-updater";
 
-// Disable auto-download - we want user control
+const MAC_FEED_URL =
+  "https://github.com/Tanjim-Islam/localhost-dashboard/releases/latest/download/appcast.xml";
+const isMac = process.platform === "darwin";
+
+// Keep the existing manual download flow on Windows and Linux.
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
@@ -30,6 +38,12 @@ export type UpdateStatus =
 
 let mainWindow: BrowserWindow | null = null;
 let currentStatus: UpdateStatus = { state: "idle" };
+let sparkleBridge: SparkleBridge | null = null;
+let sparkleReady: Promise<void> | null = null;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function sendStatusToRenderer() {
   mainWindow?.webContents.send("updater:status", currentStatus);
@@ -38,6 +52,67 @@ function sendStatusToRenderer() {
 function setStatus(status: UpdateStatus) {
   currentStatus = status;
   sendStatusToRenderer();
+}
+
+function handleSparkleEvent(event: SparkleBridgeEvent): void {
+  switch (event.type) {
+    case "checking":
+      setStatus({ state: "checking" });
+      break;
+    case "update-available":
+      // Sparkle's silent driver starts downloading immediately.
+      setStatus({ state: "downloading", percent: 0, transferred: 0, total: 0 });
+      break;
+    case "download-progress":
+      setStatus({
+        state: "downloading",
+        percent: event.percent ?? 0,
+        transferred: event.transferred ?? 0,
+        total: event.total ?? 0,
+      });
+      break;
+    case "update-downloaded":
+      sparkleBridge?.installUpdateOnQuit();
+      setStatus({
+        state: "downloaded",
+        version: event.version ?? app.getVersion(),
+      });
+      break;
+    case "update-not-available":
+      setStatus({ state: "not-available", version: app.getVersion() });
+      break;
+    case "error":
+      setStatus({
+        state: "error",
+        message: event.message ?? "Mac update failed",
+      });
+      break;
+  }
+}
+
+async function initSparkle(): Promise<void> {
+  try {
+    const { loadSparkleBridgeForApp } =
+      await import("electron-sparkle-updater");
+    const bridge = await loadSparkleBridgeForApp((message) =>
+      console.warn("[Sparkle]", message),
+    );
+    if (!bridge || !bridge.init({ appcastUrl: MAC_FEED_URL })) {
+      throw new Error("Sparkle is unavailable in this Mac app build");
+    }
+    sparkleBridge = bridge;
+    bridge.setEventHandler(handleSparkleEvent);
+    bridge.setAutomaticChecks(true);
+  } catch (error) {
+    setStatus({ state: "error", message: errorMessage(error) });
+  }
+}
+
+async function checkSparkle(): Promise<void> {
+  await sparkleReady;
+  if (!sparkleBridge)
+    throw new Error("Sparkle is unavailable in this Mac app build");
+  sparkleBridge.checkForUpdates();
 }
 
 const handleCheckingForUpdate = () => {
@@ -95,6 +170,16 @@ export function initUpdater(win: BrowserWindow, isPackaged: boolean = true) {
 
   // Only set up auto-updater events in packaged mode
   if (!isPackaged) return;
+
+  if (isMac) {
+    sparkleReady ??= initSparkle();
+    setTimeout(() => {
+      void checkSparkle().catch((error: unknown) =>
+        setStatus({ state: "error", message: errorMessage(error) }),
+      );
+    }, 5000);
+    return;
+  }
 
   // If an update flow is already in progress, avoid re-initializing listeners
   if (
@@ -158,7 +243,8 @@ function registerIpcHandlers(isPackaged: boolean) {
       return;
     }
     try {
-      await autoUpdater.checkForUpdates();
+      if (isMac) await checkSparkle();
+      else await autoUpdater.checkForUpdates();
     } catch (err: any) {
       setStatus({
         state: "error",
@@ -170,6 +256,7 @@ function registerIpcHandlers(isPackaged: boolean) {
   // IPC: Download update
   ipcMain.handle("updater:download", async () => {
     if (!isPackaged) return;
+    if (isMac) return; // Sparkle starts the download when it finds an update.
     try {
       await autoUpdater.downloadUpdate();
     } catch (err: any) {
@@ -189,7 +276,14 @@ function registerIpcHandlers(isPackaged: boolean) {
       };
     }
     try {
-      autoUpdater.quitAndInstall(false, true);
+      if (isMac) {
+        if (!sparkleBridge || currentStatus.state !== "downloaded") {
+          throw new Error("The Mac update is not ready to install");
+        }
+        sparkleBridge.installUpdateNow();
+      } else {
+        autoUpdater.quitAndInstall(false, true);
+      }
       return { success: true };
     } catch (err: any) {
       const message = err?.message || "Failed to install update";
@@ -197,7 +291,7 @@ function registerIpcHandlers(isPackaged: boolean) {
       autoUpdater.logger?.error?.(
         `quitAndInstall failed: ${message} ${
           err?.stack ? `| ${err.stack}` : ""
-        }`.trim()
+        }`.trim(),
       );
       return { success: false, error: message };
     }
@@ -213,5 +307,5 @@ function registerIpcHandlers(isPackaged: boolean) {
 }
 
 export function checkForUpdates() {
-  return autoUpdater.checkForUpdates();
+  return isMac ? checkSparkle() : autoUpdater.checkForUpdates();
 }

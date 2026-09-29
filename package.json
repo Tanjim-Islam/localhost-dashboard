@@ -1,6 +1,6 @@
 {
   "name": "local-dashboard",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "An Electron dashboard that discovers and manages local dev servers.",
   "type": "module",
   "main": "out/main/index.js",
@@ -13,8 +13,9 @@
   "scripts": {
     "dev": "node scripts/build-server-helper.mjs && node scripts/prepare-macos-dev-app.mjs && electron-vite dev",
     "build": "node scripts/build-server-helper.mjs && electron-vite build",
-    "package": "npm run build && electron-builder",
-    "publish": "npm run build && electron-builder --publish always",
+    "build:mac-sparkle-bridge": "node scripts/build-mac-sparkle-bridge.mjs",
+    "package:mac": "npm run build && npm run build:mac-sparkle-bridge && electron-builder --mac --universal --publish never",
+    "package": "node scripts/package-desktop.mjs",
     "test": "tsc -p tsconfig.test.json && node -e \"require('node:fs').writeFileSync('.tmp-tests/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\n')\" && node --test .tmp-tests/tests/*.test.js",
     "test:env-keys": "node --experimental-strip-types scripts/environment-variables.integration.mts",
     "lint": "eslint --ext .ts,.tsx src",
@@ -72,6 +73,7 @@
     "auto-launch": "^5.0.6",
     "classnames": "^2.5.1",
     "dayjs": "^1.11.19",
+    "electron-sparkle-updater": "0.5.2",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.6.2",
     "find-process": "^2.0.0",
@@ -91,9 +93,15 @@
       "out/**",
       "resources/**",
       "!resources/server-restart/**",
+      "!**/node_modules/electron-sparkle-updater/native/vendor/**",
+      "!**/node_modules/electron-sparkle-updater/native/sparkle-chain.tar.xz",
       "package.json"
     ],
     "asar": true,
+    "asarUnpack": [
+      "**/node_modules/electron-sparkle-updater/native/build/Release/*.node"
+    ],
+    "afterPack": "scripts/after-pack-sparkle.cjs",
     "extraResources": [
       {
         "from": "resources/server-restart",
@@ -110,12 +118,29 @@
     },
     "mac": {
       "category": "public.app-category.developer-tools",
-      "x64ArchFiles": "Contents/Resources/server-restart/darwin-process-helper",
+      "identity": null,
+      "extraFiles": [
+        {
+          "from": "node_modules/electron-sparkle-updater/native/vendor/Sparkle.framework",
+          "to": "Frameworks/Sparkle.framework"
+        }
+      ],
+      "extendInfo": {
+        "SUFeedURL": "https://github.com/Tanjim-Islam/localhost-dashboard/releases/latest/download/appcast.xml",
+        "SUPublicEDKey": "pLcjY+xshxhfKvhZyQbg8XZZFmrPzOw+lyVUGkd9JcI=",
+        "SUEnableInstallerLauncherService": false,
+        "SUScheduledCheckInterval": 3600
+      },
+      "artifactName": "Localhost-Dashboard-${version}-universal.${ext}",
+      "x64ArchFiles": "Contents/{Resources/server-restart/darwin-process-helper,Frameworks/Sparkle.framework/**,Resources/app.asar.unpacked/node_modules/electron-sparkle-updater/native/build/Release/*.node}",
       "target": [
         "dmg",
         "zip"
       ],
       "icon": "resources/icon.png"
+    },
+    "dmg": {
+      "writeUpdateInfo": false
     },
     "win": {
       "target": [

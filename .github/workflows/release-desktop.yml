@@ -1,0 +1,163 @@
+name: Release desktop apps
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag, version, and branch
+        run: |
+          test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
+          git fetch origin master
+          git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/master
+      - name: Create or reuse a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --draft --title "Localhost Dashboard $GITHUB_REF_NAME" --generate-notes
+          fi
+
+  mac:
+    needs: validate
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.15.0"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:startup
+      - run: npx tsc --noEmit
+      - name: Build universal Mac app
+        run: npm run package:mac -- --config.directories.output=release-mac
+      - name: Verify Mac app and create signed Sparkle feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          test -n "$SPARKLE_ED_PRIVATE_KEY"
+          app='release-mac/mac-universal/Localhost Dashboard.app'
+          zip="Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.zip"
+          dmg="Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.dmg"
+          codesign --verify --deep --strict "$app"
+          lipo -verify_arch arm64 "$app/Contents/Resources/app.asar.unpacked/node_modules/electron-sparkle-updater/native/build/Release/sparkle_bridge.node"
+          lipo -verify_arch x86_64 "$app/Contents/Resources/app.asar.unpacked/node_modules/electron-sparkle-updater/native/build/Release/sparkle_bridge.node"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "${GITHUB_REF_NAME#v}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$app/Contents/Info.plist")" = 'pLcjY+xshxhfKvhZyQbg8XZZFmrPzOw+lyVUGkd9JcI='
+          test -s "release-mac/$zip"
+          test -s "release-mac/$dmg"
+          hdiutil verify "release-mac/$dmg"
+          mkdir -p release-mac/appcast-input
+          cp "release-mac/$zip" release-mac/appcast-input/
+          key_file="$RUNNER_TEMP/sparkle-ed25519.key"
+          trap 'rm -f "$key_file"' EXIT
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          ./node_modules/.bin/electron-sparkle-updater generate-appcast release-mac/appcast-input \
+            --ed-key-file "$key_file" \
+            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/"
+          xmllint --noout release-mac/appcast-input/appcast.xml
+          grep -Fq "releases/download/$GITHUB_REF_NAME/$zip" release-mac/appcast-input/appcast.xml
+          grep -Fq 'sparkle:edSignature=' release-mac/appcast-input/appcast.xml
+          cp release-mac/appcast-input/appcast.xml release-mac/appcast.xml
+      - name: Stage Mac files on draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber \
+            "release-mac/Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.dmg" \
+            "release-mac/Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.zip" \
+            release-mac/appcast.xml
+
+  windows:
+    needs: validate
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.15.0"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:startup
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - name: Build Windows installers
+        run: npx electron-builder --win --x64 --publish never --config.directories.output=release-win
+      - name: Normalize filenames and verify updater metadata
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath release-win -File |
+            Where-Object { $_.Name -like 'Localhost Dashboard*' } |
+            ForEach-Object { Rename-Item -LiteralPath $_.FullName -NewName ($_.Name -replace ' ', '-') }
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          foreach ($name in @("Localhost-Dashboard-Setup-$version.exe", "Localhost-Dashboard-$version.exe", "Localhost-Dashboard-Setup-$version.exe.blockmap", 'latest.yml')) {
+            if (-not (Test-Path -LiteralPath "release-win/$name")) { throw "Missing Windows asset: $name" }
+          }
+          $feed = Get-Content release-win/latest.yml -Raw
+          if (-not $feed.Contains("version: $version") -or -not $feed.Contains("Localhost-Dashboard-Setup-$version.exe")) { throw 'Windows update metadata does not match the installer' }
+      - name: Stage Windows files on draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $files = @(
+            Get-Item "release-win/Localhost-Dashboard-Setup-$version.exe"
+            Get-Item "release-win/Localhost-Dashboard-$version.exe"
+            Get-Item "release-win/Localhost-Dashboard-Setup-$version.exe.blockmap"
+            Get-Item 'release-win/latest.yml'
+          )
+          & gh release upload $env:GITHUB_REF_NAME @($files.FullName) --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  publish:
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify and publish both platforms together
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          version="${GITHUB_REF_NAME#v}"
+          assets=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.size > 0) | .name')
+          for name in "Localhost-Dashboard-$version-universal.dmg" \
+            "Localhost-Dashboard-$version-universal.zip" \
+            "Localhost-Dashboard-Setup-$version.exe" \
+            "Localhost-Dashboard-$version.exe" \
+            "Localhost-Dashboard-Setup-$version.exe.blockmap" \
+            appcast.xml latest.yml; do
+            grep -Fxq "$name" <<< "$assets" || { echo "Missing release asset: $name" >&2; exit 1; }
+          done
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      - name: Check public update feeds
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --location --silent --show-error \
+              "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/appcast.xml" -o appcast.xml \
+              && grep -Fq "Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.zip" appcast.xml; then break; fi
+            sleep 10
+          done
+          grep -Fq "Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.zip" appcast.xml
