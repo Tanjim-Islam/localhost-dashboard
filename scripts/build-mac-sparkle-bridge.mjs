@@ -86,9 +86,9 @@ for (const arch of ["arm64", "x86_64"]) {
   run(
     "lipo",
     [
+      path.join(localPackage, "native/build/Release/sparkle_bridge.node"),
       "-verify_arch",
       arch,
-      path.join(localPackage, "native/build/Release/sparkle_bridge.node"),
     ],
     root,
   );
