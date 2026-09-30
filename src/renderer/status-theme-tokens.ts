@@ -1,4 +1,4 @@
-export type CleanerSemanticThemeTokens = {
+export type StatusSemanticThemeTokens = {
   safe: string;
   safeSurface: string;
   safeBorder: string;
@@ -42,7 +42,7 @@ export type CleanerSemanticThemeTokens = {
   recoveryContrast: string;
 };
 
-export const CLEANER_SEMANTIC_TOKENS_BY_MODE = {
+export const STATUS_SEMANTIC_TOKENS_BY_MODE = {
   light: {
     safe: "#197443ff",
     safeSurface: "#e8f6edff",
@@ -129,4 +129,4 @@ export const CLEANER_SEMANTIC_TOKENS_BY_MODE = {
     recoveryText: "#d6ffe4ff",
     recoveryContrast: "#06180dff",
   },
-} as const satisfies Record<"light" | "dark", CleanerSemanticThemeTokens>;
+} as const satisfies Record<"light" | "dark", StatusSemanticThemeTokens>;

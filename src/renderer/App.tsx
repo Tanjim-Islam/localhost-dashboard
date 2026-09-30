@@ -9,7 +9,6 @@ import SettingsPanel from "./components/SettingsPanel";
 import UpdateNotification from "./components/UpdateNotification";
 import RecentScriptsDrawer from "./components/RecentScriptsDrawer";
 import EnvironmentKeysTab from "./components/EnvironmentKeysTab";
-import CleanerTab from "./components/CleanerTab";
 import ClisTab from "./components/ClisTab";
 
 dayjs.extend(relativeTime);
@@ -50,7 +49,6 @@ type PlatformFeatures = {
   ahkScripts: boolean;
   automatorScripts: boolean;
   environmentKeys: boolean;
-  cleaner: boolean;
   clis: boolean;
 };
 
@@ -79,15 +77,13 @@ type TabType =
   | "clis"
   | "ahk"
   | "automator"
-  | "environment"
-  | "cleaner";
+  | "environment";
 
 type AppMeta = {
   version: string;
   platform: string;
   arch: string;
   features: PlatformFeatures;
-  cleanerTestMode: boolean;
   clisTestMode: boolean;
 };
 
@@ -150,8 +146,7 @@ export default function App() {
     return saved === "clis" ||
       saved === "ahk" ||
       saved === "automator" ||
-      saved === "environment" ||
-      saved === "cleaner"
+      saved === "environment"
       ? saved
       : "servers";
   });
@@ -163,7 +158,6 @@ export default function App() {
     ahkScripts: false,
     automatorScripts: false,
     environmentKeys: false,
-    cleaner: false,
     clis: false,
   });
 
@@ -227,7 +221,6 @@ export default function App() {
     if (platformFeatures.ahkScripts) tabs.push("ahk");
     if (platformFeatures.automatorScripts) tabs.push("automator");
     if (platformFeatures.environmentKeys) tabs.push("environment");
-    if (platformFeatures.cleaner) tabs.push("cleaner");
     return tabs;
   }, [platformFeatures]);
 
@@ -338,13 +331,7 @@ export default function App() {
   return (
     <div className="app-shell flex h-screen w-screen flex-col bg-night text-gray-900 select-none">
       <TitleBar
-        onRefresh={() => {
-          if (activeTab === "cleaner") {
-            window.dispatchEvent(new Event("dashboard:cleaner-rescan"));
-          } else {
-            window.api.refresh();
-          }
-        }}
+        onRefresh={() => window.api.refresh()}
         onSettings={() => setOpenSettings(true)}
         search={query}
         onSearchChange={setQuery}
@@ -353,7 +340,7 @@ export default function App() {
             ? "Search ENV key names."
             : "Search ports, PID, names."
         }
-        showSearch={activeTab !== "cleaner" && activeTab !== "clis"}
+        showSearch={activeTab !== "clis"}
         showRefresh={activeTab !== "clis"}
         version={version}
         platform={platform}
@@ -412,14 +399,6 @@ export default function App() {
                     count={environmentKeyCount}
                   >
                     ENV Keys
-                  </TabButton>
-                )}
-                {platformFeatures.cleaner && (
-                  <TabButton
-                    active={activeTab === "cleaner"}
-                    onClick={() => setActiveTab("cleaner")}
-                  >
-                    Cleaner
                   </TabButton>
                 )}
               </>
@@ -581,15 +560,6 @@ export default function App() {
             active={activeTab === "clis"}
             testMode={Boolean(meta?.clisTestMode)}
             onCountChange={setCliCount}
-          />
-        )}
-
-        {platformFeatures.cleaner && (
-          <CleanerTab
-            active={activeTab === "cleaner"}
-            testMode={Boolean(meta?.cleanerTestMode)}
-            query={query}
-            onQueryChange={setQuery}
           />
         )}
       </div>

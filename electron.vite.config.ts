@@ -8,8 +8,6 @@ export default defineConfig({
         input: {
           index: "src/main/bootstrap.ts",
           app: "src/main/index.ts",
-          "cleaner-accounting-worker":
-            "src/main/cleaner/workers/accounting-worker.ts",
         },
         output: {
           entryFileNames: "[name].js",
