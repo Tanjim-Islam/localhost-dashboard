@@ -289,7 +289,7 @@ export default function ClisTab({
               </span>
             )}
             {testMode && (
-              <span className="rounded-full border border-cleaner-review-border bg-cleaner-review-surface px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-cleaner-review-text">
+              <span className="rounded-full border border-status-review-border bg-status-review-surface px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-status-review-text">
                 Fixture mode
               </span>
             )}
@@ -587,8 +587,8 @@ export default function ClisTab({
       )}
 
       {sourceFailures.length > 0 && (
-        <details className="rounded-xl border border-cleaner-blocked-border bg-cleaner-blocked-surface/70 px-3 py-2 text-xs text-cleaner-blocked-text">
-          <summary className="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-cleaner-blocked-border">
+        <details className="rounded-xl border border-status-blocked-border bg-status-blocked-surface/70 px-3 py-2 text-xs text-status-blocked-text">
+          <summary className="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-status-blocked-border">
             {sourceFailures.length} package source
             {sourceFailures.length === 1 ? "" : "s"} could not be read
           </summary>

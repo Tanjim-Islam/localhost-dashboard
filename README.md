@@ -195,7 +195,7 @@ npm run test:clis
 npm run dev:clis-test
 ```
 
-`test:clis` uses fake runners, temporary PATH directories, passive metadata, and simulated package inventories. It never invokes a real package-manager uninstall. `dev:clis-test` redirects `clis.json` to a temporary fixture root, supplies healthy, multiple-installation, broken, incomplete, and partial-source records, and simulates both uninstall success and failure. Fixture mode is visibly labeled and does not affect Cleaner fixture mode or the normal Electron profile.
+`test:clis` uses fake runners, temporary PATH directories, passive metadata, and simulated package inventories. It never invokes a real package-manager uninstall. `dev:clis-test` redirects `clis.json` to a temporary fixture root, supplies healthy, multiple-installation, broken, incomplete, and partial-source records, and simulates both uninstall success and failure. Fixture mode is visibly labeled and does not affect the normal Electron profile.
 
 ## Known Limitations
 

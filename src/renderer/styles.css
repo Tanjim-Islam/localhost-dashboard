@@ -44,92 +44,92 @@ body,
   --glow: #404040ff;
   --glow-rgb: 64 64 64;
   /* Compatibility for existing destructive controls using the mimi_pink scale. */
-  --danger: var(--cleaner-danger);
-  --danger-rgb: var(--cleaner-danger-rgb);
-  --danger-foreground: var(--cleaner-danger-contrast);
-  --danger-foreground-rgb: var(--cleaner-danger-contrast-rgb);
-  --cleaner-safe: #57c982ff;
-  --cleaner-safe-rgb: 87 201 130;
-  --cleaner-safe-surface: #142e20ff;
-  --cleaner-safe-surface-rgb: 20 46 32;
-  --cleaner-safe-border: #347e51ff;
-  --cleaner-safe-border-rgb: 52 126 81;
-  --cleaner-safe-text: #c9f7d9ff;
-  --cleaner-safe-text-rgb: 201 247 217;
-  --cleaner-safe-icon: #6edc96ff;
-  --cleaner-safe-icon-rgb: 110 220 150;
-  --cleaner-safe-contrast: #071a0fff;
-  --cleaner-safe-contrast-rgb: 7 26 15;
-  --cleaner-blocked: #e6b94fff;
-  --cleaner-blocked-rgb: 230 185 79;
-  --cleaner-blocked-surface: #332909ff;
-  --cleaner-blocked-surface-rgb: 51 41 9;
-  --cleaner-blocked-border: #8d6c17ff;
-  --cleaner-blocked-border-rgb: 141 108 23;
-  --cleaner-blocked-text: #ffe9a1ff;
-  --cleaner-blocked-text-rgb: 255 233 161;
-  --cleaner-blocked-icon: #f2c95fff;
-  --cleaner-blocked-icon-rgb: 242 201 95;
-  --cleaner-blocked-contrast: #211800ff;
-  --cleaner-blocked-contrast-rgb: 33 24 0;
-  --cleaner-conditional: #f39a55ff;
-  --cleaner-conditional-rgb: 243 154 85;
-  --cleaner-conditional-surface: #3a2112ff;
-  --cleaner-conditional-surface-rgb: 58 33 18;
-  --cleaner-conditional-border: #9a5427ff;
-  --cleaner-conditional-border-rgb: 154 84 39;
-  --cleaner-conditional-text: #ffd2b3ff;
-  --cleaner-conditional-text-rgb: 255 210 179;
-  --cleaner-conditional-icon: #ffab69ff;
-  --cleaner-conditional-icon-rgb: 255 171 105;
-  --cleaner-conditional-contrast: #201006ff;
-  --cleaner-conditional-contrast-rgb: 32 16 6;
-  --cleaner-danger: #ef707bff;
-  --cleaner-danger-rgb: 239 112 123;
-  --cleaner-danger-surface: #38181cff;
-  --cleaner-danger-surface-rgb: 56 24 28;
-  --cleaner-danger-border: #933b44ff;
-  --cleaner-danger-border-rgb: 147 59 68;
-  --cleaner-danger-text: #ffc6ccff;
-  --cleaner-danger-text-rgb: 255 198 204;
-  --cleaner-danger-icon: #ff818bff;
-  --cleaner-danger-icon-rgb: 255 129 139;
-  --cleaner-danger-contrast: #25080cff;
-  --cleaner-danger-contrast-rgb: 37 8 12;
-  --cleaner-review: #a894f0ff;
-  --cleaner-review-rgb: 168 148 240;
-  --cleaner-review-surface: #24203dff;
-  --cleaner-review-surface-rgb: 36 32 61;
-  --cleaner-review-border: #6557a0ff;
-  --cleaner-review-border-rgb: 101 87 160;
-  --cleaner-review-text: #e1d9ffff;
-  --cleaner-review-text-rgb: 225 217 255;
-  --cleaner-review-icon: #b5a2ffff;
-  --cleaner-review-icon-rgb: 181 162 255;
-  --cleaner-review-contrast: #171026ff;
-  --cleaner-review-contrast-rgb: 23 16 38;
-  --cleaner-excluded: #8e9399ff;
-  --cleaner-excluded-rgb: 142 147 153;
-  --cleaner-excluded-surface: #242628ff;
-  --cleaner-excluded-surface-rgb: 36 38 40;
-  --cleaner-excluded-border: #53575cff;
-  --cleaner-excluded-border-rgb: 83 87 92;
-  --cleaner-excluded-text: #d0d3d6ff;
-  --cleaner-excluded-text-rgb: 208 211 214;
-  --cleaner-excluded-icon: #a6abb0ff;
-  --cleaner-excluded-icon-rgb: 166 171 176;
-  --cleaner-excluded-contrast: #111315ff;
-  --cleaner-excluded-contrast-rgb: 17 19 21;
-  --cleaner-recovery: #54d184ff;
-  --cleaner-recovery-rgb: 84 209 132;
-  --cleaner-recovery-surface: #10341fff;
-  --cleaner-recovery-surface-rgb: 16 52 31;
-  --cleaner-recovery-border: #338958ff;
-  --cleaner-recovery-border-rgb: 51 137 88;
-  --cleaner-recovery-text: #d6ffe4ff;
-  --cleaner-recovery-text-rgb: 214 255 228;
-  --cleaner-recovery-contrast: #06180dff;
-  --cleaner-recovery-contrast-rgb: 6 24 13;
+  --danger: var(--status-danger);
+  --danger-rgb: var(--status-danger-rgb);
+  --danger-foreground: var(--status-danger-contrast);
+  --danger-foreground-rgb: var(--status-danger-contrast-rgb);
+  --status-safe: #57c982ff;
+  --status-safe-rgb: 87 201 130;
+  --status-safe-surface: #142e20ff;
+  --status-safe-surface-rgb: 20 46 32;
+  --status-safe-border: #347e51ff;
+  --status-safe-border-rgb: 52 126 81;
+  --status-safe-text: #c9f7d9ff;
+  --status-safe-text-rgb: 201 247 217;
+  --status-safe-icon: #6edc96ff;
+  --status-safe-icon-rgb: 110 220 150;
+  --status-safe-contrast: #071a0fff;
+  --status-safe-contrast-rgb: 7 26 15;
+  --status-blocked: #e6b94fff;
+  --status-blocked-rgb: 230 185 79;
+  --status-blocked-surface: #332909ff;
+  --status-blocked-surface-rgb: 51 41 9;
+  --status-blocked-border: #8d6c17ff;
+  --status-blocked-border-rgb: 141 108 23;
+  --status-blocked-text: #ffe9a1ff;
+  --status-blocked-text-rgb: 255 233 161;
+  --status-blocked-icon: #f2c95fff;
+  --status-blocked-icon-rgb: 242 201 95;
+  --status-blocked-contrast: #211800ff;
+  --status-blocked-contrast-rgb: 33 24 0;
+  --status-conditional: #f39a55ff;
+  --status-conditional-rgb: 243 154 85;
+  --status-conditional-surface: #3a2112ff;
+  --status-conditional-surface-rgb: 58 33 18;
+  --status-conditional-border: #9a5427ff;
+  --status-conditional-border-rgb: 154 84 39;
+  --status-conditional-text: #ffd2b3ff;
+  --status-conditional-text-rgb: 255 210 179;
+  --status-conditional-icon: #ffab69ff;
+  --status-conditional-icon-rgb: 255 171 105;
+  --status-conditional-contrast: #201006ff;
+  --status-conditional-contrast-rgb: 32 16 6;
+  --status-danger: #ef707bff;
+  --status-danger-rgb: 239 112 123;
+  --status-danger-surface: #38181cff;
+  --status-danger-surface-rgb: 56 24 28;
+  --status-danger-border: #933b44ff;
+  --status-danger-border-rgb: 147 59 68;
+  --status-danger-text: #ffc6ccff;
+  --status-danger-text-rgb: 255 198 204;
+  --status-danger-icon: #ff818bff;
+  --status-danger-icon-rgb: 255 129 139;
+  --status-danger-contrast: #25080cff;
+  --status-danger-contrast-rgb: 37 8 12;
+  --status-review: #a894f0ff;
+  --status-review-rgb: 168 148 240;
+  --status-review-surface: #24203dff;
+  --status-review-surface-rgb: 36 32 61;
+  --status-review-border: #6557a0ff;
+  --status-review-border-rgb: 101 87 160;
+  --status-review-text: #e1d9ffff;
+  --status-review-text-rgb: 225 217 255;
+  --status-review-icon: #b5a2ffff;
+  --status-review-icon-rgb: 181 162 255;
+  --status-review-contrast: #171026ff;
+  --status-review-contrast-rgb: 23 16 38;
+  --status-excluded: #8e9399ff;
+  --status-excluded-rgb: 142 147 153;
+  --status-excluded-surface: #242628ff;
+  --status-excluded-surface-rgb: 36 38 40;
+  --status-excluded-border: #53575cff;
+  --status-excluded-border-rgb: 83 87 92;
+  --status-excluded-text: #d0d3d6ff;
+  --status-excluded-text-rgb: 208 211 214;
+  --status-excluded-icon: #a6abb0ff;
+  --status-excluded-icon-rgb: 166 171 176;
+  --status-excluded-contrast: #111315ff;
+  --status-excluded-contrast-rgb: 17 19 21;
+  --status-recovery: #54d184ff;
+  --status-recovery-rgb: 84 209 132;
+  --status-recovery-surface: #10341fff;
+  --status-recovery-surface-rgb: 16 52 31;
+  --status-recovery-border: #338958ff;
+  --status-recovery-border-rgb: 51 137 88;
+  --status-recovery-text: #d6ffe4ff;
+  --status-recovery-text-rgb: 214 255 228;
+  --status-recovery-contrast: #06180dff;
+  --status-recovery-contrast-rgb: 6 24 13;
   --font-ui: "Inter Variable", "Inter", system-ui, sans-serif;
   background: var(--background);
 }
@@ -168,35 +168,6 @@ button.rounded-2xl {
 
 .app-dialog {
   border-radius: 24px;
-}
-
-.cleaner-findings-shell {
-  container-type: inline-size;
-}
-
-.cleaner-findings-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-}
-
-.cleaner-line-clamp-2 {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-@container (min-width: 760px) {
-  .cleaner-findings-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@container (min-width: 1180px) {
-  .cleaner-findings-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 .settings-section {
@@ -355,9 +326,6 @@ button.rounded-2xl {
     animation: none;
   }
 
-  .cleaner-motion-root *,
-  .cleaner-motion-root *::before,
-  .cleaner-motion-root *::after,
   .clis-motion-root *,
   .clis-motion-root *::before,
   .clis-motion-root *::after {

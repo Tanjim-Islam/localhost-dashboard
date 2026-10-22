@@ -136,7 +136,7 @@ export function CliProductRow({
             {presence !== "candidates" &&
               isNewCliProduct(inventory, product, now) && (
                 <span
-                  className="rounded-full border border-cleaner-review-border bg-cleaner-review-surface px-2 py-0.5 text-[10px] font-semibold text-cleaner-review-text"
+                  className="rounded-full border border-status-review-border bg-status-review-surface px-2 py-0.5 text-[10px] font-semibold text-status-review-text"
                   title="First discovered in the last 24 hours"
                 >
                   New
@@ -376,7 +376,7 @@ export function InstallationPanel({
                   ? "Preview exact uninstall"
                   : installation.uninstallCapability.reason
               }
-              className="h-8 rounded-lg border border-cleaner-danger-border bg-cleaner-danger-surface px-2.5 text-xs font-medium text-cleaner-danger-text outline-none transition hover:brightness-105 focus-visible:ring-2 focus-visible:ring-cleaner-danger-border disabled:cursor-not-allowed disabled:opacity-45"
+              className="h-8 rounded-lg border border-status-danger-border bg-status-danger-surface px-2.5 text-xs font-medium text-status-danger-text outline-none transition hover:brightness-105 focus-visible:ring-2 focus-visible:ring-status-danger-border disabled:cursor-not-allowed disabled:opacity-45"
             >
               Uninstall
             </button>
@@ -439,7 +439,7 @@ export function InstallationPanel({
           {visibleIssues.map((issue) => (
             <span
               key={issue}
-              className="inline-flex items-center gap-1 rounded-full border border-cleaner-blocked-border bg-cleaner-blocked-surface px-2 py-1 text-[10px] font-medium text-cleaner-blocked-text"
+              className="inline-flex items-center gap-1 rounded-full border border-status-blocked-border bg-status-blocked-surface px-2 py-1 text-[10px] font-medium text-status-blocked-text"
             >
               <AlertTriangle className="h-3 w-3" />
               {issue.replaceAll("-", " ")}
@@ -460,20 +460,20 @@ function StatusPill({
 }) {
   const classes = {
     healthy:
-      "bg-cleaner-safe-surface text-cleaner-safe-text border-cleaner-safe-border",
+      "bg-status-safe-surface text-status-safe-text border-status-safe-border",
     warning:
-      "bg-cleaner-conditional-surface text-cleaner-conditional-text border-cleaner-conditional-border",
+      "bg-status-conditional-surface text-status-conditional-text border-status-conditional-border",
     broken:
-      "bg-cleaner-danger-surface text-cleaner-danger-text border-cleaner-danger-border",
+      "bg-status-danger-surface text-status-danger-text border-status-danger-border",
     missing:
-      "bg-cleaner-excluded-surface text-cleaner-excluded-text border-cleaner-excluded-border",
+      "bg-status-excluded-surface text-status-excluded-text border-status-excluded-border",
     inaccessible:
-      "bg-cleaner-danger-surface text-cleaner-danger-text border-cleaner-danger-border",
+      "bg-status-danger-surface text-status-danger-text border-status-danger-border",
     incomplete:
-      "bg-cleaner-conditional-surface text-cleaner-conditional-text border-cleaner-conditional-border",
+      "bg-status-conditional-surface text-status-conditional-text border-status-conditional-border",
     unverified: "bg-gray-200 text-gray-700 border-gray-300",
     unknown:
-      "bg-cleaner-review-surface text-cleaner-review-text border-cleaner-review-border",
+      "bg-status-review-surface text-status-review-text border-status-review-border",
   }[status];
   return (
     <span
@@ -547,7 +547,7 @@ function CopyablePathsDetail({
                 onClick={() => onCopy(pathKey, pathValue)}
                 className={`group -mx-1.5 grid w-[calc(100%+0.75rem)] cursor-copy grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-1.5 py-1 text-left outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-night-700/25 motion-reduce:transition-none ${
                   copied
-                    ? "border-cleaner-safe-border bg-cleaner-safe-surface text-cleaner-safe-text"
+                    ? "border-status-safe-border bg-status-safe-surface text-status-safe-text"
                     : "border-transparent text-gray-900 hover:border-gray-300 hover:bg-gray-200/70"
                 }`}
                 title={copied ? "Copied" : "Click to copy this path"}
@@ -569,7 +569,7 @@ function CopyablePathsDetail({
                     transition={{ duration: reduceMotion ? 0 : 0.16 }}
                     className={`mt-0.5 inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold ${
                       copied
-                        ? "text-cleaner-safe-text"
+                        ? "text-status-safe-text"
                         : "text-gray-600 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
                     }`}
                     aria-live="polite"
@@ -631,7 +631,7 @@ function SmallButton({
         confirmable ? "min-w-[7.25rem]" : ""
       } ${
         confirmed
-          ? "border-cleaner-safe-border bg-cleaner-safe-surface text-cleaner-safe-text"
+          ? "border-status-safe-border bg-status-safe-surface text-status-safe-text"
           : "border-gray-300 bg-gray-200/65 hover:bg-gray-300"
       }`}
     >

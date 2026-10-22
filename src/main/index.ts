@@ -66,16 +66,6 @@ import {
   resetToDefaults,
 } from "./settings";
 import AutoLaunch from "auto-launch";
-import { createCleanerController, type CleanerController } from "./cleaner";
-import {
-  validateCleanerCleanupRequestId,
-  validateCleanerPreferences,
-  validateCleanerSessionId,
-  validateCleanCleanerFindingsInput,
-  validatePrepareCleanerCleanupInput,
-  validateStartCleanerScanInput,
-  validateUpdateCleanerExclusionsInput,
-} from "./cleaner/ipc-validation";
 import { createCliController, type CliController } from "./clis";
 import {
   validateCliInstallationRef,
@@ -88,7 +78,6 @@ let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let autolaunch: AutoLaunch | null = null;
 let currentGlobalHotkey: string | null = null;
-let cleanerController: CleanerController | null = null;
 let cliController: CliController | null = null;
 const scanner = new Scanner();
 const serverRestarter = new ServerRestartController(createRestartDependencies(
@@ -113,16 +102,6 @@ const ahkScanner = platformFeatures.ahkScripts ? new AHKScanner() : null;
 const automatorScanner = platformFeatures.automatorScripts
   ? new AutomatorScanner()
   : null;
-
-function requireCleanerController(): CleanerController {
-  if (process.platform !== "win32" || !platformFeatures.cleaner) {
-    throw new Error("Cleaner is available only on Windows.");
-  }
-  if (!cleanerController) {
-    throw new Error("Cleaner is not ready yet.");
-  }
-  return cleanerController;
-}
 
 function requireCliController(): CliController {
   if (!platformFeatures.clis) {
@@ -153,29 +132,6 @@ async function initializeClis(): Promise<void> {
   });
   cliController.on("uninstall-complete", (payload) => {
     win?.webContents.send("clis:uninstall-complete", payload);
-  });
-}
-
-async function initializeCleaner(): Promise<void> {
-  if (!platformFeatures.cleaner) return;
-  cleanerController = await createCleanerController();
-  cleanerController.on("scan-progress", (payload) => {
-    win?.webContents.send("cleaner:scan-progress", payload);
-  });
-  cleanerController.on("scan-complete", (payload) => {
-    win?.webContents.send("cleaner:scan-complete", payload);
-  });
-  cleanerController.on("scan-error", (payload) => {
-    win?.webContents.send("cleaner:scan-error", payload);
-  });
-  cleanerController.on("cleanup-progress", (payload) => {
-    win?.webContents.send("cleaner:cleanup-progress", payload);
-  });
-  cleanerController.on("cleanup-complete", (payload) => {
-    win?.webContents.send("cleaner:cleanup-complete", payload);
-  });
-  cleanerController.on("history-update", (payload) => {
-    win?.webContents.send("cleaner:history-update", payload);
   });
 }
 
@@ -683,7 +639,6 @@ function wasOpenedAtSystemLogin(): boolean {
 
 app.whenReady().then(async () => {
   applyApplicationIdentity();
-  await initializeCleaner();
   await initializeClis();
   // First-run seeding from resources/default-settings.json if present
   const seeded = seedDefaultsIfNeeded();
@@ -1032,9 +987,6 @@ ipcMain.handle("app:get-meta", () => ({
   platform: os.platform(),
   arch: os.arch(),
   features: platformFeatures,
-  cleanerTestMode:
-    platformFeatures.cleaner &&
-    Boolean(process.env["LOCAL_DASHBOARD_CLEANER_TEST_ROOT"]),
   clisTestMode:
     platformFeatures.clis &&
     Boolean(process.env["LOCAL_DASHBOARD_CLIS_TEST_ROOT"]),
@@ -1081,57 +1033,6 @@ ipcMain.handle("clis:uninstall-preview", (_event, input: unknown) =>
 );
 ipcMain.handle("clis:uninstall", (_event, input: unknown) =>
   requireCliController().uninstall(validateCliUninstallRequest(input)),
-);
-
-ipcMain.handle("cleaner:scan-start", (_event, input: unknown) =>
-  requireCleanerController().startScan(validateStartCleanerScanInput(input)),
-);
-ipcMain.handle("cleaner:scan-cancel", (_event, scanSessionId: unknown) =>
-  requireCleanerController().cancelScan(
-    validateCleanerSessionId(scanSessionId),
-  ),
-);
-ipcMain.handle("cleaner:scan-state", () =>
-  requireCleanerController().getState(),
-);
-ipcMain.handle("cleaner:free-space-refresh", (_event, scanSessionId: unknown) =>
-  requireCleanerController().refreshFreeSpace(
-    validateCleanerSessionId(scanSessionId),
-  ),
-);
-ipcMain.handle("cleaner:cleanup", (_event, input: unknown) =>
-  requireCleanerController().cleanFindings(
-    validateCleanCleanerFindingsInput(input),
-  ),
-);
-ipcMain.handle("cleaner:cleanup-prepare", (_event, input: unknown) =>
-  requireCleanerController().prepareCleanup(
-    validatePrepareCleanerCleanupInput(input),
-  ),
-);
-ipcMain.handle("cleaner:exclusions-get", () =>
-  requireCleanerController().getExclusions(),
-);
-ipcMain.handle("cleaner:exclusions-update", (_event, input: unknown) =>
-  requireCleanerController().updateExclusions(
-    validateUpdateCleanerExclusionsInput(input),
-  ),
-);
-ipcMain.handle("cleaner:history-get", () =>
-  requireCleanerController().getHistory(),
-);
-ipcMain.handle("cleaner:receipt-dismiss", (_event, cleanupRequestId: unknown) =>
-  requireCleanerController().dismissCleanupReceipt(
-    validateCleanerCleanupRequestId(cleanupRequestId),
-  ),
-);
-ipcMain.handle("cleaner:preferences-get", () =>
-  requireCleanerController().getPreferences(),
-);
-ipcMain.handle("cleaner:preferences-update", (_event, input: unknown) =>
-  requireCleanerController().updatePreferences(
-    validateCleanerPreferences(input),
-  ),
 );
 
 // window control handlers

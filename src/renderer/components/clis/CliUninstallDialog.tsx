@@ -51,7 +51,7 @@ export function CliUninstallDialog({
         className="env-modal-panel app-card w-full max-w-lg border border-gray-300 bg-gray-100 p-5 shadow-soft"
       >
         <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cleaner-danger-surface text-cleaner-danger-text">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-status-danger-surface text-status-danger-text">
             <PackageX className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
@@ -102,7 +102,7 @@ export function CliUninstallDialog({
               />
             </dl>
             {preview.warnings.length > 0 && (
-              <div className="mt-3 rounded-xl border border-cleaner-conditional-border bg-cleaner-conditional-surface p-3 text-xs text-cleaner-conditional-text">
+              <div className="mt-3 rounded-xl border border-status-conditional-border bg-status-conditional-surface p-3 text-xs text-status-conditional-text">
                 {preview.warnings.map((warning) => (
                   <p key={warning} className="flex gap-2">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -121,7 +121,7 @@ export function CliUninstallDialog({
           </p>
         )}
         {error && (
-          <p className="mt-4 rounded-xl border border-cleaner-danger-border bg-cleaner-danger-surface p-3 text-xs text-cleaner-danger-text">
+          <p className="mt-4 rounded-xl border border-status-danger-border bg-status-danger-surface p-3 text-xs text-status-danger-text">
             {error}
           </p>
         )}
@@ -139,7 +139,7 @@ export function CliUninstallDialog({
             type="button"
             onClick={onConfirm}
             disabled={!preview || locked}
-            className="h-9 rounded-xl border border-cleaner-danger-border bg-cleaner-danger-surface px-3 text-sm font-semibold text-cleaner-danger-text outline-none hover:brightness-105 focus-visible:ring-2 focus-visible:ring-cleaner-danger-border disabled:opacity-45"
+            className="h-9 rounded-xl border border-status-danger-border bg-status-danger-surface px-3 text-sm font-semibold text-status-danger-text outline-none hover:brightness-105 focus-visible:ring-2 focus-visible:ring-status-danger-border disabled:opacity-45"
           >
             {progress ? "Uninstalling" : "Uninstall exact package"}
           </button>
