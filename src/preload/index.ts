@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, clipboard } from "electron";
-import { associationEdit, id, object, projectEdit, stopScope, type ProjectSnapshot, type ServerInfo } from "../shared/servers";
+import { associationEdit, id, object, projectEdit, stopScope, terminalDirectory, type ProjectSnapshot, type ServerInfo } from "../shared/servers";
 import { validateServerRef, type RestartProgress } from "../main/server-restart/types";
 import {
   validateCliInstallationRef,
@@ -120,7 +120,7 @@ contextBridge.exposeInMainWorld("api", {
   copyText: (text: string) => clipboard.writeText(text),
   openInVSCode: (payload: any) =>
     ipcRenderer.invoke("app:open-vscode", payload),
-  openTerminal: (path: string) => ipcRenderer.invoke("app:open-terminal", path),
+  openTerminal: (path: string) => ipcRenderer.invoke("app:open-terminal", terminalDirectory(path)),
   openExplorer: (path: string) => ipcRenderer.send("app:open-explorer", path),
   // settings
   getSettings: () => ipcRenderer.invoke("settings:get"),

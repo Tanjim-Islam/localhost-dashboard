@@ -1,5 +1,10 @@
 // Public server contracts. No launch arguments, environments, or native handles.
 export type ServerRef = { key: string; firstSeen: number };
+export type ApplicationOwner = {
+  name: string;
+  executable: string;
+  evidence: "app-bundle" | "bundled-runtime" | "application-process";
+};
 export type ServerInfo = ServerRef & {
   pid: number;
   port: number;
@@ -14,7 +19,9 @@ export type ServerInfo = ServerRef & {
   memory?: number;
   cpuHistory?: number[];
   memoryHistory?: number[];
-  discovery: "development" | "unidentified";
+  discovery: "development" | "application" | "unidentified";
+  application?: ApplicationOwner;
+  ignored?: boolean;
   projectId?: string;
   serviceId?: string;
   serviceName: string;
@@ -28,6 +35,7 @@ export type Project = {
   notes: string;
   pinned: boolean;
   bookmarked: boolean;
+  ignored: boolean;
   createdAt: number;
   lastSeen: number;
 };
@@ -79,6 +87,7 @@ export type ProjectEdit = {
   notes: string;
   pinned: boolean;
   bookmarked: boolean;
+  ignored?: boolean;
 };
 export type AssociationEdit = { ref: ServerRef; projectId: string | null };
 export type StopScope = { refs: ServerRef[]; projectId?: string };
@@ -134,6 +143,8 @@ export function projectEdit(value: unknown): ProjectEdit {
   const v = object(value);
   if (typeof v.pinned !== "boolean" || typeof v.bookmarked !== "boolean")
     throw new Error("Invalid project preferences.");
+  if (v.ignored !== undefined && typeof v.ignored !== "boolean")
+    throw new Error("Invalid ignored preference.");
   const name = textField(v.name, 120);
   if (!name) throw new Error("Project name is required.");
   return {
@@ -142,7 +153,18 @@ export function projectEdit(value: unknown): ProjectEdit {
     notes: textField(v.notes, 4000),
     pinned: v.pinned,
     bookmarked: v.bookmarked,
+    ...(v.ignored === undefined ? {} : { ignored: v.ignored as boolean }),
   };
+}
+export function terminalDirectory(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.length > 4096 ||
+    /[\x00-\x1f]/.test(value) ||
+    !/^(?:[A-Za-z]:[\\/]|\/(?!\/))/.test(value)
+  )
+    throw new Error("Invalid project folder.");
+  return value;
 }
 export function associationEdit(value: unknown): AssociationEdit {
   const v = object(value);

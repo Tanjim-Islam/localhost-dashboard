@@ -70,6 +70,7 @@ import {
   resetToDefaults,
 } from "./settings";
 import AutoLaunch from "auto-launch";
+import { openProjectTerminal } from "./project-terminal";
 import { createCliController, type CliController } from "./clis";
 import {
   validateCliInstallationRef,
@@ -91,7 +92,7 @@ const serverRestarter = new ServerRestartController(createRestartDependencies(
     ? path.join(process.resourcesPath, "server-restart")
     : path.join(app.getAppPath(), "resources/server-restart"),
   {
-    getServer: (ref) => scanner.getItems().find((item) => item.key === ref.key && item.firstSeen === ref.firstSeen),
+    getServer: (ref) => scanner.getItems().find((item) => item.key === ref.key && item.firstSeen === ref.firstSeen && item.discovery === "development" && item.canStop && !item.ignored),
     progress: (state) => {
       win?.webContents.send("servers:restart-progress", state);
     },
@@ -729,12 +730,12 @@ scanner.on("update", (items: ServerInfo[]) => {
   win?.webContents.send("projects:update", projectStore.model.snapshot());
   win?.webContents.send("scanner:update", items);
   // Update health checker with current servers
-  healthChecker.setServers(items.filter(i => i.discovery === "development").map(i => ({ key: i.key, url: i.url, firstSeen: i.firstSeen })));
+  healthChecker.setServers(items.filter(i => i.discovery !== "unidentified" && !i.ignored).map(i => ({ key: i.key, url: i.url, firstSeen: i.firstSeen })));
 });
 
 scanner.on("new", (item) => {
   bumpPort(item.port);
-  if (settings.get("notifyOnStart")) {
+  if (settings.get("notifyOnStart") && !item.ignored) {
     new Notification({
       title: "New local server",
       body: `${item.processName ?? "Process"} on :${item.port}`,
@@ -744,7 +745,7 @@ scanner.on("new", (item) => {
 });
 
 scanner.on("stopped", (item) => {
-  if (settings.get("notifyOnStop")) {
+  if (settings.get("notifyOnStop") && !item.ignored) {
     new Notification({
       title: "Listener disappeared",
       body: `${item.processName ?? "Process"} on :${item.port}`,
@@ -826,7 +827,7 @@ if (automatorScanner) {
 healthChecker.on("update", (results) => {
   for (const result of results) {
     const item = scanner.getItems().find(i => i.key === result.key && i.firstSeen === result.firstSeen);
-    if (item) projectStore.model.updateHealth(item, result.status, result.lastChecked);
+    if (item?.discovery === "development") projectStore.model.updateHealth(item, result.status, result.lastChecked);
   }
   win?.webContents.send("health:update", results);
   win?.webContents.send("projects:update", projectStore.model.snapshot());
@@ -847,13 +848,9 @@ ipcMain.handle("servers:restart", async (event, ref: unknown) => {
   return serverRestarter.restart(ref);
 });
 ipcMain.handle("servers:restart-state", () => serverRestarter.getState());
-ipcMain.handle("app:open-terminal", async (_evt, dirPath: string) => {
-  if (typeof dirPath !== "string" || !path.isAbsolute(dirPath) || dirPath.includes("\0") || !fs.statSync(dirPath).isDirectory()) throw new Error("Invalid project folder.");
-  const executable = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32/cmd.exe") : process.platform === "darwin" ? "/usr/bin/open" : "x-terminal-emulator";
-  const args = process.platform === "win32" ? ["/k"] : process.platform === "darwin" ? ["-a", "Terminal", dirPath] : [];
-  const child = spawn(executable, args, { cwd: dirPath, shell: false, detached: true, stdio: "ignore", windowsHide: false });
-  await new Promise<void>((resolve, reject) => { child.once("spawn", resolve); child.once("error", () => reject(new Error("Could not open terminal."))); });
-  child.unref();
+ipcMain.handle("app:open-terminal", async (event, directory: unknown) => {
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) throw new Error("Terminal is only available from the dashboard.");
+  await openProjectTerminal(directory);
 });
 ipcMain.on("app:open-explorer", (_evt, dirPath: string) => {
   if (dirPath) {

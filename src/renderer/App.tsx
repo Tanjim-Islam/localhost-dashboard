@@ -183,7 +183,7 @@ export default function App() {
     }
   }, [supportedTabs, activeTab, meta]);
 
-  const filtered = items.filter(item => item.discovery === "development");
+  const filtered = items.filter(item => item.discovery === "development" && !item.ignored);
 
   const filteredAHK = useMemo(() => {
     const q = query.trim().toLowerCase();

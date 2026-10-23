@@ -54,7 +54,12 @@ export class ServerStopController {
       const item = this.deps
         .items()
         .find((i) => i.key === ref.key && i.firstSeen === ref.firstSeen);
-      if (!item || !item.canStop || item.discovery !== "development")
+      if (
+        !item ||
+        !item.canStop ||
+        item.ignored ||
+        item.discovery !== "development"
+      )
         throw new Error(
           "A selected service changed or cannot be verified. Refresh and select it again.",
         );
@@ -195,6 +200,8 @@ export class ServerStopController {
               JSON.stringify(target.ports)
           )
             throw new Error("changed");
+          // A project may have been ignored while native inspection was pending.
+          this.selected({ ...plan.scope, refs: expected });
           // Native helpers revalidate start time and executable at the termination boundary.
           // No process tree, parent, shell command, or unselected PID is passed here.
           await host.stop([identity]);

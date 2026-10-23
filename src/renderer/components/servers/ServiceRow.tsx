@@ -37,8 +37,14 @@ export default function ServiceRow({
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
   const reduceMotion = useReducedMotion();
+  const application = item.discovery === "application";
+  const actionable = item.discovery === "development" && !item.ignored;
+  const browsable =
+    !application &&
+    health?.endpoint !== "websocket" &&
+    health?.endpoint !== "upgrade";
   const status =
-    health?.status === "down"
+    !application && health?.status === "down"
       ? "HTTP unresponsive"
       : health?.status === "slow"
         ? "Slow HTTP"
@@ -57,7 +63,7 @@ export default function ServiceRow({
         borderLeftColor: frameworkColor[item.framework || ""] || "transparent",
       }}
     >
-      {item.discovery === "development" && (
+      {actionable && (
         <input
           type="checkbox"
           aria-label={`Select ${item.serviceName} port ${item.port}`}
@@ -71,7 +77,7 @@ export default function ServiceRow({
         <div className="flex flex-wrap items-center justify-between gap-1">
           <span className="text-sm font-medium">{item.serviceName}</span>
           <span
-            className={`text-xs ${health?.status === "down" ? "text-danger-text" : health?.status === "slow" ? "text-status-conditional-text" : "text-success-text"}`}
+            className={`text-xs ${!application && health?.status === "down" ? "text-danger-text" : health?.status === "slow" ? "text-status-conditional-text" : "text-success-text"}`}
           >
             {status}
             {health?.responseTime !== undefined
@@ -83,25 +89,31 @@ export default function ServiceRow({
           {item.framework && item.framework !== item.serviceName && (
             <span>{item.framework}</span>
           )}
-          <button
-            className="font-mono hover:underline"
-            onClick={() => window.api.openUrl(item.url)}
-          >
-            {item.url.replace("http://", "")}
-          </button>
+          {browsable ? (
+            <button
+              className="font-mono hover:underline"
+              onClick={() => window.api.openUrl(item.url)}
+            >
+              {item.url.replace("http://", "")}
+            </button>
+          ) : (
+            <span className="font-mono">{item.url.replace("http://", "")}</span>
+          )}
           {item.cpu !== undefined && <span>{item.cpu.toFixed(1)}% CPU</span>}
           {item.memory !== undefined && (
             <span>{Math.round(item.memory / 1048576)} MB</span>
           )}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1">
-          <button
-            className={`${button} bg-gray-200`}
-            onClick={() => window.api.openUrl(item.url)}
-          >
-            Open
-          </button>
-          {onRestart && item.canStop && item.discovery === "development" && (
+          {browsable && (
+            <button
+              className={`${button} bg-gray-200`}
+              onClick={() => window.api.openUrl(item.url)}
+            >
+              Open
+            </button>
+          )}
+          {onRestart && item.canStop && actionable && (
             <button className={button} disabled={locked} onClick={onRestart}>
               <RotateCw
                 size={13}
@@ -122,7 +134,7 @@ export default function ServiceRow({
           >
             <Copy size={14} className={copied ? "text-success-text" : ""} />
           </button>
-          {item.discovery === "development" && (
+          {actionable && (
             <button
               className={
                 "rounded-full p-2 text-danger-text hover:bg-danger-surface disabled:opacity-40"
@@ -185,14 +197,31 @@ export default function ServiceRow({
                         </dd>
                       </div>
                     </dl>
-                    <button
-                      className="-ml-1.5 mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-gray-700 outline-none transition-colors duration-150 hover:bg-gray-300/60 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-gray-500 motion-reduce:transition-none disabled:opacity-40"
-                      disabled={item.pid <= 0}
-                      onClick={onAssign}
-                    >
-                      <ArrowRightLeft size={12} aria-hidden="true" />
-                      Change project
-                    </button>
+                    {item.application && (
+                      <div className="mt-2 break-all font-mono text-xs text-gray-600">
+                        {item.application.executable}
+                      </div>
+                    )}
+                    {health?.httpStatus && (
+                      <div className="mt-2 text-xs text-gray-600">
+                        HTTP {health.httpStatus}
+                        {health.endpoint === "websocket"
+                          ? " · WebSocket"
+                          : health.endpoint === "upgrade"
+                            ? " · Upgrade required"
+                            : ""}
+                      </div>
+                    )}
+                    {!application && (
+                      <button
+                        className="-ml-1.5 mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-gray-700 outline-none transition-colors duration-150 hover:bg-gray-300/60 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-gray-500 motion-reduce:transition-none disabled:opacity-40"
+                        disabled={item.pid <= 0}
+                        onClick={onAssign}
+                      >
+                        <ArrowRightLeft size={12} aria-hidden="true" />
+                        Change project
+                      </button>
+                    )}
                   </div>
                 </div>
               </motion.div>

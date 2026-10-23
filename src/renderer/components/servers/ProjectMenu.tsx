@@ -12,6 +12,8 @@ export default function ProjectMenu({
   onBookmark,
   onActivity,
   onStop,
+  onIgnore,
+  locked,
 }: {
   project: Project;
   stopDisabled: boolean;
@@ -20,6 +22,8 @@ export default function ProjectMenu({
   onBookmark(): void;
   onActivity(): void;
   onStop(): void;
+  onIgnore(): void;
+  locked: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const reduceMotion = useReducedMotion();
@@ -68,11 +72,20 @@ export default function ProjectMenu({
     },
     { label: "Activity", run: onActivity },
     {
-      label: "Stop This Project",
-      run: onStop,
-      danger: true,
-      disabled: stopDisabled,
+      label: project.ignored ? "Restore project" : "Ignore project",
+      run: onIgnore,
+      disabled: locked,
     },
+    ...(!project.ignored
+      ? [
+          {
+            label: "Stop This Project",
+            run: onStop,
+            danger: true,
+            disabled: stopDisabled,
+          },
+        ]
+      : []),
   ];
 
   return (

@@ -35,6 +35,62 @@ const service = (overrides: Partial<ServerInfo> = {}): ServerInfo => ({
   ...overrides,
 });
 
+test("ignored projects migrate, persist and follow stable identity across ports and restarts", () => {
+  const model = new ProjectModel(emptyProjectState());
+  const p = model.ensure(path.resolve("ignored-fixture"), "Keep my name");
+  model.edit({ ...p, ignored: true, notes: "Keep my notes", pinned: true });
+  const evidence = {
+    directory: p.directory,
+    name: "detected",
+    serviceDirectory: p.directory,
+    serviceName: "API",
+    associationKey: "b".repeat(32),
+  };
+  assert.equal(model.decorate(service(), evidence).ignored, true);
+  const restored = new ProjectModel(
+    migrateProjectState(JSON.parse(JSON.stringify(model.state))),
+  );
+  const next = restored.decorate(
+    service({ pid: 200, key: "200:60008", port: 60008, firstSeen: 9999 }),
+    evidence,
+  );
+  assert.equal(next.projectId, p.id);
+  assert.equal(next.ignored, true);
+  assert.equal(restored.state.projects[0].notes, "Keep my notes");
+  restored.edit({ ...restored.state.projects[0], ignored: false });
+  assert.equal(restored.decorate(service(), evidence).ignored, false);
+  const old = JSON.parse(JSON.stringify(model.state));
+  old.schemaVersion = 1;
+  delete old.projects[0].ignored;
+  const migrated = migrateProjectState(old);
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.projects[0].ignored, false);
+  assert.equal(migrated.projects[0].notes, "Keep my notes");
+  assert.throws(() => projectEdit({ ...p, ignored: "true" }));
+});
+
+test("reclassifying an application does not invent a stopped listener or allow project actions", () => {
+  const model = new ProjectModel(emptyProjectState());
+  const first = service();
+  model.reconcile([first]);
+  const app = model.decorate({
+    ...first,
+    discovery: "application",
+    projectId: "wrong",
+    association: "manual",
+    canStop: true,
+  });
+  assert.equal(app.canStop, false);
+  assert.equal(app.projectId, undefined);
+  model.reconcile([app]);
+  assert.equal(model.state.recentlyStopped.length, 0);
+  assert.equal(
+    model.state.activity.filter((e) => e.kind === "listener-disappeared")
+      .length,
+    0,
+  );
+});
+
 test("project detection groups workspace packages, respects nested repositories and unrelated roots", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dashboard-projects-"));
   try {

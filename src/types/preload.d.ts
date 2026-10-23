@@ -102,6 +102,8 @@ export type HealthStatus = {
   url: string;
   status: "healthy" | "slow" | "down";
   responseTime?: number;
+  httpStatus?: number;
+  endpoint?: "http" | "websocket" | "upgrade";
   lastChecked: number;
   error?: string;
 };

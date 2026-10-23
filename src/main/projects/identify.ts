@@ -115,7 +115,7 @@ export class ProjectIdentifier {
     }
     // Do not identify globally installed tools or application bundles as projects.
     if (
-      /[\\/](node_modules|\.cargo|\.rustup|Windows|Program Files)([\\/]|$)/i.test(
+      /[\\/](node_modules|\.cargo|\.rustup|Windows|Program Files(?: \(x86\))?|WindowsApps)([\\/]|$)|\.app[\\/]Contents[\\/]/i.test(
         start,
       )
     )

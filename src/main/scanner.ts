@@ -18,6 +18,11 @@ import {
   ListenerTracker,
   serviceLabel,
 } from "./projects/discovery";
+import {
+  applicationOwner,
+  classifyListener,
+  type ListenerClassification,
+} from "./projects/classify";
 export type { ServerInfo } from "../shared/servers";
 
 type Inspection = {
@@ -28,6 +33,7 @@ type Inspection = {
   associationKey?: string;
   cwd?: string;
   framework?: string;
+  classification?: ListenerClassification;
 };
 export class Scanner extends EventEmitter {
   private timer?: NodeJS.Timeout;
@@ -205,7 +211,12 @@ export class Scanner extends EventEmitter {
           pid > 0 &&
           (!cached || cached.until < now) &&
           inspectionBudget > 0 &&
-          (runtime || cached?.evidence || !p)
+          (runtime ||
+            cached?.evidence ||
+            !p ||
+            !/^(system|svchost\.exe|services\.exe|lsass\.exe|wininit\.exe)$/i.test(
+              p.name,
+            ))
         ) {
           inspectionBudget--;
           const info: Inspection = {
@@ -218,6 +229,13 @@ export class Scanner extends EventEmitter {
               const snapshot = await host.snapshot(pid);
               const identity = snapshot.processes.find((q) => q.pid === pid);
               const context = snapshot.contexts.find((q) => q.pid === pid);
+              const application = applicationOwner(
+                snapshot,
+                pid,
+                process.platform,
+              );
+              if (application && pid === process.pid)
+                application.name = "Localhost Dashboard";
               if (identity) {
                 const {
                   pid: id,
@@ -240,11 +258,13 @@ export class Scanner extends EventEmitter {
                   p?.name || context.executable.split(/[\\/]/).pop(),
                   context.argv.join(" "),
                 );
-                info.evidence = await this.identifier.identify(
-                  context.cwd,
-                  context.argv,
-                  context.executable,
-                );
+                info.evidence = application
+                  ? undefined
+                  : await this.identifier.identify(
+                      context.cwd,
+                      context.argv,
+                      context.executable,
+                    );
                 // Private arguments are hashed, never persisted or exposed.
                 info.associationKey = serviceAssociationKey(
                   context.cwd,
@@ -252,6 +272,12 @@ export class Scanner extends EventEmitter {
                   context.argv,
                 );
               }
+              info.classification = classifyListener({
+                name: p?.name,
+                context,
+                evidence: info.evidence,
+                application,
+              });
             } else {
               info.cwd = await fs.readlink(`/proc/${pid}/cwd`);
               info.evidence = await this.identifier.identify(
@@ -260,6 +286,10 @@ export class Scanner extends EventEmitter {
                 p?.path || "",
               );
               info.associationKey = info.evidence?.associationKey;
+              info.classification = classifyListener({
+                name: p?.name,
+                evidence: info.evidence,
+              });
             }
           } catch {
             // Keep the last verified observation when metadata temporarily fails.
@@ -275,6 +305,8 @@ export class Scanner extends EventEmitter {
           : p?.started || prior?.processStarted;
         const same = prior && !changed && prior.processStarted === started;
         const framework = cached?.framework || runtime;
+        const classification =
+          cached?.classification || classifyListener({ name: p?.name });
         const item: ServerInfo = {
           key: `${pid}:${port}`,
           pid,
@@ -287,10 +319,10 @@ export class Scanner extends EventEmitter {
           processStarted: started,
           framework,
           cwd: cached?.cwd,
-          discovery:
-            framework || cached?.evidence ? "development" : "unidentified",
-          serviceName: serviceLabel(framework),
-          canStop: !!cached?.identity,
+          ...classification,
+          serviceName: classification.serviceName || serviceLabel(framework),
+          canStop:
+            !!cached?.identity && classification.discovery !== "application",
           ...(p && Number.isFinite(p.cpu) ? { cpu: p.cpu } : {}),
           ...(p && Number.isFinite(p.memRss)
             ? { memory: p.memRss * 1024 }

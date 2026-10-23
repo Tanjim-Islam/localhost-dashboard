@@ -84,6 +84,42 @@ test("Stop Selected only targets explicit processes and previews every port in a
   assert.deepEqual(h.stopped, [100]);
   await assert.rejects(h.controller.execute(preview.token), /expired/);
 });
+
+test("ignored and application services cannot be stopped even with stale confirmation", async () => {
+  for (const change of [
+    (s: ServerInfo) => {
+      s.ignored = true;
+    },
+    (s: ServerInfo) => {
+      s.discovery = "application";
+    },
+  ]) {
+    const h = harness();
+    const preview = await h.controller.preview({ refs: [h.items[0]] });
+    change(h.items[0]);
+    await assert.rejects(h.controller.execute(preview.token));
+    await assert.rejects(h.controller.preview({ refs: [h.items[0]] }));
+    assert.deepEqual(h.stopped, []);
+  }
+});
+
+test("ignoring a project while final process inspection is pending cancels termination", async () => {
+  const h = harness();
+  const preview = await h.controller.preview({ refs: [h.items[0]] });
+  const createHost = h.deps.createHost;
+  h.deps.createHost = () => {
+    const host = createHost();
+    return {
+      ...host,
+      snapshot: async () => {
+        h.items[0].ignored = true;
+        return host.snapshot();
+      },
+    };
+  };
+  assert.equal((await h.controller.execute(preview.token))[0].ok, false);
+  assert.deepEqual(h.stopped, []);
+});
 test("stop rejects stale selection, replaced PID, expired confirmation and changed listener set", async () => {
   for (const mode of ["stale", "reused", "expired", "port"] as const) {
     const h = harness();

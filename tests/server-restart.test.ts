@@ -101,6 +101,14 @@ test("controller verifies replacement PID and stable original port before succes
   assert.deepEqual(run.events.map((p) => p.phase), ["preparing", "stopping", "starting", "ready"]);
 });
 
+test("ignoring or reclassifying a service during restart preparation leaves it running", async () => {
+  const run = harness();
+  run.deps.preflight = async () => { run.deps.getServer = () => undefined; };
+  const result = await run.controller.restart(run.ref);
+  assert.equal(result.ok, false);
+  assert.deepEqual(run.counts(), { stops: 0, launches: 0 });
+});
+
 test("controller refuses stale references and unsafe preparations without stopping", async () => {
   for (const options of [{ stale: true }, { missing: true }, { platform: "linux" as const }, { privacyError: true }]) {
     const run = harness(options);

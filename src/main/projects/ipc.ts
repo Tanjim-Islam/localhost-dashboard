@@ -65,6 +65,10 @@ export function registerProjectIpc(
       );
     if (!item)
       throw new Error("The service changed. Refresh and select it again.");
+    if (item.discovery === "application")
+      throw new Error(
+        "Application services cannot be assigned to development projects.",
+      );
     const key = await scanner.associationKey(item);
     model.associate(key, edit.projectId);
     return publish();

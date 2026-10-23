@@ -20,6 +20,10 @@ export function developmentRuntime(
     [/\buvicorn\b/i, "Uvicorn"],
     [/\bgunicorn\b/i, "Gunicorn"],
     [/\bdjango\b|manage\.py/i, "Django"],
+    [/\bodoo(?:-bin|\.py)?\b/i, "Odoo"],
+    [/\bflask\b/i, "Flask"],
+    [/\bfastapi\b/i, "FastAPI"],
+    [/\bhttp\.server\b|\bSimpleHTTPServer\b/i, "Python HTTP"],
     [/\brails\b/i, "Rails"],
   ];
   for (const [test, label] of frameworks) if (test.test(command)) return label;
@@ -46,7 +50,11 @@ export function developmentRuntime(
 export function serviceLabel(framework?: string): string {
   if (["Vite", "Next.js", "Nuxt", "Astro", "Angular"].includes(framework || ""))
     return "Frontend";
-  if (["Uvicorn", "Gunicorn", "Django", "Rails"].includes(framework || ""))
+  if (
+    ["Uvicorn", "Gunicorn", "Django", "Rails", "Flask", "FastAPI"].includes(
+      framework || "",
+    )
+  )
     return "API";
   return framework || "Local listener";
 }

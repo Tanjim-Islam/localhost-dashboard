@@ -101,6 +101,8 @@ export class ServerRestartController {
       }
       const freshTree = descendants(plan.launch, fresh.processes);
       if (freshTree.length !== plan.tree.length) throw new RestartError("The server started another child process. Try again once startup finishes.");
+      const eligible = this.deps.getServer(ref);
+      if (!eligible || eligible.firstSeen !== ref.firstSeen) throw new RestartError("This service is no longer available for restart. Nothing was stopped.");
       emit("stopping", "Stopping the server and its child processes...");
       stopped = true;
       await this.stopTree(host, plan);

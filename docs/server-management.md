@@ -7,12 +7,14 @@
 | Public data and request validators | `src/shared/servers.ts` |
 | Listener discovery and private process cache | `src/main/scanner.ts` |
 | Runtime classification and successful-scan reconciliation | `src/main/projects/discovery.ts` |
+| Application ownership and development-listener classification | `src/main/projects/classify.ts` |
 | Project evidence and stable identifiers | `src/main/projects/identify.ts` |
 | Project metadata, legacy notes, observed lifecycle | `src/main/projects/model.ts` |
 | Versioned persistence and coalesced writes | `src/main/projects/store.ts` |
 | Main-frame IPC handlers | `src/main/projects/ipc.ts` |
 | Stop confirmation and identity revalidation | `src/main/projects/stop-controller.ts` |
 | Native process inspection and existing restart engine | `src/main/server-restart/` |
+| Safe native terminal launch | `src/main/project-terminal.ts` |
 | Project and service UI | `src/renderer/components/ServersTab.tsx`, `components/servers/` |
 | CLI snapshot comparison | `src/main/clis/changes.ts`, `components/clis/CliChanges.tsx` |
 
@@ -26,9 +28,15 @@ A project ID hashes the canonical directory, case-insensitively on Windows. Chan
 
 Native start time and executable establish process identity. `key` plus `firstSeen` identifies the renderer's observed instance. Neither a PID alone nor a port alone authorizes stopping or restarting.
 
+Classification checks the executable, private launch context, project evidence, and bounded process ancestry. A runtime name alone does not establish a development server. macOS bundles and Windows executables sharing an installation with a verified application ancestor identify application services, including bundled Node helpers such as Raycast. Parent start times prevent reused PIDs from proving ownership. An IDE or terminal ancestor never absorbs a runtime outside its installation. Portable Electron and browser debugging listeners also remain application services. No port number establishes an application identity. Missing evidence stays under Other local listeners.
+
+Application services appear in a separate animated disclosure. They cannot be associated with development projects, selected, stopped, or restarted through dashboard IPC. Only confirmed project/development services receive those actions. Odoo, Flask, FastAPI, and Python HTTP commands supplement existing framework heuristics.
+
 ## Persistence and migrations
 
-`projects.json` stores a schema-version-1 state: up to 1,000 projects, 2,000 manual associations, 512 last observations, 100 recently stopped services, and 500 lifecycle events. Projects hold name, canonical directory, notes, pin/bookmark flags, and timestamps. History contains only allowlisted observed metadata, never commands, environments, output, exit codes, or guessed crash reasons. Observation writes coalesce over 30 seconds; user changes and clean shutdown flush immediately.
+`projects.json` stores a schema-version-2 state: up to 1,000 projects, 2,000 manual associations, 512 last observations, 100 recently stopped services, and 500 lifecycle events. Projects hold name, canonical directory, notes, pin/bookmark/ignored flags, and timestamps. Version 1 migrates in place with `ignored: false`, preserving notes, associations, and history. History contains only allowlisted observed metadata, never commands, environments, output, exit codes, or guessed crash reasons. Observation writes coalesce over 30 seconds; user changes and clean shutdown flush immediately.
+
+Ignored projects retain their identity and metadata across port changes and restarts. They stay in the Ignored view, including while stopped. Ignore suppresses normal counts, notifications, health probes, and destructive actions; observed lifecycle remains available in that view. Restore reverses the preference. The renderer clears selection when ignoring a project or changing views. Main rechecks eligibility before stop/restart, including when ignoring races with process inspection. The UI-only view preference uses `dashboard:serversView` in localStorage.
 
 The existing `port-notes.json` remains a read-only backup. Its notes enter an unassigned legacy list once. The user must choose a project explicitly; a current port match never assigns a note. Project notes allow 4,000 characters; longer legacy notes remain copyable (up to 64,000 characters in the migrated view) and are not silently attached or truncated to fit. The original backup remains intact.
 
@@ -46,6 +54,10 @@ Filtering never selects services. Project stop includes only explicitly confirme
 
 HTTP failure means an unresponsive HTTP endpoint, not a crashed process. Late health results cannot update a replacement instance. Listener disappearance, process change, port reuse, recovery, and restart are distinct events. The app cannot recover terminal output or determine why a process exited.
 
+HTTP status and protocol evidence appear in service Details. A 426 response is reachable but requires an upgrade; only an explicit WebSocket Upgrade header labels it WebSocket. Neither an HTTP error nor reclassifying a live application helper produces a stopped-process claim.
+
+`openTerminal` validates an absolute local folder in preload and main. Windows uses a fixed PowerShell launcher to open a visible `cmd /d /k` console in the canonical folder. The path travels as an environment value, never interpolated shell text; the temporary variable is removed before launching the console. macOS uses `/usr/bin/open -a Terminal -- <folder>` with a literal argument. Launch failures reject the IPC request rather than reporting success on spawn alone.
+
 ## Verification
 
 ```text
@@ -61,6 +73,10 @@ npm run build
 
 Unit tests cover project and monorepo evidence, conflicting roots, persistence, note migration, metadata failures, lifecycle deduplication, IPv6 parsers, health identity, CLI changes, and stop authorization. Live suites generate isolated dummy servers only. Set `DASHBOARD_TEST_PYTHON` to an absolute interpreter for the Python restart scenario. Never test destructive server actions against unrelated real processes. Windows runs do not prove native macOS behavior; run the native suites on macOS before claiming that coverage.
 
+Ownership, portable browser helpers, misleading runtime/ancestor names, macOS bundles, ignore migration, stale stop authorization, HTTP upgrade responses, and literal terminal paths have focused `server-classification`, `server-projects`, `server-stop`, `server-health`, and `server-terminal` tests. Verify Terminal through the actual project button, including a visible console and the intended working directory; process spawn alone is insufficient.
+
 For UI checks, launch the built app with `LOCAL_DASHBOARD_CLIS_TEST_ROOT` set to a temporary fixture directory. This isolates Electron data and CLI operations; the server scanner still observes real local listeners. Select only generated dummy services. Verify project edits and manual associations after an app restart, hidden selections, exact stop previews, HTTP failure/recovery, recent history, cached CLI startup, minimum-width title bar, light/dark themes, and keyboard focus/Escape behavior.
 
 Project menus (`servers/ProjectMenu.tsx`) support arrow keys, Home/End, Escape, Tab, and outside dismissal. Menu items are left-aligned. Service details (`servers/ServiceRow.tsx`) expand below the action row without moving its controls. Both use Framer Motion for entrance and exit, honor reduced motion, and make closing content inert. Check rapid toggles, focus restoration, and unchanged action positions in both themes.
+
+Recently stopped entries use `servers/StoppedServiceRow.tsx`: spaced identity/timestamp lines, inline actions, and full-width animated details. Keep the section-level `ServerDisclosure` out of individual rows. Check a populated history with long project names and missing project metadata at the minimum window width, not only collapsed or empty states.

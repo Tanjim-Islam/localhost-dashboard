@@ -8,6 +8,8 @@ export type HealthStatus = {
   url: string;
   status: 'healthy' | 'slow' | 'down';
   responseTime?: number; // ms
+  httpStatus?: number;
+  endpoint?: 'http' | 'websocket' | 'upgrade';
   lastChecked: number;
   error?: string;
 };
@@ -65,7 +67,8 @@ export class HealthChecker extends EventEmitter {
   private async checkServer(server: { key: string; url: string; firstSeen?: number }): Promise<void> {
     
     try {
-      const responseTime = await this.pingUrl(server.url);
+      const response = await this.pingUrl(server.url);
+      const { responseTime } = response;
       if (!this.servers.some(s => s.key === server.key && s.firstSeen === server.firstSeen)) return;
       const status: HealthStatus['status'] = 
         responseTime < SLOW_THRESHOLD_MS ? 'healthy' : 'slow';
@@ -76,6 +79,8 @@ export class HealthChecker extends EventEmitter {
         url: server.url,
         status,
         responseTime,
+        httpStatus: response.httpStatus,
+        endpoint: response.endpoint,
         lastChecked: Date.now(),
       });
     } catch (err) {
@@ -91,7 +96,7 @@ export class HealthChecker extends EventEmitter {
     }
   }
 
-  private pingUrl(url: string): Promise<number> {
+  private pingUrl(url: string): Promise<{ responseTime: number; httpStatus?: number; endpoint: 'http' | 'websocket' | 'upgrade' }> {
     return new Promise((resolve, reject) => {
       const start = Date.now();
       const parsedUrl = new URL(url);
@@ -107,7 +112,8 @@ export class HealthChecker extends EventEmitter {
         },
         (res) => {
           res.destroy();
-          resolve(Date.now() - start);
+          const upgrade = String(res.headers.upgrade || '').toLowerCase();
+          resolve({ responseTime: Date.now() - start, httpStatus: res.statusCode, endpoint: upgrade === 'websocket' ? 'websocket' : res.statusCode === 426 ? 'upgrade' : 'http' });
         }
       );
 

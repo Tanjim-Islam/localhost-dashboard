@@ -10,13 +10,13 @@ import type {
 import { pathIdentity, stableId, type ProjectEvidence } from "./identify";
 
 export type ProjectState = ProjectSnapshot & {
-  schemaVersion: 1;
+  schemaVersion: 2;
   legacyNotesMigrated: boolean;
   associations: Record<string, string | null>;
   lastObserved: ServiceRecord[];
 };
 export const emptyProjectState = (): ProjectState => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   legacyNotesMigrated: false,
   projects: [],
   associations: {},
@@ -38,7 +38,7 @@ export function migrateProjectState(
   if (
     raw &&
     typeof raw === "object" &&
-    (raw as ProjectState).schemaVersion === 1
+    [1, 2].includes((raw as ProjectState).schemaVersion)
   ) {
     const old = raw as ProjectState;
     state.projects = (Array.isArray(old.projects) ? old.projects : [])
@@ -53,6 +53,7 @@ export function migrateProjectState(
         notes: clean(p.notes, 4000),
         pinned: !!p.pinned,
         bookmarked: !!p.bookmarked,
+        ignored: p.ignored === true,
         createdAt: Number(p.createdAt) || 0,
         lastSeen: Number(p.lastSeen) || 0,
       }));
@@ -181,6 +182,7 @@ export class ProjectModel {
         notes: "",
         pinned: false,
         bookmarked: false,
+        ignored: false,
         createdAt: now,
         lastSeen: now,
       };
@@ -194,6 +196,15 @@ export class ProjectModel {
     evidence?: ProjectEvidence,
     associationKey?: string,
   ): ServerInfo {
+    // Application ownership cannot be overridden into destructive project actions.
+    if (item.discovery === "application") {
+      const base = { ...item };
+      delete base.projectId;
+      delete base.association;
+      delete base.serviceId;
+      delete base.ignored;
+      return { ...base, canStop: false };
+    }
     const key = associationKey || evidence?.associationKey;
     const manual = key && Object.hasOwn(this.state.associations, key);
     const project = manual
@@ -206,6 +217,7 @@ export class ProjectModel {
     delete base.projectId;
     delete base.association;
     delete base.serviceId;
+    delete base.ignored;
     return {
       ...base,
       ...(project
@@ -213,6 +225,7 @@ export class ProjectModel {
             projectId: project.id,
             association: manual ? ("manual" as const) : ("detected" as const),
             discovery: "development" as const,
+            ignored: project.ignored,
           }
         : {}),
       ...(key
@@ -296,6 +309,16 @@ export class ProjectModel {
       a.key === b.key && a.firstSeen === b.firstSeen;
     for (const old of previous)
       if (!current.some((next) => same(old, next))) {
+        // Reclassifying a live app helper is not a stopped process.
+        if (
+          items.some(
+            (item) =>
+              item.key === old.key &&
+              item.processStarted === old.processStarted &&
+              item.discovery === "application",
+          )
+        )
+          continue;
         const stopped = {
           ...old,
           lastStatus:
