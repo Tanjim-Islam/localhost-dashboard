@@ -1,15 +1,22 @@
 import { spawnSync } from "node:child_process";
 
-function run(command, args) {
-  const result = spawnSync(command, args, { stdio: "inherit" });
+// Invoke npm through Node so Windows does not need to execute a .cmd shim.
+const npmCli = process.env.npm_execpath;
+if (!npmCli) throw new Error("Run packaging through npm run package.");
+
+function runNpm(args) {
+  const result = spawnSync(process.execPath, [npmCli, ...args], { stdio: "inherit" });
+  if (result.error) console.error(result.error.message);
   if (result.status !== 0) process.exit(result.status || 1);
 }
 
-run("npm", ["run", "build"]);
+runNpm(["run", "build"]);
 if (process.platform === "darwin") {
-  run("npm", ["run", "build:mac-sparkle-bridge"]);
+  runNpm(["run", "build:mac-sparkle-bridge"]);
 }
-run("npx", [
+runNpm([
+  "exec",
+  "--",
   "electron-builder",
   "--publish",
   "never",
