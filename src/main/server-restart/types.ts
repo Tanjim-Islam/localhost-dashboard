@@ -18,7 +18,7 @@ export type ProcessSnapshot = {
   contexts: LaunchContext[];
 };
 
-export type Listener = { pid: number; localPort: number };
+export type Listener = { pid: number; localPort: number; ipv6?: boolean };
 export type ServerRef = { key: string; firstSeen: number };
 export type RestartResult = { ok: boolean; port: number; message: string };
 export type RestartPhase = "preparing" | "stopping" | "starting" | "ready" | "failed";

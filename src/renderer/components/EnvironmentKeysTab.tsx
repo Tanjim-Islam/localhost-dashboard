@@ -130,81 +130,65 @@ export default function EnvironmentKeysTab({
 
   return (
     <section className="space-y-5" aria-label="Windows environment keys">
-      <div className="app-card relative overflow-hidden rounded-2xl border border-gray-300 bg-gray-100/94 px-5 py-5 shadow-soft">
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-48 bg-gradient-to-l from-night-600/20 to-transparent" />
-        <div className="relative flex flex-wrap items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-celadon-400/25 bg-celadon-300/10 text-celadon-500">
-              <KeyRound className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-semibold text-gray-900">
-                  Global ENV Keys
-                </h2>
-                <span className="rounded-full border border-gray-300 bg-gray-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-700">
-                  Windows
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void loadItems(true)}
-              disabled={refreshing}
-              className="inline-flex h-9 items-center gap-2 rounded-full border border-gray-300 bg-gray-200 px-3.5 text-sm font-medium text-gray-800 transition-all hover:border-gray-400 hover:bg-gray-300 disabled:cursor-wait disabled:opacity-60"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditorItem(null)}
-              className="inline-flex h-9 items-center gap-2 rounded-full bg-celadon-400 px-4 text-sm font-semibold text-night-100 transition-all hover:bg-celadon-500 active:scale-[0.98]"
-            >
-              <Plus className="h-4 w-4" />
-              Add key
-            </button>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center rounded-full border border-gray-300 bg-gray-200/80 p-1">
+          <ScopeButton
+            active={scopeFilter === "all"}
+            label="All"
+            count={items.length}
+            onClick={() => setScopeFilter("all")}
+          />
+          <ScopeButton
+            active={scopeFilter === "user"}
+            label="User"
+            count={userCount}
+            onClick={() => setScopeFilter("user")}
+          />
+          <ScopeButton
+            active={scopeFilter === "machine"}
+            label="System"
+            count={machineCount}
+            onClick={() => setScopeFilter("machine")}
+          />
         </div>
-
-        <div className="relative mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-300/80 pt-4">
-          <div className="flex items-center rounded-full border border-gray-300 bg-gray-200/80 p-1">
-            <ScopeButton
-              active={scopeFilter === "all"}
-              label="All"
-              count={items.length}
-              onClick={() => setScopeFilter("all")}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void loadItems(true)}
+            disabled={refreshing}
+            className="inline-flex h-9 items-center gap-2 rounded-full border border-gray-300 bg-gray-200 px-3.5 text-sm font-medium text-gray-800 transition-all hover:border-gray-400 hover:bg-gray-300 disabled:cursor-wait disabled:opacity-60"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
             />
-            <ScopeButton
-              active={scopeFilter === "user"}
-              label="User"
-              count={userCount}
-              onClick={() => setScopeFilter("user")}
-            />
-            <ScopeButton
-              active={scopeFilter === "machine"}
-              label="System"
-              count={machineCount}
-              onClick={() => setScopeFilter("machine")}
-            />
-          </div>
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditorItem(null)}
+            className="inline-flex h-9 items-center gap-2 rounded-full bg-celadon-400 px-4 text-sm font-semibold text-night-100 transition-all hover:bg-celadon-500 active:scale-[0.98]"
+          >
+            <Plus className="h-4 w-4" />
+            Add key
+          </button>
         </div>
       </div>
 
       {notice && (
-        <div role="status" className="env-status-enter flex items-center gap-2 rounded-xl border border-success-border bg-success-surface px-4 py-3 text-sm text-success-text">
+        <div
+          role="status"
+          className="env-status-enter flex items-center gap-2 text-sm text-success-text"
+        >
           <Check className="h-4 w-4" />
           {notice}
         </div>
       )}
 
       {error && (
-        <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger-text">
+        <div
+          role="alert"
+          className="flex items-start gap-2.5 rounded-xl border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger-text"
+        >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <div className="font-semibold">Could not load ENV keys</div>
@@ -214,25 +198,16 @@ export default function EnvironmentKeysTab({
       )}
 
       {loading ? (
-        <div className="flex min-h-48 items-center justify-center rounded-2xl border border-gray-300 bg-gray-200/50 text-sm text-gray-600">
+        <div className="flex items-center justify-center py-8 text-sm text-gray-600">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Reading Windows environment variables
+          Loading keys...
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-gray-200/35 px-6 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-200 text-gray-600">
-            <KeyRound className="h-5 w-5" />
-          </div>
-          <div className="mt-4 text-sm font-semibold text-gray-800">
-            {query.trim() || scopeFilter !== "all"
-              ? "No matching ENV keys"
-              : "No secret-like ENV keys found"}
-          </div>
-          <div className="mt-1 max-w-md text-xs leading-5 text-gray-600">
-            Keys with names containing KEY, TOKEN, SECRET, PASSWORD, CREDENTIAL,
-            or PAT appear here.
-          </div>
-        </div>
+        <p className="py-8 text-center text-sm text-gray-600">
+          {query.trim() || scopeFilter !== "all"
+            ? "No matching ENV keys."
+            : "No credential keys found."}
+        </p>
       ) : (
         <div
           className="grid gap-5"
@@ -459,9 +434,6 @@ function EnvironmentKeyCard({
           <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-600">
             Stored value
           </span>
-          <span className="text-[11px] text-gray-500">
-            {item.valueLength} character{item.valueLength === 1 ? "" : "s"}
-          </span>
         </div>
         <div className="flex items-center gap-2">
           <div
@@ -501,7 +473,9 @@ function EnvironmentKeyCard({
       </div>
 
       {valueError && (
-        <div role="alert" className="mt-2 text-xs text-danger-text">{valueError}</div>
+        <div role="alert" className="mt-2 text-xs text-danger-text">
+          {valueError}
+        </div>
       )}
     </article>
   );
@@ -602,9 +576,6 @@ function EnvironmentKeyEditor({
               >
                 {isEditing ? "Edit ENV key" : "Add ENV key"}
               </h2>
-              <p className="mt-0.5 text-xs text-gray-600">
-                Changes are written directly to Windows.
-              </p>
             </div>
           </div>
           <button
@@ -706,7 +677,10 @@ function EnvironmentKeyEditor({
           </div>
 
           {error && (
-            <div role="alert" className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-surface px-3 py-2.5 text-xs text-danger-text">
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-xl border border-danger-border bg-danger-surface px-3 py-2.5 text-xs text-danger-text"
+            >
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               {error}
             </div>
@@ -794,7 +768,10 @@ function DeleteEnvironmentKeyDialog({
         </p>
 
         {error && (
-          <div role="alert" className="mt-4 flex items-start gap-2 rounded-xl border border-danger-border bg-danger-surface px-3 py-2.5 text-xs text-danger-text">
+          <div
+            role="alert"
+            className="mt-4 flex items-start gap-2 rounded-xl border border-danger-border bg-danger-surface px-3 py-2.5 text-xs text-danger-text"
+          >
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {error}
           </div>

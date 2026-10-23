@@ -27,7 +27,8 @@
     "dev:clis-test": "node --experimental-strip-types scripts/start-clis-test-mode.mts",
     "format:check": "prettier --check .",
     "format": "prettier -w .",
-    "start:test-servers": "node scripts/dev-servers.js"
+    "start:test-servers": "node scripts/dev-servers.js",
+    "test:servers:stop-live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-stop.integration.cjs"
   },
   "keywords": [],
   "devDependencies": {

@@ -279,6 +279,7 @@ export type CliScanSession = {
 };
 
 export type CliInventorySnapshot = {
+  changes?: import("./changes").CliChanges;
   schemaVersion: 2;
   revision: string;
   platform: CliPlatform;

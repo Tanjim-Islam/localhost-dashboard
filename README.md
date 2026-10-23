@@ -8,10 +8,12 @@ A simple Electron app that shows all my running local dev servers in one place. 
 
 ## What it does
 
-- Scans for TCP listeners on common dev ports (3000, 5173, 8080, etc.)
+- Automatically discovers local development servers on any TCP port, including IPv6
+- Groups services by project, with saved names, notes, pins, bookmarks, and manual corrections
+- Retains recently stopped services and bounded observed lifecycle history
 - Shows process name, CPU/memory usage, uptime
 - Detects frameworks (Vite, Next.js, Angular, etc.) and color-codes them
-- Quick actions: open in browser, copy URL, restart the project, kill the process
+- Quick actions: open in browser, copy URL, restart a service, safely stop selected processes
 - Project actions: open terminal, explorer, or VS Code at project directory
 - Health monitoring with response time indicators
 - AutoHotkey script detection (Windows) with kill/restart/edit
@@ -22,7 +24,7 @@ A simple Electron app that shows all my running local dev servers in one place. 
 
 ## Screenshots
 
-The app has a custom frameless window with light and dark palettes. Server cards show port, process info, framework badge, and quick action buttons.
+The app has a custom frameless window with light and dark palettes. Project cards group running services, health, resource readings, and quick actions.
 
 Success and completed actions use green. Errors and destructive actions use red. These status colors are independent of the selected palette, with readable shades for light and dark modes.
 
@@ -59,8 +61,7 @@ Outputs:
 Click the gear icon to open settings:
 
 - **Scan interval** - How often to check for servers (default 5s)
-- **Ports** - Which ports to watch. Supports ranges like `3000-3999`
-- **Notifications** - Get notified when servers start/stop
+- **Notifications** - Get notified when a listener appears or disappears
 - **Start at login** - Launch on system startup
 - **Close to tray** - Minimize to tray instead of quitting
 
@@ -68,29 +69,30 @@ Settings persist via `electron-store`.
 
 ## Features
 
-### Server Detection
+### Projects and Services
 
-Uses `systeminformation` to find listening TCP connections. On Windows, falls back to parsing `netstat` output if needed. Each server shows:
+Discovery combines systeminformation with Windows netstat or macOS lsof. It automatically observes local TCP listeners on arbitrary ports. Project detection uses native working directories, script paths, manifests, and repository/workspace boundaries. Uncertain services remain unassigned; other listeners are available in a collapsed section.
 
-- Port and URL
-- Process name and PID
-- CPU/Memory with sparkline history
-- Framework detection (Vite, Next.js, CRA, Angular, etc.)
-- Health status (green/yellow/red dot with response time)
+Projects have persistent names, notes, pins, and bookmarks. Use **Change project** in service details to correct an association, or **Add project** to choose a folder. Multiple services share one project, including monorepo packages. Project identity survives process and port changes; moving a project directory creates a new identity.
 
-### Quick Actions
+### Service Actions
 
-- **Open** - Opens the URL in default browser
-- **Copy URL** - Copies `http://localhost:PORT` to clipboard
-- **Restart** - Stops and reruns the project's launch command on Windows and macOS
-- **Kill** - Terminates the process
-- **Kill All** - Batch kill all detected servers
+- **Open** and **Copy URL** use the exact IPv4/IPv6 localhost address.
+- **Restart** recovers and verifies the existing launch context on Windows and macOS.
+- **Stop Selected** uses explicit checkboxes. Search never implicitly selects anything.
+- **Stop This Project** previews verified services associated with that project.
+
+Every stop confirmation lists affected processes and all their listening ports. Main and the native helper revalidate identities before stopping. A changed or unreadable process is refused. Stop targets only those processes, without killing parents or trees. A supervisor may start a replacement process. The former Kill All action and IPC have been removed.
+
+### Recently Stopped and Activity
+
+Recently Stopped retains the last observed service, port, process, project, status, and timestamps. Project folder, terminal, and editor actions remain available. Activity can be inspected globally or per project and is capped at 500 events. Listener disappearance, HTTP failure/recovery, process changes, port reuse, and verified restart are recorded separately. These observations do not establish crash reasons or exit codes. Transient listener query failures retain the previous results.
 
 ### Restarting a server
 
 **Restart** starts a fresh process, so boot-time configuration and code are loaded again. It recovers the executable, arguments, working directory, and environment from the running process. For npm scripts, it follows the script's launcher so hooks, workspace selection, and forwarded arguments run again. It also follows development watchers and Python reloaders when their process tree can be identified.
 
-The original process and its children must stop before a replacement starts. Success requires the replacement process tree to own every original listening port for at least one second. Duplicate restart clicks and Kill actions are blocked while restart is in progress. A shared launcher with another server on a different port is left running, with an explanation.
+The original process and its children must stop before a replacement starts. Success requires the replacement process tree to own every original listening port for at least one second. Duplicate restart clicks and Stop actions are blocked while restart is in progress. A shared launcher with another server on a different port is left running, with an explanation.
 
 The replacement runs in the background independently of the dashboard. It does not reconnect to the original terminal or its output. Environment values and launch commands are held in memory only for the operation. Package scripts reread their configuration on launch. Directly launched processes that modify their own environment can retain those values on Windows; use the original terminal if a dotenv loader would need those values cleared.
 
@@ -103,6 +105,7 @@ Restart checks:
 ```bash
 npm run test:servers
 npm run test:servers:live
+npm run test:servers:stop-live
 ```
 
 The live checks create temporary Node, npm, npm workspace, watcher, and Vite projects, including multiple ports, separate projects, shared-launcher refusal, startup failure, special characters, and repeated clicks. Set `DASHBOARD_TEST_PYTHON` to an absolute Python interpreter to include the Python case. All fixture processes and directories are removed afterward. Run the suite on each target OS before claiming native verification.
@@ -111,13 +114,13 @@ The macOS build compiles `native/server-process.m` into a universal helper using
 
 ### Project Actions
 
-- **Terminal** - Opens PowerShell/Terminal at project directory
+- **Terminal** - Opens a terminal at the project directory
 - **Explorer** - Opens folder in file manager
 - **VS Code** - Opens project in VS Code
 
-### Port Notes
+### Project Notes and Migration
 
-Attach persistent notes to ports. Useful for documenting what each port is for when you come back to a project after a while.
+Notes belong to persistent projects. Existing port notes appear under **Unassigned legacy notes** and require explicit association, so port reuse cannot transfer a note to an unrelated project. The original `port-notes.json` is retained. Old port filters remain on disk but no longer restrict automatic discovery; other preferences are preserved.
 
 ### AutoHotkey Scripts (Windows)
 
@@ -149,6 +152,8 @@ The permanent CLIs tab loads its last saved inventory immediately. It never insp
 - Embedded application or SDK tools in an optional filter, excluded from normal installed totals
 - Broken shims, missing targets, inaccessible endpoints, incomplete runtimes, and multiple current installations
 - Isolated package-source failures without discarding the last valid inventory
+
+After a manual scan, a compact expandable summary shows additions, verified removals, versions, executable/path changes, ownership, availability, and PATH precedence. Incomplete coverage or failed verification shows **Could not verify**, never an assumed removal. Up to 200 sanitized changes are saved with the inventory.
 
 The catalogue supplies names and curated version probes. Discovery also finds unfamiliar console executables and scripts, declared package commands, Windows application folders, and inactive Node/Python versions. Only recognized commands and commands declared by CLI package sources enter the main list automatically. Application ownership, PATH placement, and a console executable header alone do not qualify a file as a CLI. Undeclared files appear only under **State > Other discoveries**, where **Add to CLI list** and **Remove from CLI list** save a reversible preference without running or deleting the file. Documented application commands such as PowerToys and BCUninstaller console appear under **Bundled tools**, separately from internal helpers.
 
@@ -188,6 +193,8 @@ src/
 └── types/          # TypeScript declarations
 ```
 
+See [server management architecture and verification](docs/server-management.md) for identities, safety boundaries, persistence schemas, migrations, and tests.
+
 ## CLIs testing
 
 ```bash
@@ -199,8 +206,9 @@ npm run dev:clis-test
 
 ## Known Limitations
 
-- Killing Windows services (like PostgreSQL) requires running as admin
-- Framework detection is heuristic-based, might not catch everything
+- Unreadable process identities cannot be stopped from the dashboard; system services and supervisors should be managed through their owners
+- Project/framework detection is conservative; unreadable or conflicting evidence requires manual association
+- Native stop/restart verification requires Windows or macOS; Linux retains discovery and project management
 - AHK features only work on Windows
 - ENV key management only works on Windows
 - CLIs are available on Windows and macOS, not Linux

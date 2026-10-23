@@ -79,7 +79,7 @@ function codeDefaults(): AppSettings {
     openInTrayAtLogin: true,
     notifyOnStart: true,
     notifyOnStop: true,
-    scanAllPorts: false,
+    scanAllPorts: true,
     closeToTray: true,
     globalHotkey: getDefaultGlobalHotkey(process.platform)
   };
@@ -311,7 +311,7 @@ export function resetToDefaults(): AppSettings {
     openInTrayAtLogin: (json?.openInTrayAtLogin ?? true) as boolean,
     notifyOnStart: (json?.notifyOnStart ?? true) as boolean,
     notifyOnStop: (json?.notifyOnStop ?? true) as boolean,
-    scanAllPorts: (json?.scanAllPorts ?? false) as boolean,
+    scanAllPorts: true,
     closeToTray: (json?.closeToTray ?? true) as boolean,
     globalHotkey: json?.globalHotkey || getDefaultGlobalHotkey(process.platform),
     notifications: undefined

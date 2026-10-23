@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import AppearanceSettings from "./AppearanceSettings";
 import { useThemePreferences } from "../theme/ThemeProvider";
+import type { UpdateStatus } from "../../types/preload";
 
 type Props = {
   open: boolean;
@@ -22,33 +23,53 @@ export default function SettingsPanel({
 }: Props) {
   const { resetPreferences } = useThemePreferences();
   const [scanIntervalMs, setScanIntervalMs] = useState(5000);
-  const [portsText, setPortsText] = useState(
-    "3000-3999, 8000, 8080, 5000, 4200, 5173-5199"
-  );
   const [startAtLogin, setStartAtLogin] = useState(false);
   const [openInTrayAtLogin, setOpenInTrayAtLogin] = useState(true);
   const [notifyOnStart, setNotifyOnStart] = useState(true);
   const [notifyOnStop, setNotifyOnStop] = useState(true);
-  const [scanAllPorts, setScanAllPorts] = useState(false);
   const [closeToTray, setCloseToTray] = useState(true);
   const [globalHotkey, setGlobalHotkey] = useState("Ctrl+Shift+D");
   const [recording, setRecording] = useState(false);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle" });
+  useEffect(() => {
+    if (!open) return;
+    void window.api.getUpdateStatus().then(setUpdateStatus);
+    return window.api.onUpdateStatus(setUpdateStatus);
+  }, [open]);
   const supportsTrayStartup = platform === "darwin" || platform === "win32";
   const minimizedLocation = platform === "darwin" ? "background" : "tray";
+  const panelRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    panelRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => previous?.focus();
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !recording) { event.preventDefault(); onClose(); }
+      if (event.key !== "Tab") return;
+      const controls = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea, select, [tabindex="0"]') || []).filter(el => el.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open, onClose, recording]);
 
   useEffect(() => {
     if (settings) {
       setScanIntervalMs(settings.scanIntervalMs ?? 5000);
-      setPortsText(settings.portsText ?? portsToString(settings.ports || []));
       setStartAtLogin(Boolean(settings.startAtLogin));
       setOpenInTrayAtLogin(
         typeof settings.openInTrayAtLogin === "boolean"
           ? settings.openInTrayAtLogin
           : true,
       );
-      setScanAllPorts(Boolean(settings.scanAllPorts));
       setCloseToTray(
         typeof settings.closeToTray === "boolean" ? settings.closeToTray : true
       );
@@ -101,6 +122,7 @@ export default function SettingsPanel({
       }}
     >
       <section
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
@@ -112,9 +134,7 @@ export default function SettingsPanel({
             <h2 id="settings-title" className="text-base font-semibold">
               Settings
             </h2>
-            <div className="mt-0.5 text-[11px] text-gray-600">
-              Tune the dashboard without leaving your workspace.
-            </div>
+
           </div>
           <button
             type="button"
@@ -138,6 +158,8 @@ export default function SettingsPanel({
                 </span>
                 <input
                   type="number"
+                  min={2000}
+                  step={1000}
                   value={scanIntervalMs}
                   onChange={(e) =>
                     setScanIntervalMs(parseInt(e.target.value || "0", 10))
@@ -145,25 +167,8 @@ export default function SettingsPanel({
                   className="w-full rounded-xl bg-gray-200 px-3 py-2 outline-none ring-night-700 focus:ring-2"
                 />
               </label>
-              <label className="block space-y-1.5">
-                <span className="block text-sm text-gray-700">
-                  Ports (comma separated, allow ranges like 3000-3999)
-                </span>
-                <input
-                  value={portsText}
-                  onChange={(e) => setPortsText(e.target.value)}
-                  className="w-full rounded-xl bg-gray-200 px-3 py-2 outline-none ring-night-700 focus:ring-2"
-                />
-              </label>
-              <label className="flex items-center gap-2.5 pt-0.5">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 accent-night-700"
-                  checked={scanAllPorts}
-                  onChange={(e) => setScanAllPorts(e.target.checked)}
-                />
-                <span>Scan all ports (slower)</span>
-              </label>
+
+
             </section>
 
             <section className="settings-section p-3.5 text-gray-900">
@@ -215,7 +220,7 @@ export default function SettingsPanel({
                       checked={closeToTray}
                       onChange={() => setCloseToTray(true)}
                     />
-                    <span>Minimize to {minimizedLocation} (default)</span>
+                    <span>Minimize to {minimizedLocation}</span>
                   </label>
                   <label className="flex items-center gap-2">
                     <input
@@ -225,7 +230,7 @@ export default function SettingsPanel({
                       checked={!closeToTray}
                       onChange={() => setCloseToTray(false)}
                     />
-                    <span>Quit the application</span>
+                    <span>Quit</span>
                   </label>
                 </div>
               </div>
@@ -247,7 +252,7 @@ export default function SettingsPanel({
                     checked={notifyOnStop}
                     onChange={(e) => setNotifyOnStop(e.target.checked)}
                   />
-                  <span>Notify when server stops</span>
+                  <span>Notify when listener disappears</span>
                 </label>
               </div>
             </section>
@@ -257,9 +262,6 @@ export default function SettingsPanel({
                 <div>
                   <div className="text-sm font-semibold text-gray-900">
                     Global hotkey
-                  </div>
-                  <div className="text-xs text-gray-700">
-                    Toggle the dashboard from anywhere
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -346,6 +348,7 @@ export default function SettingsPanel({
               </div>
               <button
                 type="button"
+                disabled={updateStatus.state === "checking"}
                 onClick={async () => {
                   try {
                     await window.api.checkForUpdates();
@@ -355,7 +358,7 @@ export default function SettingsPanel({
                 }}
                 className="rounded-full bg-gray-300 px-3 py-1.5 text-sm text-gray-900 hover:bg-gray-400"
               >
-                Check now
+                {updateStatus.state === "checking" ? "Checking..." : updateStatus.state === "not-available" ? "Up to date" : "Check now"}
               </button>
             </section>
           </div>
@@ -388,12 +391,10 @@ export default function SettingsPanel({
                 if (!accel) return;
                 onSave({
                   scanIntervalMs,
-                  portsText,
                   startAtLogin,
                   openInTrayAtLogin,
                   notifyOnStart,
                   notifyOnStop,
-                  scanAllPorts,
                   closeToTray,
                   globalHotkey: accel,
                 });
@@ -412,11 +413,6 @@ export default function SettingsPanel({
   );
 }
 
-function portsToString(ports: (number | [number, number])[]) {
-  return (ports || [])
-    .map((p) => (Array.isArray(p) ? `${p[0]}-${p[1]}` : String(p)))
-    .join(", ");
-}
 
 function normalizeKey(e: KeyboardEvent): string | null {
   const map: Record<string, string> = {

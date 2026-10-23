@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, clipboard } from "electron";
+import { associationEdit, id, object, projectEdit, stopScope, type ProjectSnapshot, type ServerInfo } from "../shared/servers";
 import { validateServerRef, type RestartProgress } from "../main/server-restart/types";
 import {
   validateCliInstallationRef,
@@ -81,8 +82,22 @@ const requireSaveEnvironmentVariableInput = (
 };
 
 contextBridge.exposeInMainWorld("api", {
+  getServers: () => ipcRenderer.invoke("servers:get"),
+  openProjectFolder: (directory: string) => ipcRenderer.invoke("projects:open-folder", requireString(directory, "Project folder")),
+  getProjects: () => ipcRenderer.invoke("projects:get"),
+  addProject: () => ipcRenderer.invoke("projects:add"),
+  editProject: (value: unknown) => ipcRenderer.invoke("projects:edit", projectEdit(value)),
+  associateService: (value: unknown) => ipcRenderer.invoke("projects:associate", associationEdit(value)),
+  attachLegacyNote: (value: unknown) => { const v = object(value); return ipcRenderer.invoke("projects:legacy-note", { noteId: id(v.noteId), projectId: id(v.projectId) }); },
+  previewStopServers: (value: unknown) => ipcRenderer.invoke("servers:stop-preview", stopScope(value)),
+  stopServers: (token: unknown) => ipcRenderer.invoke("servers:stop", id(token)),
+  onProjectsUpdate: (cb: (snapshot: ProjectSnapshot) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, snapshot: ProjectSnapshot) => cb(snapshot);
+    ipcRenderer.on("projects:update", listener);
+    return () => ipcRenderer.removeListener("projects:update", listener);
+  },
   // scanning
-  onScanUpdate: (cb: (items: any[]) => void) => {
+  onScanUpdate: (cb: (items: ServerInfo[]) => void) => {
     const listener = (_: any, payload: any) => cb(payload);
     ipcRenderer.on("scanner:update", listener);
     return () => ipcRenderer.removeListener("scanner:update", listener);
@@ -95,7 +110,6 @@ contextBridge.exposeInMainWorld("api", {
   refresh: () => ipcRenderer.invoke("scanner:refresh"),
   // actions
   openUrl: (url: string) => ipcRenderer.send("app:open-url", url),
-  killPid: (pid: number) => ipcRenderer.send("app:kill-pid", pid),
   restartServer: (ref: unknown) => ipcRenderer.invoke("servers:restart", validateServerRef(ref)),
   getServerRestartState: () => ipcRenderer.invoke("servers:restart-state"),
   onServerRestartProgress: (cb: (state: RestartProgress) => void) => {
@@ -103,7 +117,6 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on("servers:restart-progress", listener);
     return () => ipcRenderer.removeListener("servers:restart-progress", listener);
   },
-  killAllServers: () => ipcRenderer.invoke("app:kill-all-servers"),
   copyText: (text: string) => clipboard.writeText(text),
   openInVSCode: (payload: any) =>
     ipcRenderer.invoke("app:open-vscode", payload),
@@ -137,11 +150,6 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on("health:update", listener);
     return () => ipcRenderer.removeListener("health:update", listener);
   },
-  // Port notes
-  getNote: (port: number | string) => ipcRenderer.invoke("notes:get", port),
-  setNote: (port: number | string, note: string) =>
-    ipcRenderer.invoke("notes:set", port, note),
-  getAllNotes: () => ipcRenderer.invoke("notes:all"),
   // Recent scripts
   getRecentScripts: () => ipcRenderer.invoke("scripts:recent:get"),
   onRecentScriptsUpdate: (cb: (items: any[]) => void) => {

@@ -1,4 +1,5 @@
 import { getCliDefinition } from "./catalogue";
+import { sanitizeCliChanges } from "./changes";
 import { groupEquivalentEndpointKey } from "./adapters/path";
 import {
   createInstallationFingerprint,
@@ -241,6 +242,7 @@ export function normalizeCliInventory(
   assignCommandResolution(installations, commands, retainedEndpoints);
   const products = buildProducts(platform, installations, commands);
   const normalized: CliInventorySnapshot = {
+    changes: sanitizeCliChanges(value.changes),
     schemaVersion: 2,
     revision:
       typeof value.revision === "string"
@@ -444,6 +446,7 @@ function dedupeEndpoints(value: unknown[]): CliExecutableEndpoint[] {
 }
 
 function isInventoryShape(value: unknown): value is {
+  changes?: unknown;
   revision?: unknown;
   platform: CliPlatform;
   architecture?: unknown;

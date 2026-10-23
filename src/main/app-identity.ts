@@ -19,10 +19,10 @@ export function shouldEnableAutoUpdater(
 }
 
 export function getRendererLoadMode(
-  appIsPackaged: boolean,
+  _appIsPackaged: boolean,
   rendererUrl?: string,
 ): "dev-url" | "file" {
-  return rendererUrl || !appIsPackaged ? "dev-url" : "file";
+  return rendererUrl ? "dev-url" : "file";
 }
 
 export function getDockIconInsetScale(): number {
