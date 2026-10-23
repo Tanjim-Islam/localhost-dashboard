@@ -30,6 +30,7 @@ import type { CliShell } from "../cli-invocation";
 import { CliProductRow } from "./clis/CliProductRow";
 import { CliSelect } from "./clis/CliSelect";
 import { CliUninstallDialog } from "./clis/CliUninstallDialog";
+import { CliChanges } from "./clis/CliChanges";
 
 const DEFAULT_FILTERS: CliFilters = {
   query: "",
@@ -126,12 +127,7 @@ export default function ClisTab({
       setInventory(next);
       setScan(null);
       setProgress(null);
-      setNotice(
-        next.completeness === "partial"
-          ? "Scan completed with isolated source failures."
-          : "CLI inventory is up to date.",
-        next.completeness === "partial" ? "danger" : "success",
-      );
+      setNotice(null);
     });
     const offError = window.api.onCliScanError((error) => {
       setScan(null);
@@ -277,17 +273,6 @@ export default function ClisTab({
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
-              CLIs
-            </h1>
-            <span className="rounded-full bg-night-700 px-2.5 py-1 text-xs font-semibold text-night-100">
-              {summary.installed} installed
-            </span>
-            {inventory?.cached && (
-              <span className="rounded-full border border-gray-300 bg-gray-200/65 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-700">
-                Saved scan
-              </span>
-            )}
             {testMode && (
               <span className="rounded-full border border-status-review-border bg-status-review-surface px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-status-review-text">
                 Fixture mode
@@ -295,7 +280,7 @@ export default function ClisTab({
             )}
           </div>
           <p className="mt-1 text-xs text-gray-600">
-            Last successful scan:{" "}
+            Last scan:{" "}
             {inventory?.lastSuccessfulScanAt
               ? formatCliAge(inventory.lastSuccessfulScanAt)
               : "Never"}
@@ -350,18 +335,10 @@ export default function ClisTab({
           )}
         </div>
       </header>
+      <CliChanges changes={inventory?.changes} />
 
       {showScanDirectories && (
         <section className="rounded-xl border border-gray-300 bg-gray-100 p-4 text-xs">
-          <p className="text-gray-700">
-            Scans check PATH, installed applications, package records, and
-            common tool folders. Add folders for portable tools elsewhere.
-            Nothing is scanned automatically.
-          </p>
-          <p className="mt-1 text-gray-600">
-            Added folders include up to 8 levels of subfolders. Dependency,
-            cache, and linked subfolders are skipped.
-          </p>
           {scanDirectories.map((directory) => (
             <div key={directory.id} className="mt-2 flex items-center gap-2">
               <span className="min-w-0 flex-1 break-all font-mono text-gray-800">
@@ -606,7 +583,7 @@ export default function ClisTab({
         <EmptyState
           icon={<Terminal className="h-5 w-5" />}
           title="No CLI inventory yet"
-          detail="Press Scan Now to inspect PATH and supported package sources. Nothing is scanned automatically."
+          detail=""
         />
       ) : products.length === 0 ? (
         <EmptyState
@@ -624,8 +601,8 @@ export default function ClisTab({
           }
           detail={
             summary.installed === 0
-              ? "The completed scan found no command-line tools in the searched locations."
-              : "Clear a filter or search to see the rest of the inventory."
+              ? ""
+              : "Clear filters to see all tools."
           }
         />
       ) : (
@@ -772,7 +749,7 @@ function EmptyState({
         {icon}
       </span>
       <h2 className="mt-3 font-semibold text-gray-900">{title}</h2>
-      <p className="mt-1 max-w-lg text-sm text-gray-600">{detail}</p>
+      {detail && <p className="mt-1 max-w-lg text-sm text-gray-600">{detail}</p>}
     </div>
   );
 }

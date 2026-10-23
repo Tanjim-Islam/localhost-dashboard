@@ -1,24 +1,6 @@
 // Global typings for the preload-exposed APIs. Keep in sync with src/preload/index.ts
 
-export type ServerInfo = {
-  key: string;
-  pid: number;
-  port: number;
-  protocol?: "tcp" | "udp";
-  processName?: string;
-  command?: string;
-  path?: string;
-  cwd?: string;
-  processStarted?: string;
-  firstSeen: number;
-  lastSeen: number;
-  url: string;
-  cpu?: number;
-  memory?: number;
-  framework?: string;
-  cpuHistory?: number[];
-  memoryHistory?: number[];
-};
+export type ServerInfo = import("../shared/servers").ServerInfo;
 
 export type AHKScriptInfo = {
   key: string; // pid as string
@@ -116,6 +98,7 @@ export type AutomatorScriptInfo = {
 
 export type HealthStatus = {
   key: string;
+  firstSeen?: number;
   url: string;
   status: "healthy" | "slow" | "down";
   responseTime?: number;
@@ -158,6 +141,16 @@ export interface StatsPayload {
 }
 
 export interface Api {
+  getServers(): Promise<ServerInfo[]>;
+  openProjectFolder(directory: string): Promise<void>;
+  getProjects(): Promise<import("../shared/servers").ProjectSnapshot>;
+  addProject(): Promise<import("../shared/servers").ProjectSnapshot>;
+  editProject(value: import("../shared/servers").ProjectEdit): Promise<import("../shared/servers").ProjectSnapshot>;
+  associateService(value: import("../shared/servers").AssociationEdit): Promise<import("../shared/servers").ProjectSnapshot>;
+  attachLegacyNote(value: { noteId: string; projectId: string }): Promise<import("../shared/servers").ProjectSnapshot>;
+  onProjectsUpdate(cb: (snapshot: import("../shared/servers").ProjectSnapshot) => void): () => void;
+  previewStopServers(value: import("../shared/servers").StopScope): Promise<import("../shared/servers").StopPreview>;
+  stopServers(token: string): Promise<import("../shared/servers").StopResult[]>;
   // scanning
   onScanUpdate(cb: (items: ServerInfo[]) => void): () => void;
   onScanError(cb: (msg: string) => void): () => void;
@@ -165,11 +158,9 @@ export interface Api {
 
   // actions
   openUrl(url: string): void;
-  killPid(pid: number): void;
   restartServer(ref: { key: string; firstSeen: number }): Promise<import("../main/server-restart/types").RestartResult>;
   getServerRestartState(): Promise<import("../main/server-restart/types").RestartProgress | null>;
   onServerRestartProgress(cb: (state: import("../main/server-restart/types").RestartProgress) => void): () => void;
-  killAllServers(): Promise<number>;
   copyText(text: string): void;
   openInVSCode(payload: any): Promise<void>;
   openTerminal(path: string): Promise<void>;
@@ -188,10 +179,6 @@ export interface Api {
   // health checks
   onHealthUpdate(cb: (results: HealthStatus[]) => void): () => void;
 
-  // port notes
-  getNote(port: number | string): Promise<string>;
-  setNote(port: number | string, note: string): Promise<Record<string, string>>;
-  getAllNotes(): Promise<Record<string, string>>;
 
   // recent scripts
   getRecentScripts(): Promise<RecentScriptInfo[]>;

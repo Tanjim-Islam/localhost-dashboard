@@ -3,6 +3,7 @@ export type ParsedListener = {
   localPort: number;
   pid: number;
   state: "LISTEN";
+  ipv6?: boolean;
 };
 
 export function shouldIgnoreListener(
@@ -43,6 +44,7 @@ export function parseNumericPid(value: unknown): number | undefined {
 export function parseLsofListeningOutput(stdout: string): ParsedListener[] {
   const listeners: ParsedListener[] = [];
   let currentPid: number | undefined;
+  let ipv6 = false;
 
   for (const rawLine of stdout.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -51,8 +53,10 @@ export function parseLsofListeningOutput(stdout: string): ParsedListener[] {
     const pidMatch = line.match(/^p(\d+)$/);
     if (pidMatch) {
       currentPid = Number.parseInt(pidMatch[1], 10);
+      ipv6 = false;
       continue;
     }
+    if (line === "tIPv6" || line === "tIPv4") { ipv6 = line === "tIPv6"; continue; }
 
     const portMatch = line.match(/^n.+?:(\d+)$/);
     if (portMatch && currentPid) {
@@ -61,6 +65,7 @@ export function parseLsofListeningOutput(stdout: string): ParsedListener[] {
         localPort: Number.parseInt(portMatch[1], 10),
         pid: currentPid,
         state: "LISTEN",
+        ...(ipv6 || line.startsWith("n[") ? { ipv6: true } : {}),
       });
     }
   }

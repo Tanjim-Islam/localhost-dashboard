@@ -20,7 +20,7 @@ export type RestartDependencies = {
   launch: (context: LaunchContext) => Promise<RunningChild>;
   preflight: (context: LaunchContext) => Promise<void>;
   progress: (event: RestartProgress) => void;
-  completed: (oldPids: number[]) => Promise<void>;
+  completed: (oldPids: number[], replacement?: ProcessIdentity[]) => Promise<void>;
   pause: (ms: number) => Promise<void>;
   now: () => number;
   startupTimeoutMs: number;
@@ -111,8 +111,8 @@ export class ServerRestartController {
       }
       emit("starting", "Starting the project and waiting for its original port...");
       child = await this.deps.launch(plan.launch);
-      await this.waitForReady(host, plan, child);
-      await this.deps.completed(stoppedPids);
+      const replacement = await this.waitForReady(host, plan, child);
+      await this.deps.completed(stoppedPids, replacement);
       const message = `Restarted on ${plan.ports.map((p) => `:${p}`).join(", ")}.`;
       emit("ready", message);
       return { ok: true, port: server.port, message };
@@ -184,7 +184,7 @@ export class ServerRestartController {
     throw new RestartError("The server could not be fully stopped. No replacement was started.");
   }
 
-  private async waitForReady(host: Host, plan: RestartPlan, child: RunningChild): Promise<void> {
+  private async waitForReady(host: Host, plan: RestartPlan, child: RunningChild): Promise<ProcessIdentity[]> {
     const deadline = this.deps.now() + this.deps.startupTimeoutMs;
     let stableSince: number | undefined;
     let launchedRoot: ProcessIdentity | undefined;
@@ -206,7 +206,7 @@ export class ServerRestartController {
       const ready = plan.ports.every((port) => listeners.some((l) => l.localPort === port && live.has(l.pid)));
       if (ready) {
         stableSince ??= this.deps.now();
-        if (this.deps.now() - stableSince >= 1000) return;
+        if (this.deps.now() - stableSince >= 1000) return snapshot.processes.filter((p) => live.has(p.pid) && listeners.some((l) => l.pid === p.pid && plan.ports.includes(l.localPort)));
       } else stableSince = undefined;
       if (child.exited() && !live.size) {
         throw new RestartError("The project exited before reopening its port. Check its configuration, then start it from its terminal.");

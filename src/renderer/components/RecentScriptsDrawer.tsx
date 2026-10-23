@@ -37,12 +37,37 @@ export default function RecentScriptsDrawer({
 }) {
   const [busy, setBusy] = React.useState<BusyState | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const panelRef = React.useRef<HTMLElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    panelRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => previous?.focus();
+  }, [open]);
 
   React.useEffect(() => {
     if (!open) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      if (event.key === "Tab") {
+        const controls = Array.from(
+          panelRef.current?.querySelectorAll<HTMLButtonElement>(
+            "button:not(:disabled)",
+          ) || [],
+        );
+        const first = controls[0],
+          last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        }
+        if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -82,6 +107,8 @@ export default function RecentScriptsDrawer({
     }
   };
 
+  if (!open) return null;
+
   return (
     <div
       className={cx(
@@ -99,6 +126,7 @@ export default function RecentScriptsDrawer({
       />
 
       <aside
+        ref={panelRef}
         className={cx(
           "app-dialog absolute right-0 top-0 h-full w-[390px] max-w-[calc(100vw-24px)] overflow-hidden border-l border-gray-300 bg-gray-100 shadow-soft transition-transform duration-300",
           open ? "translate-x-0" : "translate-x-full",
@@ -111,45 +139,42 @@ export default function RecentScriptsDrawer({
           <header className="border-b border-gray-300 px-5 py-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-celadon-500">
-                  Recently Used
-                </div>
-                <h2 className="mt-1 text-lg font-semibold text-gray-900">
-                  {label}
+                <h2 className="text-base font-semibold text-gray-900">
+                  Recent {label}{" "}
+                  <span className="font-normal text-gray-600">
+                    {scripts.length}
+                  </span>
                 </h2>
               </div>
               <button
                 onClick={onClose}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-gray-200 hover:text-gray-900"
+                aria-label="Close recent scripts"
                 title="Close"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="mt-3 text-xs text-gray-600">
-              {scripts.length} saved{" "}
-              {scripts.length === 1 ? "script" : "scripts"}
-            </div>
           </header>
 
           {error && (
-            <div role="alert" className="mx-5 mt-4 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger-text">
+            <div
+              role="alert"
+              className="mx-5 mt-4 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger-text"
+            >
               {error}
             </div>
           )}
 
           <div className="app-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
             {scripts.length === 0 ? (
-              <div className="mt-16 text-center">
+              <div className="py-8 text-center">
                 <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full border border-gray-300 bg-gray-200 text-gray-700">
                   <Clock className="h-5 w-5" />
                 </div>
                 <div className="mt-4 text-sm font-medium text-gray-900">
                   No recent scripts yet
                 </div>
-                <p className="mt-1 text-xs leading-5 text-gray-600">
-                  Scripts are saved here after the dashboard sees them running.
-                </p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -176,15 +201,10 @@ export default function RecentScriptsDrawer({
                             {script.scriptPath}
                           </div>
                         </div>
-                        <div className="shrink-0 rounded-full bg-celadon-400/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-celadon-600">
-                          {script.type === "ahk" ? "AHK" : "Auto"}
-                        </div>
                       </div>
 
                       <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-600">
                         <span>{dayjs(script.lastUsed).fromNow()}</span>
-                        <span className="opacity-50">.</span>
-                        <span>Used {script.useCount}x</span>
                       </div>
 
                       <div className="mt-3 grid grid-cols-3 gap-2">

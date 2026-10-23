@@ -79,15 +79,16 @@ export default function TitleBar({
         </div>
       </div>
       <div
-        className="flex-1 flex justify-center px-3"
+        className="min-w-0 flex-1 flex justify-center px-3"
         style={{ WebkitAppRegion: "drag" as any }}
       >
         {showSearch && (
           <input
+            aria-label="Search dashboard"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-[44vw] max-w-[560px] min-w-[220px] px-4 py-1.5 rounded-full bg-gray-200/80 text-gray-900 placeholder-gray-700/60 ring-1 ring-transparent focus:ring-night-700/40 outline-none transition-all duration-200 focus:bg-gray-200"
+            className="w-full max-w-[560px] min-w-0 px-4 py-1.5 rounded-full bg-gray-200/80 text-gray-900 placeholder-gray-700/60 ring-1 ring-transparent focus:ring-night-700/40 outline-none transition-all duration-200 focus:bg-gray-200"
             style={{ WebkitAppRegion: "no-drag" as any }}
             data-nodrag="true"
           />

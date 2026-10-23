@@ -245,7 +245,8 @@ test("tab, preload, and modal contracts expose no raw destructive input", async 
     ),
     /path|arguments|manager/i,
   );
-  assert.match(tab, /Nothing is scanned automatically/);
+  assert.match(tab, /onClick={startScan}/);
+  assert.doesNotMatch(tab, /CLI inventory is up to date/);
   assert.match(tab, /Bundled tools/);
   assert.match(tab, /Multiple installs/);
   assert.match(tab, /const DEFAULT_FILTERS:[\s\S]*?presence: "installed"/);

@@ -33,7 +33,12 @@ import {
   shouldStartInTray,
 } from "./startup-visibility";
 import { bumpPort, stats as statsStore } from "./stats";
-import { getNote, setNote, getAllNotes } from "./notes";
+import { createProjectStore } from "./projects/store";
+import { registerProjectIpc } from "./projects/ipc";
+import { ServerStopController } from "./projects/stop-controller";
+import { NativeProcessHost } from "./server-restart/native-host";
+import { readListeners } from "./server-restart/listeners";
+import type { ServerInfo } from "../shared/servers";
 import { getPlatformFeatures } from "./platform-features";
 import {
   deleteEnvironmentVariable,
@@ -58,7 +63,6 @@ import {
 } from "./recent-scripts";
 import {
   settings,
-  parsePorts,
   portsToString,
   migrateLegacyNotifications,
   applyPlatformSettingsDefaults,
@@ -79,20 +83,39 @@ let tray: Tray | null = null;
 let autolaunch: AutoLaunch | null = null;
 let currentGlobalHotkey: string | null = null;
 let cliController: CliController | null = null;
-const scanner = new Scanner();
+const serverResourceDir = app.isPackaged ? path.join(process.resourcesPath, "server-restart") : path.join(app.getAppPath(), "resources/server-restart");
+const projectStore = createProjectStore();
+const scanner = new Scanner(serverResourceDir, (item, evidence, key) => projectStore.model.decorate(item, evidence, key), projectStore.model.state.lastObserved);
 const serverRestarter = new ServerRestartController(createRestartDependencies(
   app.isPackaged
     ? path.join(process.resourcesPath, "server-restart")
     : path.join(app.getAppPath(), "resources/server-restart"),
   {
     getServer: (ref) => scanner.getItems().find((item) => item.key === ref.key && item.firstSeen === ref.firstSeen),
-    progress: (state) => win?.webContents.send("servers:restart-progress", state),
-    completed: async (oldPids) => {
+    progress: (state) => {
+      win?.webContents.send("servers:restart-progress", state);
+    },
+    completed: async (_oldPids, replacement) => {
+      // Two successful observations retire vanished listeners without deleting a reused PID.
       await scanner.scanFresh();
-      scanner.removePids(oldPids);
+      await scanner.scanFresh();
+      for (const item of scanner.getItems()) {
+        if (replacement?.some(p => p.pid === item.pid && new Date(p.startedMs).toISOString() === item.processStarted)) projectStore.model.restarted(item);
+      }
+      projectStore.flush();
+      win?.webContents.send("projects:update", projectStore.model.snapshot());
     },
   },
 ));
+const serverStopper = new ServerStopController({
+  items: () => scanner.getItems(), identity: pid => scanner.getInspection(pid)?.identity,
+  projectName: id => projectStore.model.state.projects.find(p => p.id === id)?.name,
+  createHost: () => new NativeProcessHost(serverResourceDir), listeners: readListeners,
+  ownPid: process.pid, restartBusy: () => serverRestarter.isBusy(),
+  refresh: async () => { await scanner.scanFresh(); await scanner.scanFresh(); projectStore.flush(); },
+  now: Date.now, pause: ms => new Promise(resolve => setTimeout(resolve, ms)),
+});
+registerProjectIpc(() => win, projectStore.model, scanner, serverStopper, projectStore.flush);
 const healthChecker = new HealthChecker();
 let isQuitting = false;
 
@@ -642,6 +665,8 @@ app.whenReady().then(async () => {
   await initializeClis();
   // First-run seeding from resources/default-settings.json if present
   const seeded = seedDefaultsIfNeeded();
+  settings.set("scanAllPorts", true);
+  settings.set("__automaticDiscoveryVersion", 1);
   migrateLegacyNotifications();
   applyPlatformSettingsDefaults();
   if (
@@ -695,13 +720,16 @@ app.on("activate", async () => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  projectStore.flush();
 });
 
 // Scanner events → renderer
-scanner.on("update", (items) => {
+scanner.on("update", (items: ServerInfo[]) => {
+  projectStore.model.reconcile(items);
+  win?.webContents.send("projects:update", projectStore.model.snapshot());
   win?.webContents.send("scanner:update", items);
   // Update health checker with current servers
-  healthChecker.setServers(items.map((i: any) => ({ key: i.key, url: i.url })));
+  healthChecker.setServers(items.filter(i => i.discovery === "development").map(i => ({ key: i.key, url: i.url, firstSeen: i.firstSeen })));
 });
 
 scanner.on("new", (item) => {
@@ -718,7 +746,7 @@ scanner.on("new", (item) => {
 scanner.on("stopped", (item) => {
   if (settings.get("notifyOnStop")) {
     new Notification({
-      title: "Server stopped",
+      title: "Listener disappeared",
       body: `${item.processName ?? "Process"} on :${item.port}`,
     }).show();
   }
@@ -796,7 +824,12 @@ if (automatorScanner) {
 
 // Health checker events → renderer
 healthChecker.on("update", (results) => {
+  for (const result of results) {
+    const item = scanner.getItems().find(i => i.key === result.key && i.firstSeen === result.firstSeen);
+    if (item) projectStore.model.updateHealth(item, result.status, result.lastChecked);
+  }
   win?.webContents.send("health:update", results);
+  win?.webContents.send("projects:update", projectStore.model.snapshot());
 });
 
 // IPC
@@ -810,79 +843,23 @@ ipcMain.handle("servers:restart", async (event, ref: unknown) => {
   if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
     throw new Error("Server restart is only available from the dashboard.");
   }
+  if (serverStopper.isBusy()) throw new Error("A stop operation is already running.");
   return serverRestarter.restart(ref);
 });
 ipcMain.handle("servers:restart-state", () => serverRestarter.getState());
-ipcMain.on("app:kill-pid", (_evt, pid: number) => {
-  if (serverRestarter.isBusy()) return;
-  if (process.platform === "win32") {
-    // On Windows, use taskkill directly with /F (force) and /T (tree - kill child processes)
-    // This is more reliable than process.kill() for Windows processes
-    exec(`taskkill /PID ${pid} /T /F`, (err) => {
-      if (err) {
-        // If taskkill fails (e.g., access denied for services), try process.kill as fallback
-        try {
-          process.kill(pid, "SIGTERM");
-        } catch {
-          // Process might be a protected service - requires admin privileges
-          console.error(`Failed to kill PID ${pid}:`, err.message);
-        }
-      }
-    });
-  } else {
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch {
-      // ignore - process may have already exited
-    }
-  }
-});
-ipcMain.handle("app:kill-all-servers", async () => {
-  if (serverRestarter.isBusy()) return 0;
-  const pids = scanner.getAllPids();
-  for (const pid of pids) {
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch {
-      if (process.platform === "win32") {
-        exec(`taskkill /PID ${pid} /T /F`);
-      }
-    }
-  }
-  return pids.length;
-});
 ipcMain.handle("app:open-terminal", async (_evt, dirPath: string) => {
-  if (!dirPath) return;
-  try {
-    if (process.platform === "win32") {
-      spawn("cmd", ["/c", "start", "cmd", "/k", `cd /d "${dirPath}"`], {
-        detached: true,
-        stdio: "ignore",
-      }).unref();
-    } else if (process.platform === "darwin") {
-      spawn("open", ["-a", "Terminal", dirPath], { detached: true }).unref();
-    } else {
-      spawn("x-terminal-emulator", [], {
-        cwd: dirPath,
-        detached: true,
-      }).unref();
-    }
-  } catch {
-    // ignore
-  }
+  if (typeof dirPath !== "string" || !path.isAbsolute(dirPath) || dirPath.includes("\0") || !fs.statSync(dirPath).isDirectory()) throw new Error("Invalid project folder.");
+  const executable = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32/cmd.exe") : process.platform === "darwin" ? "/usr/bin/open" : "x-terminal-emulator";
+  const args = process.platform === "win32" ? ["/k"] : process.platform === "darwin" ? ["-a", "Terminal", dirPath] : [];
+  const child = spawn(executable, args, { cwd: dirPath, shell: false, detached: true, stdio: "ignore", windowsHide: false });
+  await new Promise<void>((resolve, reject) => { child.once("spawn", resolve); child.once("error", () => reject(new Error("Could not open terminal."))); });
+  child.unref();
 });
 ipcMain.on("app:open-explorer", (_evt, dirPath: string) => {
   if (dirPath) {
     shell.showItemInFolder(dirPath);
   }
 });
-// Port notes
-ipcMain.handle("notes:get", (_evt, port: number | string) => getNote(port));
-ipcMain.handle("notes:set", (_evt, port: number | string, note: string) => {
-  setNote(port, note);
-  return getAllNotes();
-});
-ipcMain.handle("notes:all", () => getAllNotes());
 ipcMain.handle("scripts:recent:get", () => getPlatformRecentScripts());
 ipcMain.handle("scripts:recent:start", async (_evt, id: string) => {
   if (typeof id !== "string" || !id.trim()) {
@@ -932,8 +909,6 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
     settings.set("notifyOnStart", incoming.notifyOnStart);
   if (typeof incoming.notifyOnStop === "boolean")
     settings.set("notifyOnStop", incoming.notifyOnStop);
-  if (typeof incoming.scanAllPorts === "boolean")
-    settings.set("scanAllPorts", incoming.scanAllPorts);
   if (typeof incoming.closeToTray === "boolean")
     settings.set("closeToTray", incoming.closeToTray);
   if (
@@ -949,10 +924,6 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
       settings.set("globalHotkey", normalizedHotkey);
       registerGlobalHotkey(normalizedHotkey);
     }
-  }
-  if (typeof (incoming as any).portsText === "string") {
-    const ports = parsePorts((incoming as any).portsText);
-    settings.set("ports", ports);
   }
   scanner.start();
   ahkScanner?.start();
@@ -1120,14 +1091,7 @@ ipcMain.handle("app:open-vscode", async (_evt, payload: any) => {
         detached: true,
       }).unref();
     } else if (process.platform === "win32") {
-      // Use spawn with shell:false and proper quoting for paths with spaces
-      const child = spawn("code", [projectPath], {
-        detached: true,
-        shell: true,
-        windowsHide: true,
-        stdio: "ignore",
-      });
-      child.unref();
+      await shell.openExternal("vscode://file/" + projectPath.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/"));
     } else {
       spawn("code", [projectPath], { detached: true }).unref();
     }

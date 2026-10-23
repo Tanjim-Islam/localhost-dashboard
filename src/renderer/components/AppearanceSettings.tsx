@@ -34,9 +34,7 @@ export default function AppearanceSettings() {
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-gray-900">Appearance</div>
-          <p className="mt-0.5 text-[11px] leading-4 text-gray-600">
-            Comfortable colors and type, saved only on this device.
-          </p>
+
         </div>
         <span className="rounded-full border border-gray-300 bg-gray-100/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-600">
           {resolvedMode}

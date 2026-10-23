@@ -19,7 +19,6 @@ function formatBytes(bytes: number): string {
 
 export default function UpdateNotification() {
   const [status, setStatus] = useState<UpdateStatus>({ state: "idle" });
-  const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -35,23 +34,7 @@ export default function UpdateNotification() {
     return () => off?.();
   }, []);
 
-  const shouldShow =
-    !dismissed &&
-    (status.state === "checking" ||
-      status.state === "available" ||
-      status.state === "downloading" ||
-      status.state === "downloaded" ||
-      status.state === "error" ||
-      status.state === "not-available");
-
-  // Determine visibility based on status
-  useEffect(() => {
-    if (shouldShow) {
-      setVisible(true);
-    } else {
-      setVisible(false);
-    }
-  }, [shouldShow]);
+  const shouldShow = !dismissed && ["available", "downloading", "downloaded", "error"].includes(status.state);
 
   const handleDismiss = () => {
     setDismissed(true);
@@ -70,7 +53,7 @@ export default function UpdateNotification() {
     window.api.checkForUpdates();
   };
 
-  if (!shouldShow || !visible) {
+  if (!shouldShow) {
     return null;
   }
 
@@ -87,16 +70,14 @@ export default function UpdateNotification() {
       >
         {/* Header */}
         <div
-          className={`flex items-center justify-between px-4 py-3 border-b ${status.state === "error" ? "border-danger-border bg-danger-surface text-danger-text" : status.state === "downloaded" || status.state === "not-available" ? "border-success-border bg-success-surface text-success-text" : "border-gray-300 bg-gray-200 text-gray-900"}`}
+          className={`flex items-center justify-between px-4 py-3 border-b ${status.state === "error" ? "border-danger-border bg-danger-surface text-danger-text" : status.state === "downloaded" ? "border-success-border bg-success-surface text-success-text" : "border-gray-300 bg-gray-200 text-gray-900"}`}
         >
           <div className="flex items-center gap-2">
             <UpdateIcon state={status.state} />
             <span
               className="font-semibold text-sm"
             >
-              {status.state === "checking" && "Checking for updates..."}
               {status.state === "available" && "Update Available"}
-              {status.state === "not-available" && "You're up to date"}
               {status.state === "downloading" && "Downloading Update"}
               {status.state === "downloaded" && "Ready to Install"}
               {status.state === "error" && "Update Error"}
@@ -104,7 +85,7 @@ export default function UpdateNotification() {
           </div>
           {(status.state === "available" ||
             status.state === "error" ||
-            status.state === "not-available") && (
+            status.state === "downloaded") && (
             <button
               onClick={handleDismiss}
               className="w-6 h-6 rounded-full flex items-center justify-center transition-colors text-gray-600 hover:text-gray-900 hover:bg-gray-300"
@@ -117,19 +98,10 @@ export default function UpdateNotification() {
 
         {/* Content */}
         <div className="px-4 py-3">
-          {/* Checking state */}
-          {status.state === "checking" && (
-            <div className="flex items-center gap-3">
-              <div className="w-5 h-5 border-2 border-celadon-400 border-t-transparent rounded-full animate-spin" />
-              <span className="text-gray-700 text-sm">Looking for new versions...</span>
-            </div>
-          )}
-
           {/* Available state */}
           {status.state === "available" && (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <span className="text-gray-700 text-sm">New version</span>
                 <span className="bg-celadon-400/20 text-celadon-700 px-2 py-0.5 rounded-full text-xs font-semibold">
                   v{status.version}
                 </span>
@@ -140,21 +112,6 @@ export default function UpdateNotification() {
               >
                 Download Update
               </button>
-            </div>
-          )}
-
-          {/* Not available state */}
-          {status.state === "not-available" && (
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-success-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span className="text-gray-700 text-sm">
-                Running latest version{" "}
-                <span className="font-medium text-gray-900">
-                  v{status.version}
-                </span>
-              </span>
             </div>
           )}
 

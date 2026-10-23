@@ -44,4 +44,5 @@ test("loads the dev renderer URL whenever it is provided", () => {
   assert.equal(getRendererLoadMode(true, "http://localhost:5173"), "dev-url");
   assert.equal(getRendererLoadMode(false, "http://localhost:5173"), "dev-url");
   assert.equal(getRendererLoadMode(true, undefined), "file");
+  assert.equal(getRendererLoadMode(false, undefined), "file");
 });

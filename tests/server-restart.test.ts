@@ -60,7 +60,7 @@ test("ambiguous shared launchers, unreadable context, missing env and system app
 });
 
 test("Windows listener parsing covers IPv4, IPv6 and ignores established connections", () => {
-  assert.deepEqual(parseNetstatListeners(" TCP 127.0.0.1:3000 0.0.0.0:0 LISTENING 100\n TCP [::]:3001 [::]:0 LISTENING 100\n TCP 127.0.0.1:99 127.0.0.1:1 ESTABLISHED 20"), [{ pid: 100, localPort: 3000 }, { pid: 100, localPort: 3001 }]);
+  assert.deepEqual(parseNetstatListeners(" TCP 127.0.0.1:3000 0.0.0.0:0 LISTENING 100\n TCP [::]:3001 [::]:0 LISTENING 100\n TCP 127.0.0.1:99 127.0.0.1:1 ESTABLISHED 20"), [{ pid: 100, localPort: 3000 }, { pid: 100, localPort: 3001, ipv6: true }]);
 });
 
 function harness(options: { platform?: NodeJS.Platform; stale?: boolean; missing?: boolean; stuck?: boolean; exit?: boolean; collision?: boolean; timeout?: boolean; privacyError?: boolean } = {}) {
@@ -93,7 +93,10 @@ function harness(options: { platform?: NodeJS.Platform; stale?: boolean; missing
 
 test("controller verifies replacement PID and stable original port before success", async () => {
   const run = harness();
+  let verified: ProcessIdentity[] = [];
+  run.deps.completed = async (_oldPids, replacement) => { verified = replacement || []; };
   assert.equal((await run.controller.restart(run.ref)).ok, true);
+  assert.deepEqual(verified.map(p => p.pid), [200]);
   assert.deepEqual(run.counts(), { stops: 1, launches: 1 });
   assert.deepEqual(run.events.map((p) => p.phase), ["preparing", "stopping", "starting", "ready"]);
 });

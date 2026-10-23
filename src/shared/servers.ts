@@ -1,0 +1,165 @@
+// Public server contracts. No launch arguments, environments, or native handles.
+export type ServerRef = { key: string; firstSeen: number };
+export type ServerInfo = ServerRef & {
+  pid: number;
+  port: number;
+  protocol: "tcp";
+  processName?: string;
+  processStarted?: string;
+  cwd?: string;
+  lastSeen: number;
+  url: string;
+  framework?: string;
+  cpu?: number;
+  memory?: number;
+  cpuHistory?: number[];
+  memoryHistory?: number[];
+  discovery: "development" | "unidentified";
+  projectId?: string;
+  serviceId?: string;
+  serviceName: string;
+  association?: "detected" | "manual";
+  canStop: boolean;
+};
+export type Project = {
+  id: string;
+  directory: string;
+  name: string;
+  notes: string;
+  pinned: boolean;
+  bookmarked: boolean;
+  createdAt: number;
+  lastSeen: number;
+};
+export type ActivityKind =
+  | "discovered"
+  | "listener-disappeared"
+  | "http-unresponsive"
+  | "http-recovered"
+  | "process-changed"
+  | "port-reused"
+  | "restarted"
+  | "available-again";
+export type ServiceRecord = Pick<
+  ServerInfo,
+  | "key"
+  | "firstSeen"
+  | "pid"
+  | "port"
+  | "processName"
+  | "processStarted"
+  | "framework"
+  | "serviceId"
+  | "serviceName"
+  | "projectId"
+  | "lastSeen"
+> & {
+  projectName?: string;
+  directory?: string;
+  status: "listening" | "http-unresponsive" | "listener-disappeared";
+  lastStatus?: "listening" | "http-unresponsive";
+  stoppedAt?: number;
+};
+export type Activity = {
+  id: string;
+  at: number;
+  kind: ActivityKind;
+  service: ServiceRecord;
+};
+export type LegacyNote = { id: string; port: string; text: string };
+export type ProjectSnapshot = {
+  projects: Project[];
+  recentlyStopped: ServiceRecord[];
+  activity: Activity[];
+  legacyNotes: LegacyNote[];
+};
+export type ProjectEdit = {
+  id: string;
+  name: string;
+  notes: string;
+  pinned: boolean;
+  bookmarked: boolean;
+};
+export type AssociationEdit = { ref: ServerRef; projectId: string | null };
+export type StopScope = { refs: ServerRef[]; projectId?: string };
+export type StopTarget = {
+  ref: ServerRef;
+  pid: number;
+  ports: number[];
+  processName: string;
+  projectName?: string;
+  serviceName: string;
+};
+export type StopPreview = {
+  token: string;
+  expiresAt: number;
+  targets: StopTarget[];
+};
+export type StopResult = { target: StopTarget; ok: boolean; message: string };
+
+export function serverRef(value: unknown): ServerRef {
+  const v = object(value);
+  if (
+    typeof v.key !== "string" ||
+    !/^[1-9]\d{0,9}:[1-9]\d{0,4}$/.test(v.key) ||
+    !Number.isSafeInteger(v.firstSeen) ||
+    Number(v.firstSeen) <= 0
+  )
+    throw new Error("Invalid service reference.");
+  const [pid, port] = v.key.split(":").map(Number);
+  if (pid > 0x7fffffff || port > 65535)
+    throw new Error("Invalid service reference.");
+  return { key: v.key, firstSeen: Number(v.firstSeen) };
+}
+export function object(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Invalid request.");
+  return value as Record<string, unknown>;
+}
+export function id(value: unknown): string {
+  if (typeof value !== "string" || !/^[a-zA-Z0-9-]{1,100}$/.test(value))
+    throw new Error("Invalid identity.");
+  return value;
+}
+export function textField(value: unknown, max: number): string {
+  if (
+    typeof value !== "string" ||
+    value.length > max ||
+    /[\x00-\x08\x0b-\x1f]/.test(value)
+  )
+    throw new Error("Invalid text.");
+  return value.trim();
+}
+export function projectEdit(value: unknown): ProjectEdit {
+  const v = object(value);
+  if (typeof v.pinned !== "boolean" || typeof v.bookmarked !== "boolean")
+    throw new Error("Invalid project preferences.");
+  const name = textField(v.name, 120);
+  if (!name) throw new Error("Project name is required.");
+  return {
+    id: id(v.id),
+    name,
+    notes: textField(v.notes, 4000),
+    pinned: v.pinned,
+    bookmarked: v.bookmarked,
+  };
+}
+export function associationEdit(value: unknown): AssociationEdit {
+  const v = object(value);
+  return {
+    ref: serverRef(v.ref),
+    projectId: v.projectId === null ? null : id(v.projectId),
+  };
+}
+export function stopScope(value: unknown): StopScope {
+  const v = object(value);
+  if (!Array.isArray(v.refs) || !v.refs.length || v.refs.length > 100)
+    throw new Error("Select between 1 and 100 services.");
+  const refs = v.refs.map(serverRef);
+  if (new Set(refs.map((r) => r.key)).size !== refs.length)
+    throw new Error("Duplicate service selection.");
+  return {
+    refs,
+    ...(v.projectId === undefined ? {} : { projectId: id(v.projectId) }),
+  };
+}

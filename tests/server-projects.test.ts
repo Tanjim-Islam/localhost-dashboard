@@ -1,0 +1,309 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { ProjectIdentifier } from "../src/main/projects/identify";
+import {
+  emptyProjectState,
+  migrateProjectState,
+  ProjectModel,
+} from "../src/main/projects/model";
+import {
+  developmentRuntime,
+  ListenerTracker,
+} from "../src/main/projects/discovery";
+import {
+  associationEdit,
+  projectEdit,
+  stopScope,
+  type ServerInfo,
+} from "../src/shared/servers";
+
+const service = (overrides: Partial<ServerInfo> = {}): ServerInfo => ({
+  key: "100:60007",
+  pid: 100,
+  port: 60007,
+  protocol: "tcp",
+  firstSeen: 1000,
+  lastSeen: 2000,
+  processStarted: "2026-10-23T00:00:00Z",
+  serviceName: "Frontend",
+  discovery: "development",
+  canStop: true,
+  url: "http://localhost:60007",
+  ...overrides,
+});
+
+test("project detection groups workspace packages, respects nested repositories and unrelated roots", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dashboard-projects-"));
+  try {
+    const mono = path.join(root, "mono"),
+      web = path.join(mono, "apps/web"),
+      api = path.join(mono, "apps/api"),
+      other = path.join(root, "other");
+    for (const dir of [web, api, other])
+      await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(mono, "package.json"),
+      JSON.stringify({ name: "Product", workspaces: ["apps/*"] }),
+    );
+    for (const [dir, name] of [
+      [web, "frontend"],
+      [api, "api"],
+      [other, "Other"],
+    ])
+      await fs.writeFile(
+        path.join(dir, "package.json"),
+        JSON.stringify({ name }),
+      );
+    const detector = new ProjectIdentifier();
+    const first = await detector.identify(
+      web,
+      ["node", "dev.js"],
+      process.execPath,
+    );
+    const second = await detector.identify(
+      api,
+      ["node", "api.js"],
+      process.execPath,
+    );
+    assert.equal(first?.directory, await fs.realpath(mono));
+    assert.equal(first?.serviceName, "frontend");
+    assert.equal(second?.directory, first?.directory);
+    assert.notEqual(
+      (await detector.identify(other, [], process.execPath))?.directory,
+      first?.directory,
+    );
+    await fs.mkdir(path.join(api, ".git"));
+    assert.equal(
+      (await new ProjectIdentifier().identify(api, [], process.execPath))
+        ?.directory,
+      await fs.realpath(api),
+    );
+    assert.equal(
+      await detector.identify(root, [], process.execPath),
+      undefined,
+    );
+    assert.equal(
+      await detector.identify(
+        web,
+        ["node", path.join(other, "server.js")],
+        process.execPath,
+      ),
+      undefined,
+      "conflicting cwd and script are not silently assigned",
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("port-independent project identity, service associations, edits and legacy migration persist without note leakage", () => {
+  const state = migrateProjectState(undefined, { "5173": "Old project note" });
+  const model = new ProjectModel(state);
+  const a = model.ensure(path.resolve("fixture-a"), "A"),
+    b = model.ensure(path.resolve("fixture-b"), "B");
+  const key = "a".repeat(32);
+  const evidence = {
+    directory: a.directory,
+    name: "Detected A",
+    serviceDirectory: a.directory,
+    serviceName: "web",
+    associationKey: key,
+  };
+  const first = model.decorate(service(), evidence, key);
+  const changedPort = model.decorate(
+    service({ key: "200:60008", pid: 200, port: 60008, firstSeen: 3000 }),
+    evidence,
+    key,
+  );
+  assert.equal(first.projectId, changedPort.projectId);
+  assert.equal(first.serviceId, changedPort.serviceId);
+  assert.equal(a.notes, "");
+  assert.equal(b.notes, "");
+  assert.equal(state.legacyNotes.length, 1);
+  model.edit({
+    ...a,
+    name: "Renamed",
+    pinned: true,
+    bookmarked: true,
+    notes: "Manual note",
+  });
+  model.associate(key, b.id);
+  assert.equal(model.decorate(changedPort, evidence, key).projectId, b.id);
+  model.associate(key, null);
+  assert.equal(model.decorate(changedPort, evidence, key).projectId, undefined);
+  model.attachLegacy("legacy-5173", a.id);
+  assert.equal(a.notes, "Manual note\nOld project note");
+  assert.equal(b.notes, "");
+  const restored = migrateProjectState(JSON.parse(JSON.stringify(state)), {
+    "5173": "Old project note",
+  });
+  assert.equal(restored.legacyNotes.length, 0);
+  assert.equal(restored.projects[0].pinned, true);
+  assert.equal(restored.projects[0].bookmarked, true);
+  assert.equal(restored.projects[0].name, "Renamed");
+  assert.equal(
+    new ProjectModel(restored).decorate(changedPort, evidence, key).projectId,
+    undefined,
+  );
+});
+
+test("failed scans do not advance disappearance and arbitrary ports are retained", () => {
+  const tracker = new ListenerTracker();
+  assert.equal(tracker.reconcile([service()]).added.length, 1);
+  assert.equal(tracker.reconcile([]).removed.length, 0);
+  // Failure means no reconcile call. Existing observation remains intact.
+  assert.equal(tracker.values().length, 1);
+  assert.equal(tracker.reconcile([service()]).added.length, 0);
+  tracker.reconcile([]);
+  assert.equal(tracker.reconcile([]).removed.length, 1);
+  assert.equal(
+    developmentRuntime("node.exe", "node vite --port 60007"),
+    "Vite",
+  );
+  assert.equal(developmentRuntime("svchost.exe", ""), undefined);
+  assert.equal(developmentRuntime("electron.exe", "vite"), undefined);
+});
+
+test("lifecycle records observed transitions once, keeps HTTP separate, and bounds sanitized persistence", () => {
+  const model = new ProjectModel(emptyProjectState());
+  const p = model.ensure(path.resolve("fixture"), "Fixture");
+  const first = service({
+    projectId: p.id,
+    serviceId: "stable",
+    association: "detected",
+  });
+  model.reconcile([first], 3000);
+  model.reconcile([first], 4000);
+  assert.deepEqual(
+    model.state.activity.map((e) => e.kind),
+    ["discovered"],
+  );
+  model.updateHealth(first, "down", 5000);
+  model.updateHealth(first, "down", 6000);
+  assert.equal(model.state.recentlyStopped.length, 0);
+  model.updateHealth(first, "healthy", 7000);
+  model.reconcile([], 8000);
+  assert.equal(model.state.recentlyStopped[0].status, "listener-disappeared");
+  assert.equal(model.state.recentlyStopped[0].projectName, "Fixture");
+  model.reconcile(
+    [
+      service({
+        ...first,
+        pid: 101,
+        key: "101:60007",
+        firstSeen: 9000,
+        processStarted: "2026-10-23T00:01:00Z",
+      }),
+    ],
+    9000,
+  );
+  assert.ok(model.state.activity.some((e) => e.kind === "available-again"));
+  assert.ok(model.state.activity.some((e) => e.kind === "process-changed"));
+  model.reconcile(
+    [
+      service({
+        projectId: "another",
+        key: "102:60007",
+        pid: 102,
+        firstSeen: 10000,
+        processStarted: "2026-10-23T00:02:00Z",
+      }),
+    ],
+    10000,
+  );
+  assert.ok(model.state.activity.some((e) => e.kind === "port-reused"));
+  for (let i = 0; i < 700; i++)
+    model.event("restarted", model.state.lastObserved[0], i);
+  assert.equal(model.state.activity.length, 500);
+  const restored = migrateProjectState(JSON.parse(JSON.stringify(model.state)));
+  assert.ok(restored.recentlyStopped.length);
+  assert.equal(restored.activity.length, 500);
+  assert.doesNotMatch(
+    JSON.stringify(restored),
+    /command|environment|argv|crash|exitCode/,
+  );
+});
+
+test("project and selection IPC validators discard extra fields and reject malformed scope", () => {
+  assert.throws(() => stopScope({ refs: [] }));
+  assert.throws(() => stopScope({ refs: [service(), service()] }));
+  assert.throws(() =>
+    stopScope({ refs: [{ key: "100:65536", firstSeen: 1 }] }),
+  );
+  assert.deepEqual(stopScope({ refs: [service()], command: "unsafe" }), {
+    refs: [{ key: "100:60007", firstSeen: 1000 }],
+  });
+  assert.throws(() =>
+    projectEdit({
+      id: "a",
+      name: "a",
+      notes: "",
+      pinned: "yes",
+      bookmarked: false,
+    }),
+  );
+  assert.deepEqual(
+    associationEdit({ ref: service(), projectId: null, command: "unsafe" }),
+    { ref: { key: "100:60007", firstSeen: 1000 }, projectId: null },
+  );
+});
+
+test("temporary metadata loss and application restart do not invent stop or repeated HTTP failure events", () => {
+  const model = new ProjectModel(emptyProjectState());
+  const item = service();
+  model.reconcile([item]);
+  model.updateHealth(item, "down", 5000);
+  const restored = new ProjectModel(
+    migrateProjectState(JSON.parse(JSON.stringify(model.state))),
+  );
+  restored.updateHealth(item, "down", 6000);
+  restored.reconcile([
+    { ...item, discovery: "unidentified", processStarted: undefined },
+  ]);
+  assert.equal(restored.state.recentlyStopped.length, 0);
+  assert.deepEqual(
+    restored.state.activity.map((e) => e.kind),
+    ["http-unresponsive", "discovered"],
+  );
+  restored.reconcile([item]);
+  restored.updateHealth(item, "healthy", 7000);
+  assert.equal(restored.state.activity[0].kind, "http-recovered");
+});
+
+test("long legacy notes remain available without silently truncating to the project editor limit", () => {
+  const text = "old note ".repeat(1000);
+  const state = migrateProjectState(undefined, { "5173": text });
+  assert.equal(state.legacyNotes[0].text, text);
+  assert.equal(migrateProjectState(state).legacyNotes[0].text, text);
+  const model = new ProjectModel(state);
+  const project = model.ensure(path.resolve("legacy-long"), "Legacy");
+  assert.throws(() => model.attachLegacy("legacy-5173", project.id), /exceeds/);
+  assert.equal(model.state.legacyNotes[0].text, text);
+});
+
+test("stopped instances remain inspectable when another copy of the same service is running", () => {
+  const model = new ProjectModel(emptyProjectState());
+  const a = service({ serviceId: "same-launch" });
+  const b = service({
+    serviceId: "same-launch",
+    pid: 200,
+    key: "200:60008",
+    port: 60008,
+  });
+  model.reconcile([a, b], 2000);
+  model.reconcile([b], 3000);
+  assert.equal(model.state.recentlyStopped[0].pid, a.pid);
+  const c = service({
+    serviceId: "same-launch",
+    pid: 300,
+    key: "300:60009",
+    port: 60009,
+    firstSeen: 4000,
+  });
+  model.reconcile([b, c], 4000);
+  assert.equal(model.state.recentlyStopped[0].pid, a.pid);
+  assert.equal(model.state.activity[0].kind, "discovered");
+});

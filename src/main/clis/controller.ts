@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { compareCliInventories, confirmedAbsent } from "./changes";
 import { randomUUID } from "node:crypto";
 import {
   CliCancelledError,
@@ -246,6 +247,9 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
       session.status =
         snapshot.completeness === "partial" ? "partial" : "complete";
       session.finishedAt = this.options.clock.now();
+      const previous = this.readInventory(false);
+      snapshot.changes = compareCliInventories(previous, snapshot, await confirmedAbsent(previous, snapshot));
+      session.cancellation.throwIfCancelled();
       const publishedSnapshot = this.publishSnapshot(
         snapshot,
         session.toJSON(),

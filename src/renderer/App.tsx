@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import TitleBar from "./components/TitleBar";
-import ServerCard from "./components/ServerCard";
+import ServersTab from "./components/ServersTab";
+import type { HealthStatus as HealthResult } from "../types/preload";
+import type { ServerInfo } from "../shared/servers";
 import AHKCard from "./components/AHKCard";
 import AutomatorCard from "./components/AutomatorCard";
 import SettingsPanel from "./components/SettingsPanel";
@@ -13,24 +15,7 @@ import ClisTab from "./components/ClisTab";
 
 dayjs.extend(relativeTime);
 
-type Item = {
-  key: string;
-  pid: number;
-  port: number;
-  processName?: string;
-  command?: string;
-  path?: string;
-  firstSeen: number;
-  lastSeen: number;
-  url: string;
-  cpu?: number;
-  memory?: number;
-  framework?: string;
-  cpuHistory?: number[];
-  memoryHistory?: number[];
-};
-
-type ServerRestartProgress = Parameters<Parameters<Window["api"]["onServerRestartProgress"]>[0]>[0];
+type Item = ServerInfo;
 
 type AHKItem = {
   key: string;
@@ -97,14 +82,6 @@ type RecentScript = {
   useCount: number;
 };
 
-type HealthResult = {
-  key: string;
-  url: string;
-  status: "healthy" | "slow" | "down";
-  responseTime?: number;
-  lastChecked: number;
-  error?: string;
-};
 
 export default function App() {
   const [items, setItems] = useState<Item[]>([]);
@@ -113,26 +90,10 @@ export default function App() {
   const [healthResults, setHealthResults] = useState<
     Record<string, HealthResult>
   >({});
-  const [portNotes, setPortNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [serverRestart, setServerRestart] = useState<ServerRestartProgress | null>(null);
-  const restartPending = React.useRef(false);
-  const restartBusy = !!serverRestart && ["preparing", "stopping", "starting"].includes(serverRestart.phase);
-  const restartServer = async (item: Item) => {
-    if (restartPending.current || restartBusy) return;
-    restartPending.current = true;
-    setServerRestart({ key: item.key, port: item.port, phase: "preparing", message: "Checking the server's launch settings..." });
-    try {
-      const result = await window.api.restartServer({ key: item.key, firstSeen: item.firstSeen });
-      setServerRestart({ key: item.key, port: item.port, phase: result.ok ? "ready" : "failed", message: result.message });
-    } catch {
-      setServerRestart({ key: item.key, port: item.port, phase: "failed", message: "Restart could not be confirmed. Refresh and check the server before retrying." });
-    } finally { restartPending.current = false; }
-  };
   const [settings, setSettings] = useState<any>(null);
   const [openSettings, setOpenSettings] = useState(false);
   const [query, setQuery] = useState("");
-  const [hidden, setHidden] = useState<Record<string, number>>({});
   const [ahkHidden, setAHKHidden] = useState<Record<string, number>>({});
   const [automatorHidden, setAutomatorHidden] = useState<
     Record<string, number>
@@ -162,7 +123,8 @@ export default function App() {
   });
 
   useEffect(() => {
-    const offUpdate = window.api.onScanUpdate((next) => setItems(next));
+    const offUpdate = window.api.onScanUpdate((next) => { setItems(next); setError(null); });
+    void window.api.getServers().then(setItems);
     const offError = window.api.onScanError((msg) => setError(msg));
     const offToggle = window.api.onToggleSettings(() =>
       setOpenSettings((v) => !v),
@@ -179,17 +141,7 @@ export default function App() {
       setHealthResults(map);
     });
     const offRecent = window.api.onRecentScriptsUpdate(setRecentScripts);
-    const offRestart = window.api.onServerRestartProgress(setServerRestart);
-    window.api.getServerRestartState().then(setServerRestart);
-    window.api.getSettings().then((s) =>
-      setSettings({
-        ...s,
-        portsText: (s.ports ?? [])
-          .map((p: any) => (Array.isArray(p) ? `${p[0]}-${p[1]}` : String(p)))
-          .join(", "),
-      }),
-    );
-    window.api.getAllNotes().then(setPortNotes);
+    window.api.getSettings().then(setSettings);
     window.api.getRecentScripts().then(setRecentScripts);
     window.api.getMeta().then((nextMeta) => {
       setMeta(nextMeta);
@@ -206,7 +158,6 @@ export default function App() {
       offAutomator?.();
       offHealth?.();
       offRecent?.();
-      offRestart?.();
     };
   }, []);
 
@@ -232,31 +183,7 @@ export default function App() {
     }
   }, [supportedTabs, activeTab, meta]);
 
-  // Filter by search query and exclude optimistically hidden cards
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const now = Date.now();
-    // auto-expire hidden entries after 8s in case kill failed
-    const visible = items.filter((it) => {
-      const hidAt = hidden[it.key];
-      if (hidAt && now - hidAt < 8000) return false;
-      return true;
-    });
-    if (!q) return visible;
-    return visible.filter((it) => {
-      const hay = [
-        it.port?.toString() ?? "",
-        it.pid?.toString() ?? "",
-        it.processName ?? "",
-        it.command ?? "",
-        it.framework ?? "",
-        it.url ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }, [items, hidden, query]);
+  const filtered = items.filter(item => item.discovery === "development");
 
   const filteredAHK = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -305,15 +232,6 @@ export default function App() {
     });
   }, [automatorItems, automatorHidden, query]);
 
-  const grouped = useMemo(() => {
-    return filtered.reduce<Record<string, Item[]>>((acc, cur) => {
-      const f = cur.framework ?? "Other";
-      acc[f] = acc[f] || [];
-      acc[f].push(cur);
-      return acc;
-    }, {});
-  }, [filtered]);
-
   const showTabs = supportedTabs.length > 1;
   const scriptTab = platformFeatures.automatorScripts
     ? "automator"
@@ -338,7 +256,7 @@ export default function App() {
         searchPlaceholder={
           activeTab === "environment"
             ? "Search ENV key names."
-            : "Search ports, PID, names."
+            : "Search projects, services, ports"
         }
         showSearch={activeTab !== "clis"}
         showRefresh={activeTab !== "clis"}
@@ -353,8 +271,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Tabs and Kill All button */}
-        <div className="flex items-center justify-between mb-5">
+        {/* Platform tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div className="flex items-center gap-1">
             {showTabs ? (
               <>
@@ -418,91 +336,24 @@ export default function App() {
               />
             )}
 
-            {/* Kill All button - only on Servers tab */}
-            {activeTab === "servers" && filtered.length > 0 && (
-              <KillAllButton
-                disabled={restartBusy}
-                onKillAll={() => {
-                  window.api.killAllServers();
-                  // Optimistically hide all servers
-                  const allKeys = filtered.reduce(
-                    (acc, it) => ({ ...acc, [it.key]: Date.now() }),
-                    {},
-                  );
-                  setHidden((h) => ({ ...h, ...allKeys }));
-                }}
-              />
-            )}
           </div>
         </div>
 
-        {/* Server Tab Content */}
-        {activeTab === "servers" && (
-          <>
-            {serverRestart && (
-              <div role={serverRestart.phase === "failed" ? "alert" : "status"} className={`mb-5 flex items-start justify-between gap-3 rounded-xl border p-3 text-sm ${serverRestart.phase === "failed" ? "border-danger-border bg-danger-surface text-danger-text" : serverRestart.phase === "ready" ? "border-success-border bg-success-surface text-success-text" : "border-gray-300/50 bg-gray-200 text-gray-900"}`}>
-                <span><strong>:{serverRestart.port}</strong> {serverRestart.message}</span>
-                {!restartBusy && <button type="button" aria-label="Dismiss restart status" onClick={() => setServerRestart(null)} className="rounded px-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Dismiss</button>}
-              </div>
-            )}
-            {Object.keys(grouped).length === 0 && (
-              <div className="text-gray-600 text-center mt-20">
-                No servers detected yet. Start a dev server and it will show up
-                here.
-              </div>
-            )}
-
-            <div
-              className="grid gap-y-6 gap-x-6"
-              style={{
-                gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
-              }}
-            >
-              {(Object.entries(grouped) as [string, Item[]][]).map(
-                ([framework, list]) => (
-                  <div key={framework} className="space-y-5">
-                    <div className="text-gray-700 uppercase tracking-wider text-xs mb-2">
-                      {framework}
-                    </div>
-                    {list.map((it) => (
-                      <ServerCard
-                        key={it.key}
-                        item={it}
-                        onRestart={platform === "win32" || platform === "darwin" ? () => { void restartServer(it); } : undefined}
-                        restartBusy={restartBusy}
-                        restarting={restartBusy && serverRestart?.key === it.key}
-                        health={healthResults[it.key]}
-                        note={portNotes[String(it.port)] || ""}
-                        onNoteChange={async (port, note) => {
-                          const all = await window.api.setNote(port, note);
-                          setPortNotes(all);
-                        }}
-                        onOptimisticKill={(key) => {
-                          setHidden((h) => ({ ...h, [key]: Date.now() }));
-                        }}
-                      />
-                    ))}
-                  </div>
-                ),
-              )}
-            </div>
-          </>
-        )}
+        {activeTab === "servers" && <ServersTab items={items} health={healthResults} query={query} platform={platform} />}
 
         {/* AHK Tab Content */}
         {activeTab === "ahk" && (
           <>
             {filteredAHK.length === 0 && (
               <div className="text-gray-600 text-center mt-20">
-                No AutoHotkey scripts detected. Start an AHK script and it will
-                show up here.
+                No AutoHotkey scripts running.
               </div>
             )}
 
             <div
               className="grid gap-y-5 gap-x-6"
               style={{
-                gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 420px), 1fr))",
               }}
             >
               {filteredAHK.map((it) => (
@@ -523,15 +374,14 @@ export default function App() {
           <>
             {filteredAutomator.length === 0 && (
               <div className="text-gray-600 text-center mt-20">
-                No Automator scripts detected. Start a workflow or Automator app
-                and it will show up here.
+                No Automator scripts found.
               </div>
             )}
 
             <div
               className="grid gap-y-5 gap-x-6"
               style={{
-                gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 420px), 1fr))",
               }}
             >
               {filteredAutomator.map((it) => (
@@ -684,47 +534,6 @@ function TabButton({
           </span>
         )}
       </span>
-    </button>
-  );
-}
-
-function KillAllButton({ onKillAll, disabled }: { onKillAll: () => void; disabled?: boolean }) {
-  const [state, setState] = useState<"idle" | "confirm" | "done">("idle");
-
-  const handleClick = () => {
-    if (disabled) return;
-    if (state === "idle") {
-      setState("confirm");
-      // Auto-reset after 3 seconds if not confirmed
-      setTimeout(() => setState((s) => (s === "confirm" ? "idle" : s)), 3000);
-    } else if (state === "confirm") {
-      onKillAll();
-      setState("done");
-      setTimeout(() => setState("idle"), 2000);
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={disabled || state === "done"}
-      className={`
-        h-9 px-4 rounded-full text-sm font-medium transition-all duration-200 transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mimi_pink-400/45 disabled:cursor-not-allowed disabled:opacity-70
-        ${
-          state === "idle" &&
-          "bg-danger-surface text-danger-text hover:brightness-95 hover:scale-105"
-        }
-        ${
-          state === "confirm" &&
-          "bg-mimi_pink-400 text-mimi_pink-100 animate-pulse scale-105"
-        }
-        ${state === "done" && "bg-success text-success-contrast"}
-      `}
-    >
-      {state === "idle" && "Kill All"}
-      {state === "confirm" && "Click to Confirm"}
-      {state === "done" && "✓ Killed"}
     </button>
   );
 }
