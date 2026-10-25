@@ -328,12 +328,13 @@ export default function ServersTab({
             <button
               className={`${button} bg-danger-surface text-danger-text`}
               disabled={locked}
+              aria-busy={stopping.length > 0}
               onClick={() => stop({ refs: selected })}
             >
               {stopping.length > 0 && (
                 <Loader2 size={14} className="mr-1 inline animate-spin" />
               )}
-              {stopping.length > 0 ? "Stopping�" : "Stop Selected"}
+              {stopping.length > 0 ? "Stopping..." : "Stop Selected"}
             </button>
           </div>
         )}

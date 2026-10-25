@@ -48,6 +48,7 @@ import {
 } from "./environment-variables";
 import {
   APP_DISPLAY_NAME,
+  isPackagedApplication,
   getRendererLoadMode,
   shouldEnableAutoUpdater,
   shouldCreateTrayIcon,
@@ -79,16 +80,18 @@ import {
   validateCliUninstallRequest,
 } from "./clis/ipc-validation";
 
+const packagedApplication = isPackagedApplication(app.isPackaged, process.defaultApp);
+const isolatedTestRun = Boolean(process.env["LOCAL_DASHBOARD_CLIS_TEST_ROOT"]);
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let autolaunch: AutoLaunch | null = null;
 let currentGlobalHotkey: string | null = null;
 let cliController: CliController | null = null;
-const serverResourceDir = app.isPackaged ? path.join(process.resourcesPath, "server-restart") : path.join(app.getAppPath(), "resources/server-restart");
+const serverResourceDir = packagedApplication ? path.join(process.resourcesPath, "server-restart") : path.join(app.getAppPath(), "resources/server-restart");
 const projectStore = createProjectStore();
 const scanner = new Scanner(serverResourceDir, (item, evidence, key) => projectStore.model.decorate(item, evidence, key), projectStore.model.state.lastObserved);
 const serverRestarter = new ServerRestartController(createRestartDependencies(
-  app.isPackaged
+  packagedApplication
     ? path.join(process.resourcesPath, "server-restart")
     : path.join(app.getAppPath(), "resources/server-restart"),
   {
@@ -97,6 +100,7 @@ const serverRestarter = new ServerRestartController(createRestartDependencies(
       win?.webContents.send("servers:restart-progress", state);
     },
     completed: async (_oldPids, replacement) => {
+      if (replacement) serverStopper.rememberRestarted(replacement);
       // Two successful observations retire vanished listeners without deleting a reused PID.
       await scanner.scanFresh();
       await scanner.scanFresh();
@@ -467,7 +471,7 @@ async function createWindow(showWhenReady = true) {
   });
 
   const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
-  if (getRendererLoadMode(app.isPackaged, devServerUrl) === "file") {
+  if (getRendererLoadMode(packagedApplication, devServerUrl) === "file") {
     await win.loadFile(path.join(__dirname, "../../dist/index.html"));
   } else {
     await win.loadURL(devServerUrl!);
@@ -607,7 +611,7 @@ async function setAutoLaunch(
   enabled: boolean,
   openInTrayAtLogin = settings.get("openInTrayAtLogin"),
 ) {
-  if (!shouldManageSystemLoginItem(app.isPackaged)) {
+  if (!shouldManageSystemLoginItem(packagedApplication, isolatedTestRun)) {
     settings.set("startAtLogin", enabled);
     settings.set("openInTrayAtLogin", openInTrayAtLogin);
     return;
@@ -616,7 +620,7 @@ async function setAutoLaunch(
   try {
     const electronLoginItemSettings = getElectronLoginItemSettings({
       platform: process.platform,
-      isPackaged: app.isPackaged,
+      isPackaged: packagedApplication,
       enabled,
       openInTrayAtLogin,
       executablePath: process.execPath,
@@ -676,8 +680,9 @@ app.whenReady().then(async () => {
   if (
     shouldSynchronizeSystemLoginItemAtLaunch({
       platform: process.platform,
-      isPackaged: app.isPackaged,
+      isPackaged: packagedApplication,
       settingsWereSeeded: seeded.seeded,
+      isolatedTestRun,
     })
   ) {
     // Repair stale Windows development registrations. Other packaged platforms
@@ -706,7 +711,7 @@ app.whenReady().then(async () => {
     initUpdater(
       win,
       shouldEnableAutoUpdater(
-        app.isPackaged,
+        packagedApplication,
         process.env["ELECTRON_RENDERER_URL"],
       ),
     );

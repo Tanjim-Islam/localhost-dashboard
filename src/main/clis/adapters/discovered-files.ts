@@ -342,7 +342,7 @@ export async function attributeDiscoveredFiles(input: {
   const startedAt = input.now();
   let failed = false;
   let count = 0;
-  for (let start = 0; start < files.length && !input.signal.aborted; ) {
+  for (let start = 0; start < files.length && !input.signal.aborted;) {
     const batch: string[] = [];
     let characters = 0;
     while (start < files.length && characters + files[start].length < 4500) {
@@ -433,13 +433,13 @@ function within(
   root: string,
   platform: CliScanEnvironment["platform"],
 ): boolean {
-  const relative = path.relative(
+  const api = platform === "win32" ? path.win32 : path.posix;
+  const relative = api.relative(
     normalizeCliPath(root, platform),
     normalizeCliPath(value, platform),
   );
   return (
-    relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
+    relative === "" || (!relative.startsWith("..") && !api.isAbsolute(relative))
   );
 }
 

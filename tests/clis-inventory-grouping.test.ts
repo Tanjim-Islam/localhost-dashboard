@@ -1,5 +1,12 @@
 import { strict as assert } from "node:assert";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -27,7 +34,9 @@ import type {
 } from "../src/main/clis/types";
 
 test("npm package metadata groups cmd, PowerShell, and extensionless launchers", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "clis-npm-group-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "clis-npm-group-")),
+  );
   try {
     const fixture = await createNpmFixture({
       root,
@@ -67,7 +76,9 @@ test("npm package metadata groups cmd, PowerShell, and extensionless launchers",
 });
 
 test("npm launchers under an nvm directory junction join the real package installation", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "clis-nvm-junction-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "clis-nvm-junction-")),
+  );
   try {
     const fixture = await createNpmFixture({
       root: path.join(root, "nvm", "v24.19.0"),
@@ -109,7 +120,9 @@ test("npm launchers under an nvm directory junction join the real package instal
 });
 
 test("Ninja is bundled only when the adjacent Strawberry Perl distribution is verified", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "clis-strawberry-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "clis-strawberry-")),
+  );
   try {
     // A folder name alone must not identify the distributor.
     const distribution = path.join(root, "Strawberry");
@@ -163,7 +176,9 @@ test("Ninja is bundled only when the adjacent Strawberry Perl distribution is ve
 });
 
 test("real product fixtures keep package installs distinct from genuine standalone installs", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "clis-products-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "clis-products-")),
+  );
   try {
     const claude = await createNpmFixture({
       root,
@@ -271,7 +286,9 @@ test("duplicate-version requires distinct installations with the same known vers
 });
 
 test("embedded Codex runtime tools are separate, hidden from current counts, and not PATH conflicts", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "clis-embedded-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "clis-embedded-")),
+  );
   try {
     const normal = path.join(root, "pnpm");
     const pnpmTarget = path.join(
@@ -1020,7 +1037,9 @@ test("pnpm always refreshes its version through the active executable", async ()
 });
 
 test("Google Cloud SDK reads its bounded passive VERSION metadata without executing gcloud", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "clis-gcloud-version-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "clis-gcloud-version-")),
+  );
   try {
     const sdkRoot = path.join(root, "google-cloud-sdk");
     const binRoot = path.join(sdkRoot, "bin");

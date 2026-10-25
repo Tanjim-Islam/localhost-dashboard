@@ -1,11 +1,26 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import {
+  boundedObservation,
   parseLsofListeningOutput,
   parseNumericPid,
   parseNumericPort,
   shouldIgnoreListener,
 } from "../src/main/server-detection";
+
+test("an unresolved metadata query times out without blocking native listener evidence", async () => {
+  const native = [{ pid: 1234, localPort: 61234 }];
+  const result = await Promise.allSettled([
+    boundedObservation(new Promise<never>(() => {}), 10),
+    Promise.resolve(native),
+  ]);
+  assert.equal(result[0].status, "rejected");
+  assert.deepEqual(result[1], { status: "fulfilled", value: native });
+  assert.equal(
+    await boundedObservation(Promise.resolve("ready"), 1000),
+    "ready",
+  );
+});
 
 test("normalizes macOS systeminformation string ports and invalid PIDs", () => {
   assert.equal(parseNumericPort("5173"), 5173);
@@ -46,10 +61,25 @@ test("ignores the macOS Control Center listener on port 5000 without affecting W
 
 test("macOS lsof fallback preserves IPv6-only loopback listeners", () => {
   assert.deepEqual(parseLsofListeningOutput("p420\nn[::1]:60001\n"), [
-    { protocol: "tcp", localPort: 60001, pid: 420, state: "LISTEN", ipv6: true },
+    {
+      protocol: "tcp",
+      localPort: 60001,
+      pid: 420,
+      state: "LISTEN",
+      ipv6: true,
+    },
   ]);
-  assert.deepEqual(parseLsofListeningOutput("p420\ntIPv6\nn*:60001\ntIPv4\nn*:60002\n"), [
-    { protocol: "tcp", localPort: 60001, pid: 420, state: "LISTEN", ipv6: true },
-    { protocol: "tcp", localPort: 60002, pid: 420, state: "LISTEN" },
-  ]);
+  assert.deepEqual(
+    parseLsofListeningOutput("p420\ntIPv6\nn*:60001\ntIPv4\nn*:60002\n"),
+    [
+      {
+        protocol: "tcp",
+        localPort: 60001,
+        pid: 420,
+        state: "LISTEN",
+        ipv6: true,
+      },
+      { protocol: "tcp", localPort: 60002, pid: 420, state: "LISTEN" },
+    ],
+  );
 });

@@ -12,6 +12,10 @@ import { FixtureCliProvider } from "../src/main/clis/fixture";
 import { CliCancellationToken } from "../src/main/clis/session";
 import { migrateCliStore, DEFAULT_CLI_STORE } from "../src/main/clis/store";
 import { normalizeCliInventory } from "../src/main/clis/inventory-normalizer";
+import { CliController } from "../src/main/clis/controller";
+import { MemoryCliPersistence } from "../src/main/clis/store";
+import { once } from "node:events";
+import type { CliScanner } from "../src/main/clis/scanner";
 
 async function fixture() {
   const provider = new FixtureCliProvider(
@@ -186,4 +190,87 @@ test("a dangling endpoint link is unavailable rather than confidently removed", 
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
+});
+
+test("partial scans preserve the comparison baseline across app restarts and resolve later recovery or removal", async () => {
+  const baseline = normalizeCliInventory(await fixture())!;
+  baseline.completeness = "complete";
+  baseline.sourceResults = [];
+  const partial = structuredClone(baseline);
+  partial.completeness = "partial";
+  partial.installations = [];
+  partial.products = [];
+  partial.commands = [];
+  partial.endpoints = [];
+  partial.generatedAt++;
+  const persistence = new MemoryCliPersistence({
+    ...DEFAULT_CLI_STORE,
+    inventory: baseline,
+  });
+  let next = partial;
+  const controller = () =>
+    new CliController({
+      persistence,
+      scanner: {
+        scan: async () => structuredClone(next),
+      } as unknown as CliScanner,
+      clock: { now: () => next.generatedAt },
+      runner: {
+        run: async () => {
+          throw new Error("No commands should run.");
+        },
+      },
+    });
+  const scan = async (subject: CliController) => {
+    const event = once(subject, "scan-complete");
+    subject.startScan();
+    return (await event)[0];
+  };
+  const first = await scan(controller());
+  assert.ok(
+    first.changes.entries.some(
+      (entry: { kind: string }) => entry.kind === "uncertain",
+    ),
+  );
+  assert.equal(
+    persistence.read().comparisonBaseline?.installations.length,
+    baseline.installations.length,
+  );
+  next = structuredClone(baseline);
+  next.generatedAt += 2;
+  const recovered = await scan(controller());
+  assert.equal(
+    recovered.changes.entries.some(
+      (entry: { kind: string }) => entry.kind === "added",
+    ),
+    false,
+  );
+  next = partial;
+  await scan(controller());
+  const empty = structuredClone(partial);
+  empty.completeness = "complete";
+  empty.sourceResults = [];
+  empty.generatedAt += 3;
+  // Positive endpoint absence is separately tested above. Keep a known baseline
+  // whose endpoint cannot exist, rather than deleting real installed tools.
+  const stored = persistence.read();
+  for (const endpoint of stored.comparisonBaseline!.endpoints)
+    endpoint.path = path.join(
+      os.tmpdir(),
+      `dashboard-absent-${endpoint.id}.exe`,
+    );
+  persistence.write(stored);
+  next = empty;
+  assert.ok(
+    (await confirmedAbsent(persistence.read().comparisonBaseline!, next)).size >
+      0,
+    "fixture endpoints are positively absent",
+  );
+  const removed = await scan(controller());
+  assert.ok(
+    removed.changes.entries.some(
+      (entry: { kind: string }) => entry.kind === "removed",
+    ),
+    JSON.stringify(removed.changes),
+  );
 });

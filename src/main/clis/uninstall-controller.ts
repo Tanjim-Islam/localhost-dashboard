@@ -276,19 +276,20 @@ export function createCliUninstallPlan(
   "executable" | "args" | "cwd" | "env"
 > {
   const identity = requirePackageIdentity(installation);
-  const executable = requireAbsoluteManager(identity);
+  const api = installation.platform === "win32" ? path.win32 : path.posix;
+  const executable = requireAbsoluteManager(identity, api);
   const packageId = validatePackageId(identity.source, identity.packageId);
   const cwd =
-    identity.managerRoot && path.isAbsolute(identity.managerRoot)
+    identity.managerRoot && api.isAbsolute(identity.managerRoot)
       ? identity.managerRoot
-      : path.dirname(executable);
+      : api.dirname(executable);
   switch (identity.source) {
     case "npm": {
       if (
         installation.platform === "win32" &&
-        path.basename(executable).toLowerCase() === "node.exe"
+        api.basename(executable).toLowerCase() === "node.exe"
       ) {
-        const cliPath = requireSafeNpmCommandPath(identity);
+        const cliPath = requireSafeNpmCommandPath(identity, api);
         return {
           executable,
           args: [
@@ -402,27 +403,33 @@ function requirePackageIdentity(
   return identity;
 }
 
-function requireAbsoluteManager(identity: CliPackageIdentity): string {
+function requireAbsoluteManager(
+  identity: CliPackageIdentity,
+  api: typeof path = path,
+): string {
   const executable = identity.managerExecutablePath;
-  if (!executable || !path.isAbsolute(executable)) {
+  if (!executable || !api.isAbsolute(executable)) {
     throw new Error("The package manager executable is unavailable.");
   }
   return executable;
 }
 
-function requireSafeNpmCommandPath(identity: CliPackageIdentity): string {
+function requireSafeNpmCommandPath(
+  identity: CliPackageIdentity,
+  api: typeof path = path,
+): string {
   const commandPath = identity.managerCommandPath;
   if (
     !commandPath ||
-    !path.isAbsolute(commandPath) ||
-    path.basename(commandPath).toLowerCase() !== "npm-cli.js"
+    !api.isAbsolute(commandPath) ||
+    api.basename(commandPath).toLowerCase() !== "npm-cli.js"
   ) {
     throw new Error("The npm command entrypoint is unavailable.");
   }
-  const normalized = path.normalize(commandPath).toLowerCase();
-  const expectedSuffix = path
+  const normalized = api.normalize(commandPath).toLowerCase();
+  const expectedSuffix = api
     .normalize(
-      `${path.sep}node_modules${path.sep}npm${path.sep}bin${path.sep}npm-cli.js`,
+      `${api.sep}node_modules${api.sep}npm${api.sep}bin${api.sep}npm-cli.js`,
     )
     .toLowerCase();
   if (!normalized.endsWith(expectedSuffix)) {

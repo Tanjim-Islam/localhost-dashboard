@@ -59,6 +59,20 @@ export function serviceLabel(framework?: string): string {
   return framework || "Local listener";
 }
 
+// systeminformation reports start times at second precision. Gaining native
+// metadata must not turn that same process into a stopped/replaced instance.
+export function sameObservedStart(
+  previous: string | undefined,
+  next: string | undefined,
+  nativeComparison: boolean,
+): boolean {
+  if (!previous || !next) return true;
+  const before = Date.parse(previous),
+    after = Date.parse(next);
+  if (!Number.isFinite(before) || !Number.isFinite(after)) return true;
+  return nativeComparison ? before === after : Math.abs(before - after) <= 2000;
+}
+
 // Only successful observations advance disappearance counts.
 export class ListenerTracker {
   private items = new Map<string, ServerInfo>();
@@ -94,7 +108,7 @@ export class ListenerTracker {
   }
   reconcile(
     observed: ServerInfo[],
-    trackPresence = true,
+    trackPresence: boolean | ((item: ServerInfo) => boolean) = true,
   ): {
     items: ServerInfo[];
     added: ServerInfo[];
@@ -102,17 +116,19 @@ export class ListenerTracker {
   } {
     const added: ServerInfo[] = [],
       removed: ServerInfo[] = [];
+    const tracksPresence = (item: ServerInfo) =>
+      typeof trackPresence === "function" ? trackPresence(item) : trackPresence;
     const keys = new Set(observed.map((s) => s.key));
     for (const item of observed) {
       const old = this.items.get(item.key);
       if (old && old.firstSeen !== item.firstSeen) removed.push(old);
       if (!old || old.firstSeen !== item.firstSeen) added.push(item);
       this.items.set(item.key, item);
-      if (trackPresence || !old || old.firstSeen !== item.firstSeen)
+      if (tracksPresence(item) || !old || old.firstSeen !== item.firstSeen)
         this.missing.delete(item.key);
     }
     for (const [key, item] of this.items)
-      if (trackPresence && !keys.has(key)) {
+      if (tracksPresence(item) && !keys.has(key)) {
         const count = (this.missing.get(key) || 0) + 1;
         this.missing.set(key, count);
         if (count >= 2) {

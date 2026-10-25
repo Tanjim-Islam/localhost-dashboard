@@ -115,6 +115,9 @@ export class ProjectIdentifier {
     }
     // Do not identify globally installed tools or application bundles as projects.
     if (
+      /^\/(?:opt\/(?:homebrew|local)(?:\/|$)|usr\/local\/(?:Homebrew|Cellar|opt|var|lib|bin|sbin)(?:\/|$))/.test(
+        start,
+      ) ||
       /[\\/](node_modules|\.cargo|\.rustup|Windows|Program Files(?: \(x86\))?|WindowsApps)([\\/]|$)|\.app[\\/]Contents[\\/]/i.test(
         start,
       )

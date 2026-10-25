@@ -319,6 +319,7 @@ export type CliStoreSchema = {
   scanDirectories?: string[];
   schemaVersion: 2;
   inventory: CliInventorySnapshot | null;
+  comparisonBaseline?: CliInventorySnapshot | null;
   lastScanStartedAt: number | null;
   lastCompletedScanAt: number | null;
   lastSuccessfulScanAt: number | null;

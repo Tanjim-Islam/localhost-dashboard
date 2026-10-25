@@ -16,6 +16,7 @@ export const DEFAULT_CLI_STORE: CliStoreSchema = {
   schemaVersion: 2,
   scanDirectories: [],
   inventory: null,
+  comparisonBaseline: null,
   lastScanStartedAt: null,
   lastCompletedScanAt: null,
   lastSuccessfulScanAt: null,
@@ -48,6 +49,9 @@ export function migrateCliStore(value: unknown): CliStoreSchema {
     schemaVersion: 2,
     scanDirectories: normalizeScanDirectories(input.scanDirectories),
     inventory,
+    comparisonBaseline:
+      normalizeCliInventory(input.comparisonBaseline) ??
+      (inventory?.completeness === "complete" ? inventory : null),
     lastScanStartedAt: finiteOrNull(input.lastScanStartedAt),
     lastCompletedScanAt: finiteOrNull(input.lastCompletedScanAt),
     lastSuccessfulScanAt: finiteOrNull(input.lastSuccessfulScanAt),
@@ -71,31 +75,26 @@ export function boundCliStore(next: CliStoreSchema): CliStoreSchema {
   bounded.uninstallAudits = bounded.uninstallAudits
     .filter((audit) => audit && typeof audit.requestId === "string")
     .slice(0, MAX_CLI_UNINSTALL_AUDITS);
-  if (bounded.inventory) {
-    bounded.inventory.products = bounded.inventory.products.slice(
-      0,
-      MAX_CLI_PRODUCTS,
-    );
-    bounded.inventory.installations = bounded.inventory.installations.slice(
+  for (const inventory of [bounded.inventory, bounded.comparisonBaseline]) {
+    if (!inventory) continue;
+    inventory.products = inventory.products.slice(0, MAX_CLI_PRODUCTS);
+    inventory.installations = inventory.installations.slice(
       0,
       MAX_CLI_INSTALLATIONS,
     );
     const installationIds = new Set(
-      bounded.inventory.installations.map((item) => item.id),
+      inventory.installations.map((item) => item.id),
     );
-    bounded.inventory.commands = bounded.inventory.commands
+    inventory.commands = inventory.commands
       .filter((item) => installationIds.has(item.installationId))
       .slice(0, MAX_CLI_INSTALLATIONS * 8);
     const endpointIds = new Set(
-      bounded.inventory.commands.flatMap((item) => item.endpointIds),
+      inventory.commands.flatMap((item) => item.endpointIds),
     );
-    bounded.inventory.endpoints = bounded.inventory.endpoints
+    inventory.endpoints = inventory.endpoints
       .filter((item) => endpointIds.has(item.id))
       .slice(0, MAX_CLI_INSTALLATIONS * 12);
-    bounded.inventory.sourceResults = bounded.inventory.sourceResults.slice(
-      0,
-      64,
-    );
+    inventory.sourceResults = inventory.sourceResults.slice(0, 64);
   }
   return bounded;
 }

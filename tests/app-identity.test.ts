@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import {
+  isPackagedApplication,
   APP_DISPLAY_NAME,
   getDockIconInsetScale,
   getRendererLoadMode,
@@ -45,4 +46,11 @@ test("loads the dev renderer URL whenever it is provided", () => {
   assert.equal(getRendererLoadMode(false, "http://localhost:5173"), "dev-url");
   assert.equal(getRendererLoadMode(true, undefined), "file");
   assert.equal(getRendererLoadMode(false, undefined), "file");
+});
+
+test("renamed development Electron uses repository resources and disables packaged behavior", () => {
+  assert.equal(isPackagedApplication(true, true), false);
+  assert.equal(isPackagedApplication(false, true), false);
+  assert.equal(isPackagedApplication(true, undefined), true);
+  assert.equal(isPackagedApplication(false, undefined), false);
 });

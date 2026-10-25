@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import { settings } from "./settings";
 import { NativeProcessHost } from "./server-restart/native-host";
 import { readListeners } from "./server-restart/listeners";
+import { boundedObservation } from "./server-detection";
 import type { ProcessIdentity } from "./server-restart/types";
 import type { ServerInfo, ServerRef, ServiceRecord } from "../shared/servers";
 import {
@@ -17,6 +18,7 @@ import {
   developmentRuntime,
   ListenerTracker,
   serviceLabel,
+  sameObservedStart,
 } from "./projects/discovery";
 import {
   applicationOwner,
@@ -45,6 +47,8 @@ export class Scanner extends EventEmitter {
   private inspections = new Map<number, Inspection>();
   private identifier = new ProjectIdentifier();
   private previousRuns: ServiceRecord[];
+  private hasObservation = false;
+  private nativePresence = new Map<string, number>();
   constructor(
     private resourceDir: string,
     private decorate: (
@@ -101,6 +105,9 @@ export class Scanner extends EventEmitter {
     }
   }
   redecorate(): void {
+    // Editing cached projects before the first scan is not an empty listener
+    // observation. Persisted live services must await actual OS evidence.
+    if (!this.hasObservation) return;
     this.tracker.reconcile(
       this.getItems().map((item) => {
         const info = this.inspections.get(item.pid);
@@ -134,6 +141,7 @@ export class Scanner extends EventEmitter {
     if (!removed.length) return;
     for (const item of removed) {
       this.retiredDuringScan.add(item.key);
+      this.nativePresence.delete(item.key);
       if (!this.getItems().some((s) => s.pid === item.pid))
         this.inspections.delete(item.pid);
       if (item.discovery === "development") this.emit("stopped", item);
@@ -146,7 +154,10 @@ export class Scanner extends EventEmitter {
     }));
   }
   private async checkPresenceOnce(): Promise<void> {
-    const refs = this.getItems();
+    // Native-only absence cannot retire listeners discovered by a fallback.
+    const refs = this.getItems().filter(
+      (item) => this.nativePresence.get(item.key) === item.firstSeen,
+    );
     if (!refs.length) return;
     try {
       const listeners = await readListeners();
@@ -174,11 +185,11 @@ export class Scanner extends EventEmitter {
     const host = new NativeProcessHost(this.resourceDir);
     try {
       const [siResult, nativeResult, processResult] = await Promise.allSettled([
-        si.networkConnections(),
+        boundedObservation(si.networkConnections(), 2000),
         process.platform === "win32" || process.platform === "darwin"
           ? readListeners()
           : Promise.resolve(null),
-        si.processes(),
+        boundedObservation(si.processes(), 5000),
       ]);
       if (
         nativeResult.status === "rejected" ||
@@ -240,6 +251,8 @@ export class Scanner extends EventEmitter {
         const prior =
           old || this.previousRuns.find((i) => i.key === `${pid}:${port}`);
         let cached = this.inspections.get(pid);
+        const nativeKnownBefore =
+          !!cached?.identity || (!old && !!prior?.processStarted);
         const changed = !!(
           cached?.stamp &&
           p?.started &&
@@ -346,7 +359,14 @@ export class Scanner extends EventEmitter {
         const started = cached?.identity
           ? new Date(cached.identity.startedMs).toISOString()
           : p?.started || prior?.processStarted;
-        const same = prior && !changed && prior.processStarted === started;
+        const same =
+          prior &&
+          !changed &&
+          sameObservedStart(
+            prior.processStarted,
+            started,
+            !!cached?.identity && nativeKnownBefore,
+          );
         const framework = cached?.framework || runtime;
         const classification =
           cached?.classification || classifyListener({ name: p?.name });
@@ -359,7 +379,10 @@ export class Scanner extends EventEmitter {
           lastSeen: now,
           url: `http://${ipv6 ? "[::1]" : "localhost"}:${port}`,
           processName: p?.name || old?.processName,
-          processStarted: started,
+          processStarted:
+            same && !cached?.identity
+              ? prior.processStarted || started
+              : started,
           framework,
           cwd: cached?.cwd,
           ...classification,
@@ -395,10 +418,26 @@ export class Scanner extends EventEmitter {
         );
       }
       // Metadata gathered before a verified disappearance must not resurrect it.
+      const nativeKeys = new Set(
+        nativeResult.status === "fulfilled"
+          ? (nativeResult.value || []).map((l) => `${l.pid}:${l.localPort}`)
+          : [],
+      );
+      for (const item of observed)
+        if (nativeKeys.has(item.key) && !this.retiredDuringScan.has(item.key))
+          this.nativePresence.set(item.key, item.firstSeen);
       const result = this.tracker.reconcile(
         observed.filter((item) => !this.retiredDuringScan.has(item.key)),
-        process.platform !== "win32" && process.platform !== "darwin",
+        (item) => this.nativePresence.get(item.key) !== item.firstSeen,
       );
+      for (const [key, firstSeen] of this.nativePresence)
+        if (
+          !result.items.some(
+            (item) => item.key === key && item.firstSeen === firstSeen,
+          )
+        )
+          this.nativePresence.delete(key);
+      this.hasObservation = true;
       this.previousRuns = [];
       for (const item of result.added)
         if (item.discovery === "development") this.emit("new", item);

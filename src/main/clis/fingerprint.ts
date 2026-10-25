@@ -72,6 +72,12 @@ export function createEndpointFingerprint(
     canonicalPath: normalizeOptional(endpoint.canonicalPath, platform),
     symlinkTarget: normalizeOptional(endpoint.symlinkTarget, platform),
     shimTarget: normalizeOptional(endpoint.shimTarget, platform),
+    // Invalidate cached probes that previously bypassed a POSIX launcher name.
+    ...(platform === "darwin" &&
+    endpoint.canonicalPath &&
+    endpoint.canonicalPath !== endpoint.path
+      ? { probeLaunchMode: "preserve-launcher" }
+      : {}),
     ...(endpoint.bundledWith ? { bundledWith: endpoint.bundledWith } : {}),
     fileSize: endpoint.fileSize ?? null,
     modifiedAt: endpoint.modifiedAt ?? null,

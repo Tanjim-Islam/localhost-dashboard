@@ -16,19 +16,20 @@
     "build:mac-sparkle-bridge": "node scripts/build-mac-sparkle-bridge.mjs",
     "package:mac": "npm run build && npm run build:mac-sparkle-bridge && electron-builder --mac --universal --publish never",
     "package": "node scripts/package-desktop.mjs",
-    "test": "tsc -p tsconfig.test.json && node -e \"require('node:fs').writeFileSync('.tmp-tests/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\n')\" && node --test .tmp-tests/tests/*.test.js",
+    "test": "npm run test:clis:compile && node --test .tmp-tests/tests/*.test.js",
     "test:env-keys": "node --experimental-strip-types scripts/environment-variables.integration.mts",
     "lint": "eslint --ext .ts,.tsx src",
     "test:startup": "node --experimental-strip-types --test scripts/startup-visibility.test.mts",
     "test:servers": "npm run test:clis:compile && node --test .tmp-tests/tests/server-*.test.js",
     "test:servers:live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-restart.integration.cjs",
-    "test:clis:compile": "tsc -p tsconfig.test.json && node -e \"require('node:fs').writeFileSync('.tmp-tests/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\n')\"",
+    "test:clis:compile": "node -e \"require('node:fs').rmSync('.tmp-tests', { recursive: true, force: true })\" && tsc -p tsconfig.test.json && node -e \"require('node:fs').writeFileSync('.tmp-tests/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\n')\"",
     "test:clis": "npm run test:clis:compile && node --test .tmp-tests/tests/clis-*.test.js",
     "dev:clis-test": "node --experimental-strip-types scripts/start-clis-test-mode.mts",
     "format:check": "prettier --check .",
     "format": "prettier -w .",
     "start:test-servers": "node scripts/dev-servers.js",
-    "test:servers:stop-live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-stop.integration.cjs"
+    "test:servers:stop-live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-stop.integration.cjs",
+    "test:servers:ui": "npm run build && npm run test:clis:compile && node scripts/server-ui.integration.cjs"
   },
   "keywords": [],
   "devDependencies": {
@@ -78,7 +79,8 @@
     "appId": "com.localdashboard.app",
     "productName": "Localhost Dashboard",
     "files": [
-      "dist/**",
+      "dist/index.html",
+      "dist/assets/**",
       "out/**",
       "resources/**",
       "!resources/server-restart/**",

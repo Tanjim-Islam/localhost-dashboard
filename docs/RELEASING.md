@@ -16,6 +16,14 @@ The `Release desktop apps` workflow builds a universal Mac DMG and ZIP and both 
 
 The public Mac feed is `https://github.com/Tanjim-Islam/localhost-dashboard/releases/latest/download/appcast.xml`. Windows continues to use `latest.yml` from the same latest release. The Mac appcast uses a versioned GitHub URL for each ZIP, so older update entries stay available.
 
+## Refresh Mac packages at the published Windows version
+
+When the displayed Mac version must stay equal to the current Windows release, commit the Mac fixes and matching package versions to `master`, then run `Refresh Mac release` with that version and a new positive revision. Package locally first with the same `--config.mac.bundleVersion=<version>.<revision>` and `--config.mac.artifactName=Localhost-Dashboard-${version}-mac<revision>-universal.${ext}` overrides.
+
+The workflow verifies the current published release, builds and signs new universal packages, and uploads them before replacing `appcast.xml`. Sparkle compares the newer internal build number while the app continues to display the Windows version. Existing Windows assets and previous Mac ZIP URLs remain intact. Release notes come from `docs/releases/v<version>.md` and contain changes only. The original release tag stays in place; the workflow records the `master` commit used for the Mac refresh.
+
+The workflow retries a failed feed upload and restores the previous signed feed if replacement fails. If a package upload stopped partway through, use a new revision on the next run; revision filenames are immutable and are never overwritten.
+
 ## Signing key
 
 `SPARKLE_ED_PRIVATE_KEY` is stored as a GitHub Actions repository secret. Its local backup is `~/Library/Application Support/LocalhostDashboardRelease/sparkle-ed25519.private`, with owner-only file permissions. Keep that backup safe. Never commit or paste the private key into an issue or release. Its public key is in `package.json` as `SUPublicEDKey`.

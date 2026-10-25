@@ -1,5 +1,12 @@
 import { strict as assert } from "node:assert";
-import { mkdir, mkdtemp, rm, writeFile, symlink } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  writeFile,
+  symlink,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -62,7 +69,9 @@ function environment(root: string): CliScanEnvironment {
   };
 }
 async function withRoot(run: (root: string) => Promise<void>): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "cli-discovery-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cli-discovery-")),
+  );
   try {
     await run(root);
   } finally {
@@ -654,7 +663,7 @@ test("metadata batches stay inside the command boundary even with many long path
       now: () => 1000,
       runner: {
         run: async (spec) => {
-          validateCliCommandSpec(spec);
+          validateCliCommandSpec(spec, "win32");
           calls++;
           return {
             executable: spec.executable,

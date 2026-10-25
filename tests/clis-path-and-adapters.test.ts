@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -74,9 +81,7 @@ test("one directory pass groups npm launcher variants by package root", async ()
     assert.equal(records.length, 3);
     assert.equal(
       new Set(
-        records.map((record) =>
-          groupEquivalentEndpointKey(record, "win32"),
-        ),
+        records.map((record) => groupEquivalentEndpointKey(record, "win32")),
       ).size,
       1,
     );
@@ -211,7 +216,13 @@ test("node package inventory runs once for equivalent manager launchers", async 
               dependencies: {
                 "@openai/codex": {
                   version: "0.145.0",
-                  path: path.join(root, "global", "node_modules", "@openai", "codex"),
+                  path: path.join(
+                    root,
+                    "global",
+                    "node_modules",
+                    "@openai",
+                    "codex",
+                  ),
                   bin: { codex: "bin/codex.js" },
                 },
               },
@@ -224,9 +235,7 @@ test("node package inventory runs once for equivalent manager launchers", async 
         },
       },
       managerEndpoints,
-      nodeEndpoints: [
-        managerEndpoint("node", node, { kind: "native" }),
-      ],
+      nodeEndpoints: [managerEndpoint("node", node, { kind: "native" })],
       signal: new AbortController().signal,
       now: () => 1,
     });
@@ -237,7 +246,10 @@ test("node package inventory runs once for equivalent manager launchers", async 
       ).length,
       1,
     );
-    assert.equal(result.packageRecords[0].packageIdentity.packageId, "@openai/codex");
+    assert.equal(
+      result.packageRecords[0].packageIdentity.packageId,
+      "@openai/codex",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -261,9 +273,24 @@ test("macOS enumeration requires executable access and resolves symlinks", async
       snapshot: { directories: [root], pathExt: [] },
       cancellation: new CliCancellationToken(),
     });
-    assert.equal(records.length, 1);
-    assert.equal(records[0].endpoint.kind, "symlink");
-    assert.equal(records[0].endpoint.canonicalPath, target);
+    // Dynamic discovery also includes the executable shebang target itself.
+    assert.deepEqual(records.map((r) => r.endpoint.commandName).sort(), [
+      "git",
+      "git-target",
+    ]);
+    const git = records.find((r) => r.endpoint.commandName === "git")!;
+    assert.equal(git.endpoint.kind, "symlink");
+    assert.equal(
+      git.endpoint.canonicalPath,
+      await import("node:fs/promises").then((fs) => fs.realpath(target)),
+    );
+    await writeFile(path.join(root, "non-executable"), "#!/bin/sh\nexit 0\n");
+    const next = await enumerateCliPathEndpoints({
+      platform: "darwin",
+      snapshot: { directories: [root], pathExt: [] },
+      cancellation: new CliCancellationToken(),
+    });
+    assert.ok(!next.some((r) => r.endpoint.commandName === "non-executable"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -308,7 +335,7 @@ test("structured node, pipx, Windows, and macOS parsers isolate malformed output
   const pipx = parsePipxOutput(
     JSON.stringify({
       venvs: {
-        "poetry": {
+        poetry: {
           metadata: {
             main_package: {
               package: "poetry",
@@ -336,7 +363,10 @@ test("structured node, pipx, Windows, and macOS parsers isolate malformed output
     environment,
   );
   assert.equal(winget?.[0].productId, "codex");
-  assert.equal(parseWingetOutput("No installed package found", environment), null);
+  assert.equal(
+    parseWingetOutput("No installed package found", environment),
+    null,
+  );
 
   const brew = parseHomebrewOutput(
     JSON.stringify({
@@ -353,7 +383,10 @@ test("structured node, pipx, Windows, and macOS parsers isolate malformed output
     "/opt/homebrew/bin/brew",
   );
   assert.equal(brew?.[0].packageIdentity.source, "homebrew-formula");
-  assert.equal(parseHomebrewOutput("warning before json", "/usr/local/bin/brew"), null);
+  assert.equal(
+    parseHomebrewOutput("warning before json", "/usr/local/bin/brew"),
+    null,
+  );
 
   const ports = parseMacPortsOutput(
     "git @2.50.0_0 (active)\n",
@@ -361,7 +394,10 @@ test("structured node, pipx, Windows, and macOS parsers isolate malformed output
   );
   assert.equal(ports?.[0].productId, "git");
   assert.equal(
-    parseMacPortsOutput("The following ports are installed:", "/opt/local/bin/port"),
+    parseMacPortsOutput(
+      "The following ports are installed:",
+      "/opt/local/bin/port",
+    ),
     null,
   );
 });

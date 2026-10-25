@@ -12,7 +12,35 @@ import {
 import {
   developmentRuntime,
   ListenerTracker,
+  sameObservedStart,
 } from "../src/main/projects/discovery";
+
+test("coarse process timestamps do not invent restarts when native metadata arrives", () => {
+  assert.ok(
+    sameObservedStart(
+      "2026-10-24T00:00:00Z",
+      "2026-10-24T00:00:00.572Z",
+      false,
+    ),
+  );
+  assert.ok(
+    sameObservedStart(
+      "2026-10-24T00:00:00.572Z",
+      "2026-10-24T00:00:00Z",
+      false,
+    ),
+  );
+  assert.ok(
+    !sameObservedStart(
+      "2026-10-24T00:00:00.572Z",
+      "2026-10-24T00:00:00.900Z",
+      true,
+    ),
+  );
+  assert.ok(
+    !sameObservedStart("2026-10-24T00:00:00Z", "2026-10-24T00:00:05Z", false),
+  );
+});
 import {
   associationEdit,
   projectEdit,
@@ -401,4 +429,27 @@ test("stopped instances remain inspectable when another copy of the same service
   model.reconcile([b, c], 4000);
   assert.equal(model.state.recentlyStopped[0].pid, a.pid);
   assert.equal(model.state.activity[0].kind, "discovered");
+});
+
+test("fallback listeners use full-scan absence while native listeners use fast presence checks", () => {
+  const tracker = new ListenerTracker();
+  const native = service();
+  const fallback = service({ key: "0:60008", pid: 0, port: 60008 });
+  const trackFallback = (item: ServerInfo) => item.key === fallback.key;
+  tracker.reconcile([native, fallback], trackFallback);
+  tracker.checkPresence([native], new Set());
+  tracker.reconcile([native, fallback], trackFallback);
+  assert.deepEqual(
+    tracker.checkPresence([native], new Set()).map((s) => s.key),
+    [native.key],
+  );
+  assert.deepEqual(
+    tracker.values().map((s) => s.key),
+    [fallback.key],
+  );
+  assert.equal(tracker.reconcile([], trackFallback).removed.length, 0);
+  assert.deepEqual(
+    tracker.reconcile([], trackFallback).removed.map((s) => s.key),
+    [fallback.key],
+  );
 });

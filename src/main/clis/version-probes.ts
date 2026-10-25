@@ -161,9 +161,9 @@ export function resolveProbeExecutable(
   platform: CliScanEnvironment["platform"],
 ): string | undefined {
   if (platform === "darwin") {
-    return endpoint.executable
-      ? (endpoint.canonicalPath ?? endpoint.path)
-      : undefined;
+    // POSIX proxies such as rustup dispatch using the invoked filename.
+    // Resolving rustc to rustup changes which command --version executes.
+    return endpoint.executable ? endpoint.path : undefined;
   }
   const candidates = [
     endpoint.shimTarget,

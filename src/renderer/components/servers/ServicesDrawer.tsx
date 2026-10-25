@@ -24,6 +24,7 @@ export default function ServicesDrawer({
     <dialog
       ref={ref}
       aria-label="More services"
+      inert={!open}
       onCancel={(event) => {
         event.preventDefault();
         onClose();

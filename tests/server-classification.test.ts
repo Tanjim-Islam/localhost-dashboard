@@ -235,3 +235,25 @@ test("framework evidence improves service names without treating bare runtimes a
     "development",
   );
 });
+
+test("python.org and Command Line Tools macOS runtime bundles remain development servers", () => {
+  for (const executable of [
+    "/Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+    "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python",
+  ]) {
+    const application = applicationOwner(
+      snapshot(processInfo(2, executable)),
+      2,
+      "darwin",
+    );
+    assert.equal(application, undefined);
+    const result = classifyListener({
+      name: "Python",
+      context: context(executable, "-m", "http.server", "6000"),
+      application,
+      platform: "darwin",
+    });
+    assert.equal(result.discovery, "development");
+    assert.equal(result.framework, "Python HTTP");
+  }
+});

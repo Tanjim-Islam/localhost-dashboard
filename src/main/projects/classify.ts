@@ -73,7 +73,13 @@ export function applicationOwner(
   const executable = process.executable;
   if (platform === "darwin") {
     const bundle = executable.match(/^(.*?\/([^/]+)\.app)\/Contents\//);
-    if (bundle)
+    // python.org's interpreter is packaged inside Python.app. That runtime
+    // bundle does not own the user's Python project or HTTP listener.
+    const pythonRuntime =
+      /\/Python\d*\.framework\/Versions\/[^/]+\/Resources\/Python\.app\/Contents\/MacOS\/Python$/i.test(
+        executable,
+      );
+    if (bundle && !pythonRuntime)
       return { name: appName(bundle[2]), executable, evidence: "app-bundle" };
   }
   const api = platform === "win32" ? path.win32 : path.posix;

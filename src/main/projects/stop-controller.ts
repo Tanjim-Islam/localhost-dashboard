@@ -49,7 +49,16 @@ const portsFor = (listeners: Listener[], pid: number) =>
 export class ServerStopController {
   private prepared?: Prepared;
   private busy = false;
+  private restarted = new Map<number, ProcessIdentity>();
   constructor(private deps: StopDependencies) {}
+  // Only the main-process restarter can grant this exception for its verified
+  // replacement listeners. PID reuse never inherits it.
+  rememberRestarted(identities: ProcessIdentity[]): void {
+    for (const identity of identities)
+      this.restarted.set(identity.pid, { ...identity });
+    while (this.restarted.size > 512)
+      this.restarted.delete(this.restarted.keys().next().value!);
+  }
   isBusy(): boolean {
     return this.busy;
   }
@@ -96,11 +105,12 @@ export class ServerStopController {
     if (this.busy || this.deps.restartBusy())
       throw new Error("A server operation is already running.");
     this.busy = true;
-    const host = this.deps.createHost();
+    let host: Host | undefined;
     try {
+      host = this.deps.createHost();
       return await action(host);
     } finally {
-      host.dispose();
+      host?.dispose();
       this.busy = false;
     }
   }
@@ -121,7 +131,11 @@ export class ServerStopController {
       );
       if (ancestor && protectedPids.has(ancestor.pid)) break;
     }
-    // Dashboard children are also protected, including renderer/helper listeners.
+    for (const [pid, identity] of this.restarted)
+      if (!snapshot.processes.some((p) => sameProcess(p, identity)))
+        this.restarted.delete(pid);
+    // Protect Dashboard helpers, while allowing exact listeners intentionally
+    // relaunched by Restart. Detached servers still have Dashboard as parent.
     const children = new Set([this.deps.ownPid]);
     for (let depth = 0; depth < 32; depth++) {
       const size = children.size;
@@ -136,7 +150,14 @@ export class ServerStopController {
           children.add(p.pid);
       if (size === children.size) break;
     }
-    for (const pid of children) protectedPids.add(pid);
+    for (const pid of children) {
+      const restarted = this.restarted.get(pid);
+      if (
+        !restarted ||
+        !snapshot.processes.some((p) => sameProcess(p, restarted))
+      )
+        protectedPids.add(pid);
+    }
     const identities: ProcessIdentity[] = [],
       targets: StopTarget[] = [];
     for (const item of selected) {

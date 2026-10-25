@@ -54,11 +54,15 @@ export function createPathSnapshot(input: {
   const directories: string[] = [];
   const addDirectory = (candidate: string): void => {
     const trimmed = candidate.trim().replace(/^"(.*)"$/, "$1");
-    if (!trimmed || !path.isAbsolute(trimmed)) return;
+    const api =
+      input.platform === "win32" && /^[a-z]:[\\/]|^\\\\/i.test(trimmed)
+        ? path.win32
+        : path.posix;
+    if (!trimmed || !api.isAbsolute(trimmed)) return;
     const key = normalizeCliPath(trimmed, input.platform);
     if (seen.has(key)) return;
     seen.add(key);
-    directories.push(path.normalize(trimmed));
+    directories.push(api.normalize(trimmed));
   };
   for (const candidate of input.pathValue.split(delimiter)) {
     addDirectory(candidate);
@@ -202,7 +206,7 @@ export function groupEquivalentEndpointKey(
       : undefined;
   const identity =
     platform === "win32"
-      ? path.dirname(endpoint.canonicalPath ?? endpoint.path)
+      ? path.win32.dirname(endpoint.canonicalPath ?? endpoint.path)
       : (packageRoot ??
         endpoint.shimTarget ??
         endpoint.symlinkTarget ??
@@ -523,18 +527,28 @@ function expandLauncherVariables(
     .replace(/\$\{basedir\}/gi, launcherRoot)
     .replace(/\$basedir/gi, launcherRoot)
     .replace(/\$PSScriptRoot/gi, launcherRoot)
-    .replaceAll("/", path.sep);
+    .replace(/[\\/]/g, path.sep);
 }
 
 function extractNodePackageRoots(content: string): string[] {
-  const matches = content.matchAll(
-    /[A-Za-z]:\\[^"\r\n]*?\\node_modules\\(?:@[^\\/"\r\n]+\\)?[^\\/"\r\n]+/gi,
-  );
   const roots = new Set<string>();
-  for (const match of matches) {
-    const candidate = match[0].trim();
-    if (!path.isAbsolute(candidate) || /[%$]/.test(candidate)) continue;
-    roots.add(path.normalize(candidate));
+  // Extract quoted paths first, so apostrophes in double-quoted folder names
+  // remain literal. The full text also covers unquoted generated launchers.
+  const paths = [...content.matchAll(/"([^"\r\n]+)"|'([^'\r\n]+)'/g)].map(
+    (m) => m[1] || m[2],
+  );
+  for (const value of [...paths, content]) {
+    for (const match of value.matchAll(
+      /(?:[A-Za-z]:[\\/]|\/)[^"\r\n]*?[\\/]node_modules[\\/](?:@[^\\/"\r\n]+[\\/])?[^\\/"\r\n]+/gi,
+    )) {
+      const candidate = match[0].trim();
+      if (
+        !(path.isAbsolute(candidate) || path.win32.isAbsolute(candidate)) ||
+        /[%$]/.test(candidate)
+      )
+        continue;
+      roots.add(path.normalize(candidate));
+    }
   }
   return [...roots];
 }

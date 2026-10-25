@@ -1,0 +1,155 @@
+name: Refresh Mac release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published Windows version to keep on Mac
+        required: true
+        type: string
+      revision:
+        description: New Mac build revision for this version
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ inputs.version }}
+      REVISION: ${{ inputs.revision }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.15.0"
+          cache: npm
+      - name: Validate the published release and newer Mac build
+        shell: bash
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$REVISION" =~ ^[1-9][0-9]{0,5}$ ]]
+          test "$GITHUB_REF" = refs/heads/master
+          test "$VERSION" = "$(node -p "require('./package.json').version")"
+          tag="v$VERSION"
+          git merge-base --is-ancestor "refs/tags/$tag" HEAD
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "$tag"
+          test "$(gh release view "$tag" --json isDraft --jq .isDraft)" = false
+          test -s "docs/releases/$tag.md"
+          gh release view "$tag" --json assets > "$RUNNER_TEMP/release-before.json"
+          for name in "Localhost-Dashboard-Setup-$VERSION.exe" "Localhost-Dashboard-$VERSION.exe" "Localhost-Dashboard-Setup-$VERSION.exe.blockmap" latest.yml; do
+            jq -e --arg name "$name" '.assets[] | select(.name == $name and .size > 0)' "$RUNNER_TEMP/release-before.json" >/dev/null
+          done
+          for extension in dmg zip; do
+            name="Localhost-Dashboard-$VERSION-mac$REVISION-universal.$extension"
+            jq -e --arg name "$name" 'all(.assets[]; .name != $name)' "$RUNNER_TEMP/release-before.json" >/dev/null
+          done
+          gh release download "$tag" --pattern appcast.xml --dir "$RUNNER_TEMP/current-mac-feed"
+          python3 - <<'PY'
+          import os, re, xml.etree.ElementTree as ET
+          root = ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'current-mac-feed/appcast.xml'))
+          namespace = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
+          current = root.findtext('.//' + namespace + 'version')
+          if current is None:
+              current = root.find('.//enclosure').get(namespace + 'version')
+          assert current and re.fullmatch(r'\d+(?:\.\d+)*', current), 'Unreadable current Mac build'
+          desired = os.environ['VERSION'] + '.' + os.environ['REVISION']
+          assert tuple(map(int, desired.split('.'))) > tuple(map(int, current.split('.'))), 'Mac build must increase'
+          PY
+      - run: npm ci
+      - run: npm run test:startup
+      - run: npx tsc --noEmit
+      - name: Package the universal Mac app with the same displayed version
+        shell: bash
+        run: |
+          npm run package:mac -- --config.directories.output=release-mac \
+            --config.mac.bundleVersion="$VERSION.$REVISION" \
+            --config.mac.artifactName="Localhost-Dashboard-$VERSION-mac$REVISION-universal.\${ext}"
+      - name: Verify the packages and sign the update feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          test -n "$SPARKLE_ED_PRIVATE_KEY"
+          app='release-mac/mac-universal/Localhost Dashboard.app'
+          zip="Localhost-Dashboard-$VERSION-mac$REVISION-universal.zip"
+          dmg="Localhost-Dashboard-$VERSION-mac$REVISION-universal.dmg"
+          codesign --verify --deep --strict "$app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$VERSION.$REVISION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$app/Contents/Info.plist")" = 'pLcjY+xshxhfKvhZyQbg8XZZFmrPzOw+lyVUGkd9JcI='
+          for binary in "$app/Contents/MacOS/Localhost Dashboard" \
+            "$app/Contents/Resources/server-restart/darwin-process-helper" \
+            "$app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" \
+            "$app/Contents/Resources/app.asar.unpacked/node_modules/electron-sparkle-updater/native/build/Release/sparkle_bridge.node"; do
+            lipo "$binary" -verify_arch arm64
+            lipo "$binary" -verify_arch x86_64
+          done
+          hdiutil verify "release-mac/$dmg"
+          unzip -tq "release-mac/$zip"
+          mkdir -p release-mac/appcast-input
+          cp "release-mac/$zip" release-mac/appcast-input/
+          key_file="$RUNNER_TEMP/sparkle-ed25519.key"
+          trap 'rm -f "$key_file"' EXIT
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          ./node_modules/.bin/electron-sparkle-updater generate-appcast release-mac/appcast-input \
+            --ed-key-file "$key_file" \
+            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/"
+          xmllint --noout release-mac/appcast-input/appcast.xml
+          grep -Fq "releases/download/v$VERSION/$zip" release-mac/appcast-input/appcast.xml
+          grep -Fq 'sparkle:edSignature=' release-mac/appcast-input/appcast.xml
+          grep -Fq "<sparkle:version>$VERSION.$REVISION</sparkle:version>" release-mac/appcast-input/appcast.xml
+          cp release-mac/appcast-input/appcast.xml release-mac/appcast.xml
+      - name: Upload the new Mac packages before switching the feed
+        shell: bash
+        run: |
+          tag="v$VERSION"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "$tag"
+          gh release upload "$tag" \
+            "release-mac/Localhost-Dashboard-$VERSION-mac$REVISION-universal.dmg" \
+            "release-mac/Localhost-Dashboard-$VERSION-mac$REVISION-universal.zip"
+          upload_feed() {
+            for attempt in 1 2 3; do
+              if gh release upload "$tag" "$1" --clobber; then return 0; fi
+              sleep 5
+            done
+            return 1
+          }
+          # --clobber removes the existing asset before uploading. Preserve and
+          # restore its exact signed contents if the replacement cannot finish.
+          if ! upload_feed release-mac/appcast.xml; then
+            upload_feed "$RUNNER_TEMP/current-mac-feed/appcast.xml" || echo 'Could not restore the previous Mac feed' >&2
+            exit 1
+          fi
+          gh release edit "$tag" --notes-file "docs/releases/$tag.md"
+          gh release view "$tag" --json assets > "$RUNNER_TEMP/release-after.json"
+          python3 - <<'PY'
+          import json, os
+          def windows(file):
+              with open(os.path.join(os.environ['RUNNER_TEMP'], file)) as stream:
+                  assets = json.load(stream)['assets']
+              return sorted((a['name'], a['url'], a['size']) for a in assets if a['name'] == 'latest.yml' or a['name'].endswith(('.exe', '.blockmap')))
+          assert windows('release-before.json') == windows('release-after.json'), 'Windows assets changed'
+          PY
+      - name: Verify the public Mac update feed
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --location --silent --show-error \
+              "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/appcast.xml" -o "$RUNNER_TEMP/published-appcast.xml" \
+              && grep -Fq "Localhost-Dashboard-$VERSION-mac$REVISION-universal.zip" "$RUNNER_TEMP/published-appcast.xml"; then break; fi
+            sleep 10
+          done
+          grep -Fq "Localhost-Dashboard-$VERSION-mac$REVISION-universal.zip" "$RUNNER_TEMP/published-appcast.xml"

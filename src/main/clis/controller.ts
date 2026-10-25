@@ -247,8 +247,13 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
       session.status =
         snapshot.completeness === "partial" ? "partial" : "complete";
       session.finishedAt = this.options.clock.now();
-      const previous = this.readInventory(false);
-      snapshot.changes = compareCliInventories(previous, snapshot, await confirmedAbsent(previous, snapshot));
+      const store = this.options.persistence.read();
+      const previous = store.comparisonBaseline ?? store.inventory;
+      snapshot.changes = compareCliInventories(
+        previous,
+        snapshot,
+        await confirmedAbsent(previous, snapshot),
+      );
       session.cancellation.throwIfCancelled();
       const publishedSnapshot = this.publishSnapshot(
         snapshot,
@@ -351,6 +356,16 @@ export class CliController extends EventEmitter<CliControllerEventMap> {
       boundCliStore({
         ...store,
         inventory: publishedSnapshot,
+        // A partial inventory remains useful to display, but must not erase the
+        // last reliable evidence for a later addition/removal comparison.
+        comparisonBaseline:
+          session &&
+          snapshot.completeness === "complete" &&
+          !snapshot.sourceResults.some(
+            (s) => s.status === "failed" || s.errorCode,
+          )
+            ? publishedSnapshot
+            : (store.comparisonBaseline ?? store.inventory),
         lastCompletedScanAt: now,
         lastSuccessfulScanAt: lastSuccessfulScanAt ?? null,
         lastScanStatus:

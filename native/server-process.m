@@ -104,7 +104,10 @@ static id handle(NSDictionary *request) {
     for (NSDictionary *target in targets) {
       pid_t pid = [target[@"pid"] intValue];
       BOOL valid = pid != getpid() && same(target, identity(pid));
-      [results addObject:@(valid && kill(pid, [op isEqual:@"interrupt"] ? SIGINT : SIGKILL) == 0)];
+      // Box an actual JSON boolean. Boxing the C && expression produces 0/1,
+      // which cannot satisfy the host's strict termination acknowledgement.
+      BOOL stopped = valid && kill(pid, [op isEqual:@"interrupt"] ? SIGINT : SIGKILL) == 0;
+      [results addObject:stopped ? @YES : @NO];
     }
     return results;
   }

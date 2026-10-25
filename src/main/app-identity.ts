@@ -1,5 +1,15 @@
 export const APP_DISPLAY_NAME = "Localhost Dashboard";
 
+// Renaming the development Electron bundle can make Electron report isPackaged
+// even when its default app is loading a repository. Native resources still live
+// in that repository, and automatic updates must remain disabled there.
+export function isPackagedApplication(
+  isPackaged: boolean,
+  defaultApp?: boolean,
+): boolean {
+  return isPackaged && !defaultApp;
+}
+
 export function shouldShowDockForWindowState(
   platform: NodeJS.Platform,
   windowVisible: boolean,

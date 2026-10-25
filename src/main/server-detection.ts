@@ -6,6 +6,28 @@ export type ParsedListener = {
   ipv6?: boolean;
 };
 
+// Some systeminformation versions leave their macOS network promise pending
+// when netstat fails. A working native listener table must still be published.
+export async function boundedObservation<T>(
+  query: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      query,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Observation timed out.")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function shouldIgnoreListener(
   platform: NodeJS.Platform,
   port: number,
@@ -56,7 +78,10 @@ export function parseLsofListeningOutput(stdout: string): ParsedListener[] {
       ipv6 = false;
       continue;
     }
-    if (line === "tIPv6" || line === "tIPv4") { ipv6 = line === "tIPv6"; continue; }
+    if (line === "tIPv6" || line === "tIPv4") {
+      ipv6 = line === "tIPv6";
+      continue;
+    }
 
     const portMatch = line.match(/^n.+?:(\d+)$/);
     if (portMatch && currentPid) {

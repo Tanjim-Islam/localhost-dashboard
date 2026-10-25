@@ -9,6 +9,28 @@ import {
   shouldStartInTray,
 } from "../src/main/startup-visibility.ts";
 
+test("isolated packaged tests never modify operating system login items", () => {
+  assert.equal(shouldManageSystemLoginItem(true, true), false);
+  assert.equal(
+    shouldSynchronizeSystemLoginItemAtLaunch({
+      platform: "darwin",
+      isPackaged: true,
+      settingsWereSeeded: true,
+      isolatedTestRun: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldSynchronizeSystemLoginItemAtLaunch({
+      platform: "win32",
+      isPackaged: true,
+      settingsWereSeeded: false,
+      isolatedTestRun: true,
+    }),
+    false,
+  );
+});
+
 test("development builds never write operating system login items", () => {
   assert.equal(shouldManageSystemLoginItem(false), false);
 });

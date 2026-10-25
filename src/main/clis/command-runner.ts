@@ -119,7 +119,10 @@ export class RealCliCommandRunner implements CliCommandRunner {
                 message: "The command exceeded its time limit.",
               }
             : cancelled
-              ? { errorCode: "CANCELLED", message: "The command was cancelled." }
+              ? {
+                  errorCode: "CANCELLED",
+                  message: "The command was cancelled.",
+                }
               : outputExceeded
                 ? {
                     errorCode: "OUTPUT_LIMIT",
@@ -180,8 +183,12 @@ export function sanitizeProcessText(value: string): string {
     .trim();
 }
 
-export function validateCliCommandSpec(spec: CliCommandSpec): void {
-  if (!path.isAbsolute(spec.executable) || spec.executable.includes("\0")) {
+export function validateCliCommandSpec(
+  spec: CliCommandSpec,
+  platform: NodeJS.Platform = process.platform,
+): void {
+  const api = platform === "win32" ? path.win32 : path.posix;
+  if (!api.isAbsolute(spec.executable) || spec.executable.includes("\0")) {
     throw new Error("CLI command executable must be an absolute path.");
   }
   if (

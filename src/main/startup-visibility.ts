@@ -18,22 +18,27 @@ export type ElectronLoginItemSettingsInput = {
   executablePath: string;
 };
 
-export function shouldManageSystemLoginItem(isPackaged: boolean): boolean {
-  return isPackaged;
+export function shouldManageSystemLoginItem(
+  isPackaged: boolean,
+  isolatedTestRun = false,
+): boolean {
+  return isPackaged && !isolatedTestRun;
 }
 
 export type SystemLoginItemLaunchSyncInput = {
   platform: NodeJS.Platform;
   isPackaged: boolean;
   settingsWereSeeded: boolean;
+  isolatedTestRun?: boolean;
 };
 
 export function shouldSynchronizeSystemLoginItemAtLaunch({
   platform,
   isPackaged,
   settingsWereSeeded,
+  isolatedTestRun = false,
 }: SystemLoginItemLaunchSyncInput): boolean {
-  if (!isPackaged) return false;
+  if (!shouldManageSystemLoginItem(isPackaged, isolatedTestRun)) return false;
 
   // Windows needs to repair stale development registrations on every launch.
   // Other platforms retain the existing first-run registration behavior.

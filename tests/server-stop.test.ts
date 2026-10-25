@@ -209,6 +209,60 @@ test("ignoring a project while final process inspection is pending cancels termi
   assert.equal((await h.controller.execute(preview.token))[0].ok, false);
   assert.deepEqual(h.stopped, []);
 });
+
+test("verified restarted children remain stoppable, but unrelated children and reused identities stay protected", async () => {
+  for (const mode of ["restarted", "unrelated", "reused"] as const) {
+    const h = harness();
+    h.deps.ownPid = 1;
+    const createHost = h.deps.createHost;
+    h.deps.createHost = () => {
+      const host = createHost();
+      return {
+        ...host,
+        snapshot: async () => {
+          const snapshot = await host.snapshot();
+          return {
+            ...snapshot,
+            processes: [
+              ...snapshot.processes,
+              { ...h.observed[0], pid: 1, ppid: 0 },
+            ],
+          };
+        },
+      };
+    };
+    if (mode !== "unrelated") h.controller.rememberRestarted([h.observed[0]]);
+    if (mode === "reused") {
+      h.reuse();
+      h.observed[0].started = "reused";
+    }
+    if (mode === "restarted") {
+      assert.equal(
+        (await h.controller.stop({ refs: [h.items[0]] }))[0].ok,
+        true,
+      );
+      assert.deepEqual(h.stopped, [100]);
+    } else {
+      await assert.rejects(
+        h.controller.stop({ refs: [h.items[0]] }),
+        /identity/,
+      );
+      assert.deepEqual(h.stopped, []);
+    }
+  }
+});
+
+test("helper startup failure releases the stop operation lock", async () => {
+  const h = harness();
+  const createHost = h.deps.createHost;
+  h.deps.createHost = () => {
+    throw new Error("Helper unavailable");
+  };
+  await assert.rejects(h.controller.stop({ refs: [h.items[0]] }), /Helper/);
+  assert.equal(h.controller.isBusy(), false);
+  h.deps.createHost = createHost;
+  assert.equal((await h.controller.stop({ refs: [h.items[0]] }))[0].ok, true);
+});
 test("stop rejects stale selection, replaced PID, expired confirmation and changed listener set", async () => {
   for (const mode of ["stale", "reused", "expired", "port"] as const) {
     const h = harness();
