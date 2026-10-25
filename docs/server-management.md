@@ -12,7 +12,7 @@
 | Project metadata, legacy notes, observed lifecycle | `src/main/projects/model.ts` |
 | Versioned persistence and coalesced writes | `src/main/projects/store.ts` |
 | Main-frame IPC handlers | `src/main/projects/ipc.ts` |
-| Stop confirmation and identity revalidation | `src/main/projects/stop-controller.ts` |
+| One-click stop and identity revalidation | `src/main/projects/stop-controller.ts` |
 | Native process inspection and existing restart engine | `src/main/server-restart/` |
 | Safe native terminal launch | `src/main/project-terminal.ts` |
 | Project and service UI | `src/renderer/components/ServersTab.tsx`, `components/servers/` |
@@ -20,7 +20,7 @@
 
 ## Identity and discovery
 
-Discovery reads local TCP listeners without a port allowlist. Windows netstat and macOS lsof supplement systeminformation, including IPv6. PID and port identify a listener observation, never a project. Two successful absent observations retire a listener. A failed listener query retains the previous snapshot. Missing process metadata does not establish a stop.
+Discovery reads local TCP listeners without a port allowlist. Windows netstat and macOS lsof supplement systeminformation, including IPv6. PID and port identify a listener observation, never a project. A separate one-second Windows/macOS presence check retires listeners after two successful absent observations without waiting for metadata or metrics. A failed listener query retains the previous snapshot. Missing process metadata does not establish a stop. A verified native stop retires the exact observed references immediately. Retirement during an in-flight metadata scan suppresses its stale rows, preventing resurrection.
 
 Native process context is cached for 60 seconds and inspected for at most 12 processes per polling pass. Project identification walks at most 12 ancestors, caches up to 1,000 contexts, and never traverses a project tree. Package manifests, workspace markers, Python/Cargo/Go manifests, and repository boundaries establish roots. Nested repositories stay separate. Conflicting CWD and script roots remain unassigned. Global tool directories and a manifest in the user's home are not sufficient project evidence.
 
@@ -30,7 +30,7 @@ Native start time and executable establish process identity. `key` plus `firstSe
 
 Classification checks the executable, private launch context, project evidence, and bounded process ancestry. A runtime name alone does not establish a development server. macOS bundles and Windows executables sharing an installation with a verified application ancestor identify application services, including bundled Node helpers such as Raycast. Parent start times prevent reused PIDs from proving ownership. An IDE or terminal ancestor never absorbs a runtime outside its installation. Portable Electron and browser debugging listeners also remain application services. No port number establishes an application identity. Missing evidence stays under Other local listeners.
 
-Application services appear in a separate animated disclosure. They cannot be associated with development projects, selected, stopped, or restarted through dashboard IPC. Only confirmed project/development services receive those actions. Odoo, Flask, FastAPI, and Python HTTP commands supplement existing framework heuristics.
+Application services, recently stopped services, other local listeners, and legacy notes appear in the animated More services drawer (`components/servers/ServicesDrawer.tsx`). Verified application services can be stopped individually, but cannot be associated with development projects or restarted. Dashboard processes, its ancestors and children, and native system processes remain protected. Odoo, Flask, FastAPI, and Python HTTP commands supplement existing framework heuristics.
 
 ## Persistence and migrations
 
@@ -46,11 +46,11 @@ The existing schema-version-2 CLI store gains an optional schema-version-1 `chan
 
 ## IPC and stop invariants
 
-Preload and main validate `getProjects`, `editProject`, `addProject`, `associateService`, `attachLegacyNote`, `openProjectFolder`, `getServers`, `previewStopServers`, and `stopServers`. Subscriptions use `onProjectsUpdate` and return unsubscribe functions. Keep `src/types/preload.d.ts` synchronized. Main also rejects requests from any frame other than the dashboard's main frame.
+Preload and main validate `getProjects`, `editProject`, `associateService`, `attachLegacyNote`, `openProjectFolder`, `getServers`, and `stopServers`. Add Project and stop-preview IPC have been removed. Subscriptions use `onProjectsUpdate` and return unsubscribe functions. Keep `src/types/preload.d.ts` synchronized. Main also rejects requests from any frame other than the dashboard's main frame.
 
-Stop preview accepts explicit observed service references and an optional project ID. It captures every port owned by each selected process, its native identity, and a one-use token valid for 60 seconds. Main rejects unreadable identities, its own process/ancestors, and a process shared across project associations. Execution rechecks each selected instance, association, native identity, and exact port set immediately before the native helper revalidates and terminates that process. Stop does not terminate parents or process trees. A supervisor may start another process; the dashboard reports that as a separate observation. Results report each process independently. Restart and stop are mutually exclusive.
+`stopServers({ refs, projectId? })` accepts explicit observed references. Main prepares and executes the validated plan using one native helper and one operation lock, without a renderer confirmation step. The internal plan captures every port owned by each selected process, its native identity, and a one-use token valid for 60 seconds. Main rejects unreadable identities, protected processes, and processes shared across project associations. Execution rechecks each selected instance, association, classification, native identity, and exact port set immediately before the native helper revalidates and terminates that process. Each verified success updates the scanner and lifecycle history immediately. Stop does not terminate parents or process trees. A supervisor may start another process; the dashboard reports that as a separate observation. Results report each process independently. Restart and stop are mutually exclusive.
 
-Filtering never selects services. Project stop includes only explicitly confirmed, verified services belonging to that project. The old `app:kill-pid`, `app:kill-all-servers`, and port-note mutation IPC no longer exist.
+Filtering never selects services. The selection toolbar displays how many selected services are hidden by search. Project stop includes only verified services belonging to that project. The old `app:kill-pid`, `app:kill-all-servers`, and port-note mutation IPC no longer exist.
 
 HTTP failure means an unresponsive HTTP endpoint, not a crashed process. Late health results cannot update a replacement instance. Listener disappearance, process change, port reuse, recovery, and restart are distinct events. The app cannot recover terminal output or determine why a process exited.
 
@@ -75,7 +75,7 @@ Unit tests cover project and monorepo evidence, conflicting roots, persistence, 
 
 Ownership, portable browser helpers, misleading runtime/ancestor names, macOS bundles, ignore migration, stale stop authorization, HTTP upgrade responses, and literal terminal paths have focused `server-classification`, `server-projects`, `server-stop`, `server-health`, and `server-terminal` tests. Verify Terminal through the actual project button, including a visible console and the intended working directory; process spawn alone is insufficient.
 
-For UI checks, launch the built app with `LOCAL_DASHBOARD_CLIS_TEST_ROOT` set to a temporary fixture directory. This isolates Electron data and CLI operations; the server scanner still observes real local listeners. Select only generated dummy services. Verify project edits and manual associations after an app restart, hidden selections, exact stop previews, HTTP failure/recovery, recent history, cached CLI startup, minimum-width title bar, light/dark themes, and keyboard focus/Escape behavior.
+For UI checks, launch the built app with `LOCAL_DASHBOARD_CLIS_TEST_ROOT` set to a temporary fixture directory. This isolates Electron data and CLI operations; the server scanner still observes real local listeners. Select only generated dummy services. Verify project edits and manual associations after an app restart, hidden selections, one-click stopping and error retention, HTTP failure/recovery, recent history, cached CLI startup, two-column cards at minimum width, light/dark themes, and drawer keyboard focus/Escape behavior.
 
 Project menus (`servers/ProjectMenu.tsx`) support arrow keys, Home/End, Escape, Tab, and outside dismissal. Menu items are left-aligned. Service details (`servers/ServiceRow.tsx`) expand below the action row without moving its controls. Both use Framer Motion for entrance and exit, honor reduced motion, and make closing content inert. Check rapid toggles, focus restoration, and unchanged action positions in both themes.
 

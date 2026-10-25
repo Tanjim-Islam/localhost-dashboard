@@ -196,14 +196,14 @@ export class ProjectModel {
     evidence?: ProjectEvidence,
     associationKey?: string,
   ): ServerInfo {
-    // Application ownership cannot be overridden into destructive project actions.
+    // Application ownership cannot be overridden into development project actions.
     if (item.discovery === "application") {
       const base = { ...item };
       delete base.projectId;
       delete base.association;
       delete base.serviceId;
       delete base.ignored;
-      return { ...base, canStop: false };
+      return base;
     }
     const key = associationKey || evidence?.associationKey;
     const manual = key && Object.hasOwn(this.state.associations, key);

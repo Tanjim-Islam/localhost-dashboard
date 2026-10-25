@@ -6,6 +6,7 @@ import {
 } from "../src/main/projects/stop-controller";
 import type { ServerInfo } from "../src/shared/servers";
 import type { ProcessIdentity } from "../src/main/server-restart/types";
+import { NativeProcessHost } from "../src/main/server-restart/native-host";
 
 function harness() {
   const identity = (pid: number): ProcessIdentity => ({
@@ -85,13 +86,13 @@ test("Stop Selected only targets explicit processes and previews every port in a
   await assert.rejects(h.controller.execute(preview.token), /expired/);
 });
 
-test("ignored and application services cannot be stopped even with stale confirmation", async () => {
+test("ignored and unidentified services cannot be stopped even with stale authorization", async () => {
   for (const change of [
     (s: ServerInfo) => {
       s.ignored = true;
     },
     (s: ServerInfo) => {
-      s.discovery = "application";
+      s.discovery = "unidentified";
     },
   ]) {
     const h = harness();
@@ -99,6 +100,94 @@ test("ignored and application services cannot be stopped even with stale confirm
     change(h.items[0]);
     await assert.rejects(h.controller.execute(preview.token));
     await assert.rejects(h.controller.preview({ refs: [h.items[0]] }));
+    assert.deepEqual(h.stopped, []);
+  }
+});
+
+test("one-click stop permits verified applications, uses one helper and publishes exact stopped instances", async () => {
+  const h = harness();
+  h.items[0].discovery = "application";
+  delete h.items[0].projectId;
+  delete h.items[0].association;
+  const createHost = h.deps.createHost;
+  let hosts = 0;
+  h.deps.createHost = () => {
+    hosts++;
+    return createHost();
+  };
+  const retired: string[] = [];
+  h.deps.refresh = async (refs) => {
+    retired.push(...refs.map((s) => s.key));
+  };
+  await assert.rejects(
+    h.controller.stop({ refs: [h.items[0]], projectId: "project" }),
+    /association/,
+  );
+  hosts = 0;
+  assert.equal((await h.controller.stop({ refs: [h.items[0]] }))[0].ok, true);
+  assert.equal(hosts, 1);
+  assert.deepEqual(retired, [h.items[0].key]);
+  assert.deepEqual(h.stopped, [100]);
+});
+
+test("concurrent one-click stops are rejected and failures do not retire services", async () => {
+  const h = harness();
+  const createHost = h.deps.createHost;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  h.deps.listeners = async () => {
+    await pending;
+    return h.items.map((s) => ({ pid: s.pid, localPort: s.port }));
+  };
+  h.deps.createHost = () => ({
+    ...createHost(),
+    stop: async () => {
+      throw new Error("Access denied");
+    },
+  });
+  h.deps.refresh = async () => {
+    assert.fail("Failed stop must remain visible");
+  };
+  const stop = h.controller.stop({ refs: [h.items[0]] });
+  await assert.rejects(
+    h.controller.stop({ refs: [h.items[1]] }),
+    /already running/,
+  );
+  release();
+  assert.equal((await stop)[0].ok, false);
+  assert.equal(h.controller.isBusy(), false);
+});
+
+test("dashboard, its ancestors and children, and native system processes are protected", async () => {
+  for (const mode of ["self", "parent", "child", "system"] as const) {
+    const h = harness();
+    if (mode === "self") h.deps.ownPid = 100;
+    if (mode === "parent") {
+      const createHost = h.deps.createHost;
+      h.deps.createHost = () => ({
+        ...createHost(),
+        snapshot: async () => ({
+          processes: [...h.observed, { ...h.observed[0], pid: 999, ppid: 100 }],
+          contexts: [],
+        }),
+      });
+    }
+    if (mode === "child") {
+      h.deps.ownPid = 1;
+      const createHost = h.deps.createHost;
+      h.deps.createHost = () => ({
+        ...createHost(),
+        snapshot: async () => ({
+          processes: [...h.observed, { ...h.observed[0], pid: 1, ppid: 0 }],
+          contexts: [],
+        }),
+      });
+    }
+    if (mode === "system")
+      h.observed[0].executable = "C:/Windows/System32/service.exe";
+    await assert.rejects(h.controller.stop({ refs: [h.items[0]] }));
     assert.deepEqual(h.stopped, []);
   }
 });
@@ -220,4 +309,39 @@ test("a shared process reassigned after preview cannot stop another project's li
   });
   assert.equal((await h.controller.execute(preview.token))[0].ok, false);
   assert.deepEqual(h.stopped, []);
+});
+
+test("classification or association changed during final inspection cannot inherit stop authorization", async () => {
+  for (const field of ["projectId", "discovery"] as const) {
+    const h = harness();
+    const preview = await h.controller.preview({ refs: [h.items[0]] });
+    const createHost = h.deps.createHost;
+    h.deps.createHost = () => {
+      const host = createHost();
+      return {
+        ...host,
+        snapshot: async () => {
+          if (field === "projectId") h.items[0].projectId = "other";
+          else h.items[0].discovery = "application";
+          return host.snapshot();
+        },
+      };
+    };
+    assert.equal((await h.controller.execute(preview.token))[0].ok, false);
+    assert.deepEqual(h.stopped, []);
+  }
+});
+
+test("an unsuccessful native termination or a still-running process cannot report success", async () => {
+  const h = harness();
+  const host = new NativeProcessHost("unused");
+  host.request = async () => [false];
+  await assert.rejects(host.stop([h.observed[0]], true), /not confirmed/);
+  // Restart cleanup deliberately tolerates targets that already exited.
+  await host.stop([h.observed[0]]);
+  const createHost = h.deps.createHost;
+  h.deps.createHost = () => ({ ...createHost(), stop: async () => {} });
+  h.deps.refresh = async () =>
+    assert.fail("A live process must not be retired");
+  assert.equal((await h.controller.stop({ refs: [h.items[0]] }))[0].ok, false);
 });

@@ -85,12 +85,10 @@ contextBridge.exposeInMainWorld("api", {
   getServers: () => ipcRenderer.invoke("servers:get"),
   openProjectFolder: (directory: string) => ipcRenderer.invoke("projects:open-folder", requireString(directory, "Project folder")),
   getProjects: () => ipcRenderer.invoke("projects:get"),
-  addProject: () => ipcRenderer.invoke("projects:add"),
   editProject: (value: unknown) => ipcRenderer.invoke("projects:edit", projectEdit(value)),
   associateService: (value: unknown) => ipcRenderer.invoke("projects:associate", associationEdit(value)),
   attachLegacyNote: (value: unknown) => { const v = object(value); return ipcRenderer.invoke("projects:legacy-note", { noteId: id(v.noteId), projectId: id(v.projectId) }); },
-  previewStopServers: (value: unknown) => ipcRenderer.invoke("servers:stop-preview", stopScope(value)),
-  stopServers: (token: unknown) => ipcRenderer.invoke("servers:stop", id(token)),
+  stopServers: (value: unknown) => ipcRenderer.invoke("servers:stop", stopScope(value)),
   onProjectsUpdate: (cb: (snapshot: ProjectSnapshot) => void) => {
     const listener = (_: Electron.IpcRendererEvent, snapshot: ProjectSnapshot) => cb(snapshot);
     ipcRenderer.on("projects:update", listener);

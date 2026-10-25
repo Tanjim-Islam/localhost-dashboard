@@ -17,6 +17,9 @@ const {
 const {
   ProjectIdentifier,
 } = require("../.tmp-tests/src/main/projects/identify.js");
+const {
+  ListenerTracker,
+} = require("../.tmp-tests/src/main/projects/discovery.js");
 const resources = path.resolve("resources/server-restart");
 const owned = [],
   identities = [],
@@ -27,7 +30,7 @@ async function main() {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "dashboard-stop-"));
   const host = new NativeProcessHost(resources);
   try {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       const dir = path.join(root, `project-${i}`);
       await fs.mkdir(dir);
       await fs.writeFile(
@@ -83,24 +86,42 @@ async function main() {
     console.log(
       "PASS arbitrary IPv4/IPv6 listeners and real project identification",
     );
+    const tracker = new ListenerTracker();
+    tracker.reconcile(items);
     const controller = new ServerStopController({
       items: () => items,
       identity: (pid) => identities.find((p) => p.pid === pid),
       projectName: (id) => id,
-      createHost: () => new NativeProcessHost(resources),
+      createHost: () => {
+        const host = new NativeProcessHost(resources);
+        return {
+          snapshot: (pid) => host.snapshot(pid),
+          stop: (targets) => host.stop(targets, true),
+          dispose: () => host.dispose(),
+        };
+      },
       listeners: readListeners,
-      ownPid: process.pid,
+      // This standalone harness creates the servers. The real dashboard is a separate process.
+      ownPid: 2147483647,
       restartBusy: () => false,
-      refresh: async () => {},
+      refresh: async (refs) => {
+        tracker.retire(refs);
+      },
       now: Date.now,
       pause,
     });
-    const preview = await controller.preview({ refs: [items[0]] });
+    const selectedAt = performance.now();
+    const direct = await controller.stop({ refs: [items[0]] });
+    assert.equal(direct[0].ok, true);
+    assert.ok(!tracker.values().some((s) => s.pid === items[0].pid));
+    const directMs = performance.now() - selectedAt;
+    assert.ok(directMs < 3000, `Selected stop took ${directMs.toFixed(0)}ms`);
+    console.log(`PASS one-click stop and retirement: ${directMs.toFixed(0)}ms`);
+    const preview = { targets: direct.map((r) => r.target), token: "consumed" };
     assert.deepEqual(
       preview.targets.map((t) => t.pid),
       [owned[0].pid],
     );
-    assert.equal((await controller.execute(preview.token))[0].ok, true);
     await assert.rejects(controller.execute(preview.token));
     let after = await host.snapshot();
     assert.ok(after.processes.some((p) => p.pid === owned[1].pid));
@@ -116,14 +137,45 @@ async function main() {
     items[1].firstSeen++;
     await assert.rejects(controller.execute(changed.token));
     identities[1] = original;
-    const project = await controller.preview({
+    const projectAt = performance.now();
+    const project = await controller.stop({
       refs: [items[1]],
       projectId: "project-1",
     });
-    assert.equal((await controller.execute(project.token))[0].ok, true);
+    assert.equal(project[0].ok, true);
+    assert.ok(performance.now() - projectAt < 3000);
+    console.log(
+      `PASS IPv6 project stop: ${(performance.now() - projectAt).toFixed(0)}ms`,
+    );
     after = await host.snapshot();
     assert.ok(after.processes.some((p) => p.pid === owned[2].pid));
     console.log("PASS stale selection rejection and scoped project stop");
+    items[2].discovery = "application";
+    delete items[2].projectId;
+    delete items[2].association;
+    const appAt = performance.now();
+    assert.equal((await controller.stop({ refs: [items[2]] }))[0].ok, true);
+    assert.ok(performance.now() - appAt < 3000);
+    console.log(
+      `PASS application stop: ${(performance.now() - appAt).toFixed(0)}ms`,
+    );
+    const externalAt = performance.now();
+    await host.stop([identities[3]]);
+    for (let i = 0; i < 2; i++) {
+      await pause(1000);
+      const refs = tracker.values();
+      const table = await readListeners();
+      tracker.checkPresence(
+        refs,
+        new Set(table.map((l) => `${l.pid}:${l.localPort}`)),
+      );
+    }
+    assert.ok(!tracker.values().some((s) => s.pid === items[3].pid));
+    assert.ok(tracker.values().some((s) => s.pid === items[4].pid));
+    assert.ok(performance.now() - externalAt < 3000);
+    console.log(
+      `PASS external stop retirement: ${(performance.now() - externalAt).toFixed(0)}ms, untouched control stays alive`,
+    );
   } finally {
     // Revalidate original native identities before cleaning up our own fixtures.
     for (const identity of identities)

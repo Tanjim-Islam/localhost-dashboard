@@ -83,8 +83,11 @@ export class NativeProcessHost {
     return Array.isArray(result) ? result.some(Boolean) : result === true;
   }
 
-  async stop(targets: ProcessIdentity[]): Promise<void> {
-    await this.request("stop", { targets: targets.map(identityOnly) });
+  async stop(targets: ProcessIdentity[], requireSuccess = false): Promise<void> {
+    const result = await this.request("stop", { targets: targets.map(identityOnly) });
+    if (requireSuccess && (!Array.isArray(result) || result.length !== targets.length || result.some((stopped) => stopped !== true))) {
+      throw new RestartError("The process changed or access was denied. Stop was not confirmed.");
+    }
   }
 
   dispose(): void {

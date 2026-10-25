@@ -1,6 +1,4 @@
-import { dialog, ipcMain, shell, type BrowserWindow } from "electron";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { ipcMain, shell, type BrowserWindow } from "electron";
 import { associationEdit, id, object, projectEdit } from "../../shared/servers";
 import type { Scanner } from "../scanner";
 import type { ProjectModel } from "./model";
@@ -45,17 +43,6 @@ export function registerProjectIpc(
     model.edit(projectEdit(value));
     return publish();
   });
-  handle("projects:add", async () => {
-    const result = await dialog.showOpenDialog(getWindow()!, {
-      properties: ["openDirectory"],
-      title: "Choose project folder",
-    });
-    if (result.canceled || !result.filePaths[0]) return model.snapshot();
-    const directory = await fs.realpath(result.filePaths[0]);
-    const project = model.ensure(directory, path.basename(directory));
-    project.bookmarked = true;
-    return publish();
-  });
   handle("projects:associate", async (value) => {
     const edit = associationEdit(value);
     const item = scanner
@@ -78,6 +65,5 @@ export function registerProjectIpc(
     model.attachLegacy(id(v.noteId), id(v.projectId));
     return publish();
   });
-  handle("servers:stop-preview", (value) => stopper.preview(value));
-  handle("servers:stop", (value) => stopper.execute(id(value)));
+  handle("servers:stop", (value) => stopper.stop(value));
 }

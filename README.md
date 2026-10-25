@@ -71,18 +71,18 @@ Settings persist via `electron-store`.
 
 ### Projects and Services
 
-Discovery combines systeminformation with Windows netstat or macOS lsof. It automatically observes local TCP listeners on arbitrary ports. Project detection uses native working directories, script paths, manifests, and repository/workspace boundaries. Uncertain services remain unassigned; other listeners are available in a collapsed section.
+Discovery combines systeminformation with Windows netstat or macOS lsof. It automatically observes local TCP listeners on arbitrary ports. Project detection uses native working directories, script paths, manifests, and repository/workspace boundaries. Uncertain services remain unassigned. Recently stopped services, application services, and other listeners are in the **More services** drawer.
 
-Projects have persistent names, notes, pins, and bookmarks. Use **Change project** in service details to correct an association, or **Add project** to choose a folder. Multiple services share one project, including monorepo packages. Project identity survives process and port changes; moving a project directory creates a new identity.
+Projects have persistent names, notes, pins, and bookmarks. Use **Change project** in service details to correct an association with a discovered project. Multiple services share one project, including monorepo packages. Cards use two columns, including when only one project is visible. Project identity survives process and port changes; moving a project directory creates a new identity.
 
 ### Service Actions
 
 - **Open** and **Copy URL** use the exact IPv4/IPv6 localhost address.
 - **Restart** recovers and verifies the existing launch context on Windows and macOS.
 - **Stop Selected** uses explicit checkboxes. Search never implicitly selects anything.
-- **Stop This Project** previews verified services associated with that project.
+- **Stop This Project** stops verified services associated with that project.
 
-Every stop confirmation lists affected processes and all their listening ports. Main and the native helper revalidate identities before stopping. A changed or unreadable process is refused. Stop targets only those processes, without killing parents or trees. A supervisor may start a replacement process. The former Kill All action and IPC have been removed.
+Stop acts immediately with an inline spinner and no confirmation dialog. It also supports verified application services such as Ollama in the drawer. Main and the native helper revalidate process identities, project ownership, and all affected ports before stopping. A changed or unreadable process is refused. Stop targets only those processes, without killing parents or trees. A supervisor may start a replacement process. Verified stops disappear immediately; independent one-second listener checks retire externally stopped services after two successful absent observations, normally within two to three seconds. The former Kill All action and IPC have been removed.
 
 ### Recently Stopped and Activity
 

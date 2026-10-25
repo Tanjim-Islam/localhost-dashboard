@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bookmark, Pin } from "lucide-react";
+import { Bookmark, Loader2, PanelRight, Pin } from "lucide-react";
 import type {
   Project,
   ProjectSnapshot,
   ServerInfo,
   ServerRef,
-  StopPreview,
-  StopResult,
   StopScope,
 } from "../../shared/servers";
 import type { HealthStatus } from "../../types/preload";
@@ -19,6 +17,7 @@ import ProjectMenu from "./servers/ProjectMenu";
 import ServiceRow from "./servers/ServiceRow";
 import ServerDisclosure from "./servers/ServerDisclosure";
 import StoppedServiceRow from "./servers/StoppedServiceRow";
+import ServicesDrawer from "./servers/ServicesDrawer";
 import { button, input } from "./servers/presentation";
 
 const empty: ProjectSnapshot = {
@@ -43,13 +42,12 @@ export default function ServersTab({
   const [selected, setSelected] = useState<ServerRef[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<StopPreview | null>(null);
-  const [results, setResults] = useState<StopResult[] | null>(null);
+  const [stopping, setStopping] = useState<number[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [edit, setEdit] = useState<Project | null>(null);
   const [assign, setAssign] = useState<ServerInfo | null>(null);
   const [association, setAssociation] = useState("");
   const [history, setHistory] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
   const [ignoredView, setIgnoredView] = useState(
     () => localStorage.getItem("dashboard:serversView") === "ignored",
   );
@@ -114,10 +112,38 @@ export default function ServersTab({
       setBusy(false);
     }
   };
-  const prepareStop = (scope: StopScope) =>
+  const stop = (scope: StopScope) =>
     void run(async () => {
-      setResults(null);
-      setPreview(await window.api.previewStopServers(scope));
+      setStopping(
+        items
+          .filter((s) => scope.refs.some((r) => identity(r) === identity(s)))
+          .map((s) => s.pid),
+      );
+      try {
+        const results = await window.api.stopServers(scope);
+        setSelected((current) =>
+          current.filter(
+            (ref) =>
+              !results.some(
+                (r) =>
+                  r.ok &&
+                  items.some(
+                    (s) =>
+                      identity(s) === identity(ref) && s.pid === r.target.pid,
+                  ),
+              ),
+          ),
+        );
+        const failures = results.filter((r) => !r.ok);
+        if (failures.length)
+          setError(
+            failures
+              .map((r) => `${r.target.serviceName}: ${r.message}`)
+              .join(" "),
+          );
+      } finally {
+        setStopping([]);
+      }
     });
   const startRestart = (item: ServerInfo) =>
     void run(async () => {
@@ -164,7 +190,6 @@ export default function ServersTab({
           (p) =>
             !!p.ignored === ignoredView &&
             (ignoredView ||
-              showAll ||
               p.pinned ||
               p.bookmarked ||
               items.some((s) => s.projectId === p.id)) &&
@@ -179,7 +204,7 @@ export default function ServersTab({
           (a, b) =>
             Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name),
         ),
-    [data.projects, items, query, showAll, ignoredView],
+    [data.projects, items, query, ignoredView],
   );
   const unidentified = items.filter(
     (s) =>
@@ -236,7 +261,8 @@ export default function ServersTab({
       selected={selected.some((r) => identity(r) === identity(s))}
       locked={locked}
       onSelect={() => toggle(s)}
-      onStop={() => prepareStop({ refs: [s] })}
+      onStop={() => stop({ refs: [s] })}
+      stopping={stopping.includes(s.pid)}
       onRestart={
         platform === "win32" || platform === "darwin"
           ? () => startRestart(s)
@@ -278,28 +304,16 @@ export default function ServersTab({
               )}
             </button>
           </div>
-          {!ignoredView && (
-            <label className="mx-2 flex items-center gap-1.5 text-xs text-gray-600">
-              <input
-                type="checkbox"
-                checked={showAll}
-                onChange={(e) => setShowAll(e.target.checked)}
-                className="accent-current"
-              />
-              Show stopped
-            </label>
-          )}
-          <button
-            className={button}
-            disabled={locked}
-            onClick={() =>
-              void run(async () => setData(await window.api.addProject()))
-            }
-          >
-            Add project
-          </button>
           <button className={button} onClick={() => setHistory("all")}>
             Activity
+          </button>
+          <button
+            className={button}
+            aria-haspopup="dialog"
+            onClick={() => setDrawerOpen(true)}
+          >
+            <PanelRight size={15} className="mr-1.5 inline" />
+            More services
           </button>
         </div>
         {selected.length > 0 && (
@@ -314,9 +328,12 @@ export default function ServersTab({
             <button
               className={`${button} bg-danger-surface text-danger-text`}
               disabled={locked}
-              onClick={() => prepareStop({ refs: selected })}
+              onClick={() => stop({ refs: selected })}
             >
-              Stop Selected
+              {stopping.length > 0 && (
+                <Loader2 size={14} className="mr-1 inline animate-spin" />
+              )}
+              {stopping.length > 0 ? "Stopping�" : "Stop Selected"}
             </button>
           </div>
         )}
@@ -347,13 +364,7 @@ export default function ServersTab({
           )}
         </div>
       )}
-      <div
-        className="grid items-start gap-4"
-        style={{
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(min(100%, 480px), 1fr))",
-        }}
-      >
+      <div className="grid grid-cols-2 items-start gap-4">
         {groups.map((p) => {
           const services = items.filter((s) => s.projectId === p.id),
             shown = services.filter((s) => matches(s, p));
@@ -430,7 +441,7 @@ export default function ServersTab({
                     locked || !services.some((s) => s.canStop && s.association)
                   }
                   onStop={() =>
-                    prepareStop({
+                    stop({
                       projectId: p.id,
                       refs: services.filter((s) => s.canStop && s.association),
                     })
@@ -474,181 +485,106 @@ export default function ServersTab({
               : "No development servers running."}
         </p>
       )}
-      {recentlyStopped.length > 0 && (
-        <ServerDisclosure
-          title="Recently stopped"
-          count={recentlyStopped.length}
-        >
-          <ul className="divide-y divide-gray-300/40 px-4">
-            {recentlyStopped.map((s, i) => (
-              <StoppedServiceRow
-                key={`${s.key}-${s.firstSeen}-${i}`}
-                service={s}
-                project={data.projects.find((p) => p.id === s.projectId)}
-                onError={setError}
-              />
-            ))}
-          </ul>
-        </ServerDisclosure>
-      )}
-      {applications.length > 0 && (
-        <ServerDisclosure
-          title="Application services"
-          count={applications.length}
-        >
-          <div className="divide-y divide-gray-300/40">
-            {applications.map(row)}
-          </div>
-        </ServerDisclosure>
-      )}
-      {other.length > 0 && (
-        <ServerDisclosure title="Other local listeners" count={other.length}>
-          <div className="divide-y divide-gray-300/40">{other.map(row)}</div>
-        </ServerDisclosure>
-      )}
-      {!ignoredView && data.legacyNotes.length > 0 && (
-        <ServerDisclosure
-          title="Unassigned legacy notes"
-          count={data.legacyNotes.length}
-        >
-          <div className="px-4 pb-3">
-            <p className="mt-2 text-xs text-gray-600">
-              Choose the project each old port note belongs to.
-            </p>
-            {data.legacyNotes.map((n) => (
-              <div
-                key={n.id}
-                className="mt-3 flex flex-wrap items-center gap-2 text-sm"
-              >
-                <span className="font-mono">:{n.port}</span>
-                <span className="min-w-0 flex-1 truncate" title={n.text}>
-                  {n.text}
-                </span>
-                <button
-                  className={button}
-                  onClick={() => window.api.copyText(n.text)}
-                >
-                  Copy note
-                </button>
-                <select
-                  aria-label={`Assign note for port ${n.port}`}
-                  className={input + " max-w-48"}
-                  value=""
-                  onChange={(e) => {
-                    const projectId = e.target.value;
-                    void run(async () =>
-                      setData(
-                        await window.api.attachLegacyNote({
-                          noteId: n.id,
-                          projectId,
-                        }),
-                      ),
-                    );
-                  }}
-                >
-                  <option value="" disabled>
-                    Assign to project
-                  </option>
-                  {data.projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
-        </ServerDisclosure>
-      )}
-      {preview && (
-        <Modal
-          title="Stop selected processes?"
-          busy={busy}
-          error={error}
-          onClose={() => setPreview(null)}
-        >
-          <p className="mb-3 text-sm text-gray-600">
-            All listed ports in each process will stop.
-          </p>
-          <ul className="space-y-3">
-            {preview.targets.map((t) => (
-              <li key={t.pid} className="rounded-lg bg-gray-200 p-3 text-sm">
-                <div className="font-medium">
-                  {t.projectName
-                    ? `${t.projectName} · ${t.serviceName}`
-                    : t.serviceName}
-                </div>
-                <div>
-                  {t.processName} · PID {t.pid} ·{" "}
-                  {t.ports.map((p) => `:${p}`).join(", ")}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-5 flex justify-end gap-2">
-            <button
-              disabled={busy}
-              className={button}
-              onClick={() => setPreview(null)}
-            >
-              Cancel
-            </button>
-            <button
-              disabled={busy}
-              className={`${button} bg-danger text-danger-contrast`}
-              onClick={() =>
-                void run(async () => {
-                  const result = await window.api.stopServers(preview.token);
-                  setResults(result);
-                  setPreview(null);
-                  setSelected((current) =>
-                    current.filter(
-                      (ref) =>
-                        !result.some(
-                          (r) =>
-                            r.ok &&
-                            r.target.pid === Number(ref.key.split(":")[0]),
-                        ),
-                    ),
-                  );
-                })
-              }
-            >
-              {busy
-                ? "Stopping…"
-                : `Stop ${preview.targets.length} process${preview.targets.length === 1 ? "" : "es"}`}
-            </button>
-          </div>
-        </Modal>
-      )}
-      {results && (
-        <div role="status" className="text-sm">
-          <div className="flex items-center justify-between">
-            <span
-              className={
-                results.every((r) => r.ok)
-                  ? "text-success-text"
-                  : "text-danger-text"
-              }
-            >
-              {results.filter((r) => r.ok).length} stopped
-              {results.some((r) => !r.ok)
-                ? ` · ${results.filter((r) => !r.ok).length} not stopped`
-                : ""}
-            </span>
-            <button className={button} onClick={() => setResults(null)}>
-              Dismiss
-            </button>
-          </div>
-          {results
-            .filter((r) => !r.ok)
-            .map((r) => (
-              <p key={r.target.pid} className="text-danger-text">
-                PID {r.target.pid}: {r.message}
+      <ServicesDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        error={error}
+      >
+        {recentlyStopped.length > 0 && (
+          <ServerDisclosure
+            title="Recently stopped"
+            count={recentlyStopped.length}
+          >
+            <ul className="divide-y divide-gray-300/40 px-4">
+              {recentlyStopped.map((s, i) => (
+                <StoppedServiceRow
+                  key={`${s.key}-${s.firstSeen}-${i}`}
+                  service={s}
+                  project={data.projects.find((p) => p.id === s.projectId)}
+                  onError={setError}
+                />
+              ))}
+            </ul>
+          </ServerDisclosure>
+        )}
+        {applications.length > 0 && (
+          <ServerDisclosure
+            title="Application services"
+            count={applications.length}
+          >
+            <div className="divide-y divide-gray-300/40">
+              {applications.map(row)}
+            </div>
+          </ServerDisclosure>
+        )}
+        {other.length > 0 && (
+          <ServerDisclosure title="Other local listeners" count={other.length}>
+            <div className="divide-y divide-gray-300/40">{other.map(row)}</div>
+          </ServerDisclosure>
+        )}
+        {!ignoredView && data.legacyNotes.length > 0 && (
+          <ServerDisclosure
+            title="Unassigned legacy notes"
+            count={data.legacyNotes.length}
+          >
+            <div className="px-4 pb-3">
+              <p className="mt-2 text-xs text-gray-600">
+                Choose the project each old port note belongs to.
               </p>
-            ))}
-        </div>
-      )}
+              {data.legacyNotes.map((n) => (
+                <div
+                  key={n.id}
+                  className="mt-3 flex flex-wrap items-center gap-2 text-sm"
+                >
+                  <span className="font-mono">:{n.port}</span>
+                  <span className="min-w-0 flex-1 truncate" title={n.text}>
+                    {n.text}
+                  </span>
+                  <button
+                    className={button}
+                    onClick={() => window.api.copyText(n.text)}
+                  >
+                    Copy note
+                  </button>
+                  <select
+                    aria-label={`Assign note for port ${n.port}`}
+                    className={input + " max-w-48"}
+                    value=""
+                    onChange={(e) => {
+                      const projectId = e.target.value;
+                      void run(async () =>
+                        setData(
+                          await window.api.attachLegacyNote({
+                            noteId: n.id,
+                            projectId,
+                          }),
+                        ),
+                      );
+                    }}
+                  >
+                    <option value="" disabled>
+                      Assign to project
+                    </option>
+                    {data.projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </ServerDisclosure>
+        )}
+        {!recentlyStopped.length &&
+          !applications.length &&
+          !other.length &&
+          (ignoredView || !data.legacyNotes.length) && (
+            <p className="py-8 text-center text-sm text-gray-600">
+              {query ? "No matching services." : "No additional services."}
+            </p>
+          )}
+      </ServicesDrawer>
       {edit && (
         <ProjectEditor
           edit={edit}
@@ -699,16 +635,7 @@ export default function ServersTab({
                 </option>
               ))}
             </select>
-            <div className="mt-4 flex justify-between">
-              <button
-                type="button"
-                className={button}
-                onClick={() =>
-                  void run(async () => setData(await window.api.addProject()))
-                }
-              >
-                Add project
-              </button>
+            <div className="mt-4 flex justify-end">
               <button
                 disabled={busy}
                 className={`${button} bg-night-700 text-night-100`}

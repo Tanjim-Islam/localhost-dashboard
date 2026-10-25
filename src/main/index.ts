@@ -111,9 +111,12 @@ const serverRestarter = new ServerRestartController(createRestartDependencies(
 const serverStopper = new ServerStopController({
   items: () => scanner.getItems(), identity: pid => scanner.getInspection(pid)?.identity,
   projectName: id => projectStore.model.state.projects.find(p => p.id === id)?.name,
-  createHost: () => new NativeProcessHost(serverResourceDir), listeners: readListeners,
+  createHost: () => {
+    const host = new NativeProcessHost(serverResourceDir);
+    return { snapshot: (pid) => host.snapshot(pid), stop: (targets) => host.stop(targets, true), dispose: () => host.dispose() };
+  }, listeners: readListeners,
   ownPid: process.pid, restartBusy: () => serverRestarter.isBusy(),
-  refresh: async () => { await scanner.scanFresh(); await scanner.scanFresh(); projectStore.flush(); },
+  refresh: async (refs) => { scanner.confirmStopped(refs); projectStore.flush(); },
   now: Date.now, pause: ms => new Promise(resolve => setTimeout(resolve, ms)),
 });
 registerProjectIpc(() => win, projectStore.model, scanner, serverStopper, projectStore.flush);

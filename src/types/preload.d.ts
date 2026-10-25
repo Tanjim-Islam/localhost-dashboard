@@ -146,13 +146,11 @@ export interface Api {
   getServers(): Promise<ServerInfo[]>;
   openProjectFolder(directory: string): Promise<void>;
   getProjects(): Promise<import("../shared/servers").ProjectSnapshot>;
-  addProject(): Promise<import("../shared/servers").ProjectSnapshot>;
   editProject(value: import("../shared/servers").ProjectEdit): Promise<import("../shared/servers").ProjectSnapshot>;
   associateService(value: import("../shared/servers").AssociationEdit): Promise<import("../shared/servers").ProjectSnapshot>;
   attachLegacyNote(value: { noteId: string; projectId: string }): Promise<import("../shared/servers").ProjectSnapshot>;
   onProjectsUpdate(cb: (snapshot: import("../shared/servers").ProjectSnapshot) => void): () => void;
-  previewStopServers(value: import("../shared/servers").StopScope): Promise<import("../shared/servers").StopPreview>;
-  stopServers(token: string): Promise<import("../shared/servers").StopResult[]>;
+  stopServers(value: import("../shared/servers").StopScope): Promise<import("../shared/servers").StopResult[]>;
   // scanning
   onScanUpdate(cb: (items: ServerInfo[]) => void): () => void;
   onScanError(cb: (msg: string) => void): () => void;

@@ -1,4 +1,4 @@
-import type { ServerInfo } from "../../shared/servers";
+import type { ServerInfo, ServerRef } from "../../shared/servers";
 
 export function developmentRuntime(
   name = "",
@@ -66,7 +66,36 @@ export class ListenerTracker {
   values(): ServerInfo[] {
     return [...this.items.values()];
   }
-  reconcile(observed: ServerInfo[]): {
+  // Only retire the observed instance, never a replacement using the same key.
+  retire(refs: ServerRef[]): ServerInfo[] {
+    const removed: ServerInfo[] = [];
+    for (const ref of refs) {
+      const item = this.items.get(ref.key);
+      if (!item || item.firstSeen !== ref.firstSeen) continue;
+      removed.push(item);
+      this.items.delete(ref.key);
+      this.missing.delete(ref.key);
+    }
+    return removed;
+  }
+  checkPresence(refs: ServerRef[], keys: Set<string>): ServerInfo[] {
+    const absent: ServerRef[] = [];
+    for (const ref of refs) {
+      const item = this.items.get(ref.key);
+      if (!item || item.firstSeen !== ref.firstSeen) continue;
+      if (keys.has(ref.key)) this.missing.delete(ref.key);
+      else {
+        const count = (this.missing.get(ref.key) || 0) + 1;
+        this.missing.set(ref.key, count);
+        if (count >= 2) absent.push(ref);
+      }
+    }
+    return this.retire(absent);
+  }
+  reconcile(
+    observed: ServerInfo[],
+    trackPresence = true,
+  ): {
     items: ServerInfo[];
     added: ServerInfo[];
     removed: ServerInfo[];
@@ -79,10 +108,11 @@ export class ListenerTracker {
       if (old && old.firstSeen !== item.firstSeen) removed.push(old);
       if (!old || old.firstSeen !== item.firstSeen) added.push(item);
       this.items.set(item.key, item);
-      this.missing.delete(item.key);
+      if (trackPresence || !old || old.firstSeen !== item.firstSeen)
+        this.missing.delete(item.key);
     }
     for (const [key, item] of this.items)
-      if (!keys.has(key)) {
+      if (trackPresence && !keys.has(key)) {
         const count = (this.missing.get(key) || 0) + 1;
         this.missing.set(key, count);
         if (count >= 2) {

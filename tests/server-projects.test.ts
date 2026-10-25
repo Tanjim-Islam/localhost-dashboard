@@ -80,7 +80,7 @@ test("reclassifying an application does not invent a stopped listener or allow p
     association: "manual",
     canStop: true,
   });
-  assert.equal(app.canStop, false);
+  assert.equal(app.canStop, true);
   assert.equal(app.projectId, undefined);
   model.reconcile([app]);
   assert.equal(model.state.recentlyStopped.length, 0);
@@ -89,6 +89,45 @@ test("reclassifying an application does not invent a stopped listener or allow p
       .length,
     0,
   );
+});
+
+test("fast presence checks retire on two successful absences without waiting for metadata scans", () => {
+  const tracker = new ListenerTracker();
+  const item = service();
+  tracker.reconcile([item]);
+  assert.equal(tracker.checkPresence([item], new Set()).length, 0);
+  // A slow metadata scan completing between checks cannot reset absence evidence.
+  tracker.reconcile([item], false);
+  assert.deepEqual(tracker.checkPresence([item], new Set()), [item]);
+  assert.equal(tracker.values().length, 0);
+});
+
+test("confirmed stops retire immediately, preserve replacements, and deduplicate history", () => {
+  const tracker = new ListenerTracker();
+  const model = new ProjectModel(emptyProjectState());
+  const item = service();
+  tracker.reconcile([item]);
+  model.reconcile(tracker.values());
+  assert.deepEqual(tracker.retire([item]), [item]);
+  model.reconcile(tracker.values());
+  assert.deepEqual(tracker.retire([item]), []);
+  model.reconcile(tracker.values());
+  assert.equal(model.state.recentlyStopped.length, 1);
+  const replacement = service({ firstSeen: 9999 });
+  tracker.reconcile([replacement]);
+  assert.deepEqual(tracker.retire([item]), []);
+  assert.deepEqual(tracker.checkPresence([item], new Set()), []);
+  assert.deepEqual(tracker.values(), [replacement]);
+});
+
+test("a live presence observation cancels a transient absence", () => {
+  const tracker = new ListenerTracker();
+  const item = service();
+  tracker.reconcile([item]);
+  tracker.checkPresence([item], new Set());
+  tracker.checkPresence([item], new Set([item.key]));
+  assert.deepEqual(tracker.checkPresence([item], new Set()), []);
+  assert.equal(tracker.values().length, 1);
 });
 
 test("project detection groups workspace packages, respects nested repositories and unrelated roots", async () => {

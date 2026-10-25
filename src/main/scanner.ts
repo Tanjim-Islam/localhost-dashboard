@@ -6,7 +6,7 @@ import { settings } from "./settings";
 import { NativeProcessHost } from "./server-restart/native-host";
 import { readListeners } from "./server-restart/listeners";
 import type { ProcessIdentity } from "./server-restart/types";
-import type { ServerInfo, ServiceRecord } from "../shared/servers";
+import type { ServerInfo, ServerRef, ServiceRecord } from "../shared/servers";
 import {
   ProjectIdentifier,
   serviceAssociationKey,
@@ -37,6 +37,9 @@ type Inspection = {
 };
 export class Scanner extends EventEmitter {
   private timer?: NodeJS.Timeout;
+  private presenceTimer?: NodeJS.Timeout;
+  private presenceInFlight?: Promise<void>;
+  private retiredDuringScan = new Set<string>();
   private inFlight?: Promise<void>;
   private tracker = new ListenerTracker();
   private inspections = new Map<number, Inspection>();
@@ -103,6 +106,7 @@ export class Scanner extends EventEmitter {
         const info = this.inspections.get(item.pid);
         return this.decorate(item, info?.evidence, info?.associationKey);
       }),
+      false,
     );
     this.emit("update", this.getItems());
   }
@@ -113,10 +117,48 @@ export class Scanner extends EventEmitter {
       () => void this.scan(),
       Math.max(2000, settings.get("scanIntervalMs")),
     );
+    if (process.platform === "win32" || process.platform === "darwin")
+      this.presenceTimer = setInterval(() => void this.checkPresence(), 1000);
   }
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
+    this.presenceTimer = undefined;
+  }
+  // A successful native stop is stronger evidence than two absent scans.
+  confirmStopped(refs: ServerRef[]): void {
+    this.publishRemoved(this.tracker.retire(refs));
+  }
+  private publishRemoved(removed: ServerInfo[]): void {
+    if (!removed.length) return;
+    for (const item of removed) {
+      this.retiredDuringScan.add(item.key);
+      if (!this.getItems().some((s) => s.pid === item.pid))
+        this.inspections.delete(item.pid);
+      if (item.discovery === "development") this.emit("stopped", item);
+    }
+    this.emit("update", this.getItems());
+  }
+  checkPresence(): Promise<void> {
+    return (this.presenceInFlight ??= this.checkPresenceOnce().finally(() => {
+      this.presenceInFlight = undefined;
+    }));
+  }
+  private async checkPresenceOnce(): Promise<void> {
+    const refs = this.getItems();
+    if (!refs.length) return;
+    try {
+      const listeners = await readListeners();
+      this.publishRemoved(
+        this.tracker.checkPresence(
+          refs,
+          new Set(listeners.map((l) => `${l.pid}:${l.localPort}`)),
+        ),
+      );
+    } catch {
+      // A failed query is not evidence that a listener stopped.
+    }
   }
   scan(): Promise<void> {
     return (this.inFlight ??= this.scanOnce().finally(() => {
@@ -128,6 +170,7 @@ export class Scanner extends EventEmitter {
     await this.scan();
   }
   private async scanOnce(): Promise<void> {
+    this.retiredDuringScan.clear();
     const host = new NativeProcessHost(this.resourceDir);
     try {
       const [siResult, nativeResult, processResult] = await Promise.allSettled([
@@ -322,7 +365,12 @@ export class Scanner extends EventEmitter {
           ...classification,
           serviceName: classification.serviceName || serviceLabel(framework),
           canStop:
-            !!cached?.identity && classification.discovery !== "application",
+            !!cached?.identity &&
+            pid > 4 &&
+            pid !== process.pid &&
+            !/^(?:[a-z]:[\\/]Windows[\\/]|\/System\/|\/usr\/libexec\/)/i.test(
+              cached.identity.executable,
+            ),
           ...(p && Number.isFinite(p.cpu) ? { cpu: p.cpu } : {}),
           ...(p && Number.isFinite(p.memRss)
             ? { memory: p.memRss * 1024 }
@@ -346,7 +394,11 @@ export class Scanner extends EventEmitter {
           this.decorate(item, cached?.evidence, cached?.associationKey),
         );
       }
-      const result = this.tracker.reconcile(observed);
+      // Metadata gathered before a verified disappearance must not resurrect it.
+      const result = this.tracker.reconcile(
+        observed.filter((item) => !this.retiredDuringScan.has(item.key)),
+        process.platform !== "win32" && process.platform !== "darwin",
+      );
       this.previousRuns = [];
       for (const item of result.added)
         if (item.discovery === "development") this.emit("new", item);

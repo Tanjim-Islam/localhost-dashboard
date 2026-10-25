@@ -4,6 +4,7 @@ import {
   ArrowRightLeft,
   ChevronDown,
   Copy,
+  Loader2,
   RotateCw,
   Square,
 } from "lucide-react";
@@ -20,6 +21,7 @@ export default function ServiceRow({
   onStop,
   onRestart,
   restarting,
+  stopping,
   onAssign,
 }: {
   item: ServerInfo;
@@ -30,6 +32,7 @@ export default function ServiceRow({
   onStop(): void;
   onRestart?: () => void;
   restarting: boolean;
+  stopping: boolean;
   onAssign(): void;
 }) {
   health = health?.firstSeen === item.firstSeen ? health : undefined;
@@ -39,6 +42,7 @@ export default function ServiceRow({
   const reduceMotion = useReducedMotion();
   const application = item.discovery === "application";
   const actionable = item.discovery === "development" && !item.ignored;
+  const stoppable = (actionable || application) && !item.ignored;
   const browsable =
     !application &&
     health?.endpoint !== "websocket" &&
@@ -134,7 +138,7 @@ export default function ServiceRow({
           >
             <Copy size={14} className={copied ? "text-success-text" : ""} />
           </button>
-          {actionable && (
+          {stoppable && (
             <button
               className={
                 "rounded-full p-2 text-danger-text hover:bg-danger-surface disabled:opacity-40"
@@ -142,11 +146,16 @@ export default function ServiceRow({
               title={
                 item.canStop ? "Stop service" : "Process identity unavailable"
               }
-              aria-label={`Stop ${item.serviceName}`}
+              aria-label={`${stopping ? "Stopping" : "Stop"} ${item.serviceName}`}
+              aria-busy={stopping}
               disabled={locked || !item.canStop}
               onClick={onStop}
             >
-              <Square size={14} />
+              {stopping ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Square size={14} />
+              )}
             </button>
           )}
           <button
