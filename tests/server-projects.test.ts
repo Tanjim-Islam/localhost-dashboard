@@ -41,6 +41,18 @@ test("coarse process timestamps do not invent restarts when native metadata arri
     !sameObservedStart("2026-10-24T00:00:00Z", "2026-10-24T00:00:05Z", false),
   );
 });
+
+test("native identity preserves a live instance despite coarse timestamp jitter", () => {
+  const started = "2026-10-24T00:00:00.572Z";
+  assert.ok(
+    sameObservedStart("2026-10-24T00:00:00Z", "2026-10-24T00:00:01Z", false),
+  );
+  assert.ok(sameObservedStart(started, started, true, true));
+  assert.ok(
+    !sameObservedStart(started, "2026-10-24T00:00:00.900Z", true, true),
+  );
+  assert.ok(!sameObservedStart(started, started, false, true));
+});
 import {
   associationEdit,
   projectEdit,

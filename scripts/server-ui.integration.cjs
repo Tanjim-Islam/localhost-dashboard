@@ -425,6 +425,33 @@ async function main() {
     "cached CLI startup performs no scan and updater initializes without an error",
   );
 
+  // ps derives start time from whole-second elapsed time. Cross several scans
+  // so harmless timestamp jitter cannot silently replace live observations.
+  const firstSeen = new Map(
+    (await servers())
+      .filter((s) => [web.pid, api.pid, other.pid, python.pid].includes(s.pid))
+      .map((s) => [s.key, s.firstSeen]),
+  );
+  for (let scan = 0; scan < 3; scan++) {
+    await pause(1100);
+    await page.evaluate(() => window.api.refresh());
+    for (const service of await servers())
+      if (firstSeen.has(service.key))
+        assert.equal(
+          service.firstSeen,
+          firstSeen.get(service.key),
+          "Coarse process timestamp jitter must preserve a live service instance",
+        );
+  }
+  assert.ok(
+    !(await projects()).recentlyStopped.some((s) =>
+      [web.pid, api.pid, other.pid, python.pid].includes(s.pid),
+    ),
+  );
+  pass(
+    "repeated native scans retain live identities despite coarse timestamp jitter",
+  );
+
   await menu("Mac QA Workspace", "Edit project");
   const edit = page.getByRole("dialog", { name: "Edit project" });
   await edit.getByLabel("Name", { exact: true }).fill("Mac QA Renamed");

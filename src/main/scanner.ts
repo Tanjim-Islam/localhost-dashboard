@@ -256,7 +256,7 @@ export class Scanner extends EventEmitter {
         const changed = !!(
           cached?.stamp &&
           p?.started &&
-          cached.stamp !== p.started
+          !sameObservedStart(cached.stamp, p.started, false)
         );
         if (changed) {
           this.inspections.delete(pid);
@@ -361,11 +361,11 @@ export class Scanner extends EventEmitter {
           : p?.started || prior?.processStarted;
         const same =
           prior &&
-          !changed &&
           sameObservedStart(
             prior.processStarted,
             started,
             !!cached?.identity && nativeKnownBefore,
+            changed,
           );
         const framework = cached?.framework || runtime;
         const classification =

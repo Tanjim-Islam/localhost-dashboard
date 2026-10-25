@@ -65,7 +65,11 @@ export function sameObservedStart(
   previous: string | undefined,
   next: string | undefined,
   nativeComparison: boolean,
+  coarseChanged = false,
 ): boolean {
+  // A fresh native identity outranks a changed, estimated ps start timestamp.
+  // Without it, a changed coarse observation cannot preserve an old instance.
+  if (coarseChanged && !nativeComparison) return false;
   if (!previous || !next) return true;
   const before = Date.parse(previous),
     after = Date.parse(next);
