@@ -1,6 +1,6 @@
 {
   "name": "local-dashboard",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "An Electron dashboard that discovers and manages local dev servers.",
   "type": "module",
   "main": "out/main/index.js",
@@ -29,7 +29,8 @@
     "format": "prettier -w .",
     "start:test-servers": "node scripts/dev-servers.js",
     "test:servers:stop-live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-stop.integration.cjs",
-    "test:servers:ui": "npm run build && npm run test:clis:compile && node scripts/server-ui.integration.cjs"
+    "test:servers:ui": "npm run build && npm run test:clis:compile && node scripts/server-ui.integration.cjs",
+    "test:servers:start-live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-start.integration.cjs"
   },
   "keywords": [],
   "devDependencies": {

@@ -156,6 +156,9 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $nextPid = $record.ppid
       }
       $result = @{ processes=$processes; contexts=$contexts }
+    } elseif ($request.op -eq 'services') {
+      # Display names only, used to label listeners owned by Windows services.
+      $result = @(Get-CimInstance Win32_Service -Filter "State='Running'" | Where-Object { $_.ProcessId -gt 0 } | ForEach-Object { @{ pid=[int]$_.ProcessId; name=[string]$_.DisplayName } })
     } elseif ($request.op -eq 'stop') {
       $result = @()
       foreach ($target in $request.targets) {

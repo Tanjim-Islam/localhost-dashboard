@@ -7,6 +7,7 @@ import { NativeProcessHost } from "./server-restart/native-host";
 import { readListeners } from "./server-restart/listeners";
 import { boundedObservation } from "./server-detection";
 import type { ProcessIdentity } from "./server-restart/types";
+import { captureLaunchRecipe, type LaunchRecipe } from "./server-restart/plan";
 import type { ServerInfo, ServerRef, ServiceRecord } from "../shared/servers";
 import {
   ProjectIdentifier,
@@ -17,9 +18,11 @@ import {
 import {
   developmentRuntime,
   ListenerTracker,
+  listenerLabel,
   serviceLabel,
   sameObservedStart,
 } from "./projects/discovery";
+import { probeHttp } from "./health-checker";
 import {
   applicationOwner,
   classifyListener,
@@ -36,6 +39,8 @@ type Inspection = {
   cwd?: string;
   framework?: string;
   classification?: ListenerClassification;
+  // Private launch command and environment. Main memory only.
+  launch?: LaunchRecipe;
 };
 export class Scanner extends EventEmitter {
   private timer?: NodeJS.Timeout;
@@ -49,6 +54,15 @@ export class Scanner extends EventEmitter {
   private previousRuns: ServiceRecord[];
   private hasObservation = false;
   private nativePresence = new Map<string, number>();
+  private services = new Map<number, string[]>();
+  private servicesAt = 0;
+  private servicesPids = new Set<number>();
+  // HTTP probes per unidentified instance. A reply is final; a timeout is
+  // retried after 30 seconds, at most four times.
+  private httpProbes = new Map<
+    string,
+    { answers?: boolean; busy: boolean; attempts: number; retryAt: number }
+  >();
   constructor(
     private resourceDir: string,
     private decorate: (
@@ -179,6 +193,81 @@ export class Scanner extends EventEmitter {
   async scanFresh(): Promise<void> {
     if (this.inFlight) await this.inFlight;
     await this.scan();
+  }
+  // Service display names change rarely. Refresh every five minutes, or sooner
+  // when a listener appears in a process that was not present last time.
+  private async refreshServices(
+    host: NativeProcessHost,
+    items: ServerInfo[],
+    now: number,
+  ): Promise<void> {
+    const age = now - this.servicesAt;
+    const unseen = items.some((item) => !this.servicesPids.has(item.pid));
+    if (age < 300000 && !(unseen && age > 30000)) return;
+    this.servicesAt = now;
+    this.servicesPids = new Set(items.map((item) => item.pid));
+    try {
+      this.services = await host.services();
+    } catch {
+      // Labels fall back to process names; the previous map is kept.
+    }
+  }
+  private describeListener(item: ServerInfo): void {
+    const services = this.services.get(item.pid);
+    if (item.serviceName === "Local listener")
+      item.serviceName = listenerLabel(item.processName, services);
+    if (services?.length) item.windowsServices = [...services];
+    const probe = this.httpProbes.get(`${item.key}/${item.firstSeen}`);
+    if (probe?.answers !== undefined) item.answersHttp = probe.answers;
+  }
+  private async probeListeners(items: ServerInfo[]): Promise<void> {
+    const id = (item: ServerInfo) => `${item.key}/${item.firstSeen}`;
+    const live = new Set(items.map(id));
+    for (const key of this.httpProbes.keys())
+      if (!live.has(key)) this.httpProbes.delete(key);
+    const now = Date.now();
+    const pending = items.filter((item) => {
+      const probe = this.httpProbes.get(id(item));
+      return (
+        item.discovery === "unidentified" &&
+        (!probe ||
+          (probe.answers === undefined &&
+            !probe.busy &&
+            probe.attempts < 4 &&
+            now >= probe.retryAt))
+      );
+    });
+    if (!pending.length) return;
+    const probes = pending.map((item) => {
+      const probe = this.httpProbes.get(id(item)) || {
+        busy: false,
+        attempts: 0,
+        retryAt: 0,
+      };
+      probe.busy = true;
+      probe.attempts++;
+      this.httpProbes.set(id(item), probe);
+      return { item, probe };
+    });
+    const answered = await Promise.all(
+      probes.map(async ({ item, probe }) => {
+        probe.answers = await probeHttp(item.url);
+        probe.busy = false;
+        probe.retryAt = Date.now() + 30000;
+        return probe.answers !== undefined;
+      }),
+    );
+    if (!answered.some(Boolean)) return;
+    this.tracker.reconcile(
+      this.getItems().map((item) => {
+        const answers = this.httpProbes.get(id(item))?.answers;
+        return item.discovery === "unidentified" && answers !== undefined
+          ? { ...item, answersHttp: answers }
+          : item;
+      }),
+      false,
+    );
+    this.emit("update", this.getItems());
   }
   private async scanOnce(): Promise<void> {
     this.retiredDuringScan.clear();
@@ -327,6 +416,17 @@ export class Scanner extends EventEmitter {
                   context.executable,
                   context.argv,
                 );
+                if (!application)
+                  info.launch = await captureLaunchRecipe(
+                    snapshot,
+                    [...listeners.values()].map((l) => ({
+                      pid: l.pid,
+                      localPort: l.port,
+                    })),
+                    pid,
+                    process.platform,
+                    process.pid,
+                  );
               }
               info.classification = classifyListener({
                 name: p?.name,
@@ -417,6 +517,12 @@ export class Scanner extends EventEmitter {
           this.decorate(item, cached?.evidence, cached?.associationKey),
         );
       }
+      const unidentified = observed.filter(
+        (item) => item.discovery === "unidentified",
+      );
+      if (process.platform === "win32" && unidentified.length)
+        await this.refreshServices(host, unidentified, now);
+      for (const item of unidentified) this.describeListener(item);
       // Metadata gathered before a verified disappearance must not resurrect it.
       const nativeKeys = new Set(
         nativeResult.status === "fulfilled"
@@ -443,6 +549,7 @@ export class Scanner extends EventEmitter {
         if (item.discovery === "development") this.emit("new", item);
       for (const item of result.removed)
         if (item.discovery === "development") this.emit("stopped", item);
+      void this.probeListeners(result.items);
       const livePids = new Set(result.items.map((i) => i.pid));
       for (const pid of this.inspections.keys())
         if (!livePids.has(pid)) this.inspections.delete(pid);

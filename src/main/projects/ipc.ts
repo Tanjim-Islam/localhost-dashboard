@@ -3,12 +3,14 @@ import { associationEdit, id, object, projectEdit } from "../../shared/servers";
 import type { Scanner } from "../scanner";
 import type { ProjectModel } from "./model";
 import type { ServerStopController } from "./stop-controller";
+import type { ServerStartController } from "./start-controller";
 
 export function registerProjectIpc(
   getWindow: () => BrowserWindow | null,
   model: ProjectModel,
   scanner: Scanner,
   stopper: ServerStopController,
+  starter: ServerStartController,
   flush: () => void,
 ): void {
   const publish = () => {
@@ -66,4 +68,5 @@ export function registerProjectIpc(
     return publish();
   });
   handle("servers:stop", (value) => stopper.stop(value));
+  handle("servers:start", (value) => starter.start(value));
 }

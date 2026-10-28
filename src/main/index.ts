@@ -21,7 +21,8 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 import { Scanner } from "./scanner";
-import { createRestartDependencies, ServerRestartController } from "./server-restart/controller";
+import { createRestartDependencies, launchServer, preflightLaunch, ServerRestartController } from "./server-restart/controller";
+import { ServerStartController } from "./projects/start-controller";
 import { AHKScanner } from "./ahk-scanner";
 import { AutomatorScanner } from "./automator-scanner";
 import { HealthChecker } from "./health-checker";
@@ -91,9 +92,7 @@ const serverResourceDir = packagedApplication ? path.join(process.resourcesPath,
 const projectStore = createProjectStore();
 const scanner = new Scanner(serverResourceDir, (item, evidence, key) => projectStore.model.decorate(item, evidence, key), projectStore.model.state.lastObserved);
 const serverRestarter = new ServerRestartController(createRestartDependencies(
-  packagedApplication
-    ? path.join(process.resourcesPath, "server-restart")
-    : path.join(app.getAppPath(), "resources/server-restart"),
+  serverResourceDir,
   {
     getServer: (ref) => scanner.getItems().find((item) => item.key === ref.key && item.firstSeen === ref.firstSeen && item.discovery === "development" && item.canStop && !item.ignored),
     progress: (state) => {
@@ -112,18 +111,38 @@ const serverRestarter = new ServerRestartController(createRestartDependencies(
     },
   },
 ));
-const serverStopper = new ServerStopController({
+const serverStarter: ServerStartController = new ServerStartController({
+  items: () => scanner.getItems(),
+  stopped: () => projectStore.model.state.recentlyStopped,
+  recipe: (pid) => scanner.getInspection(pid)?.launch,
+  ignored: (id) => !!id && !!projectStore.model.state.projects.find((p) => p.id === id)?.ignored,
+  createHost: () => new NativeProcessHost(serverResourceDir),
+  listeners: readListeners,
+  launch: launchServer,
+  preflight: preflightLaunch,
+  operationBusy: () => serverRestarter.isBusy() || serverStopper.isBusy(),
+  completed: async (refs, replacement) => {
+    serverStopper.rememberRestarted(replacement);
+    await scanner.scanFresh();
+    projectStore.model.forgetStopped(refs);
+    projectStore.flush();
+    win?.webContents.send("projects:update", projectStore.model.snapshot());
+  },
+  now: Date.now, pause: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), startupTimeoutMs: 45000,
+});
+projectStore.model.startable = (service) => serverStarter.canStart(service);
+const serverStopper: ServerStopController = new ServerStopController({
   items: () => scanner.getItems(), identity: pid => scanner.getInspection(pid)?.identity,
   projectName: id => projectStore.model.state.projects.find(p => p.id === id)?.name,
   createHost: () => {
     const host = new NativeProcessHost(serverResourceDir);
     return { snapshot: (pid) => host.snapshot(pid), stop: (targets) => host.stop(targets, true), dispose: () => host.dispose() };
   }, listeners: readListeners,
-  ownPid: process.pid, restartBusy: () => serverRestarter.isBusy(),
+  ownPid: process.pid, restartBusy: () => serverRestarter.isBusy() || serverStarter.isBusy(),
   refresh: async (refs) => { scanner.confirmStopped(refs); projectStore.flush(); },
   now: Date.now, pause: ms => new Promise(resolve => setTimeout(resolve, ms)),
 });
-registerProjectIpc(() => win, projectStore.model, scanner, serverStopper, projectStore.flush);
+registerProjectIpc(() => win, projectStore.model, scanner, serverStopper, serverStarter, projectStore.flush);
 const healthChecker = new HealthChecker();
 let isQuitting = false;
 
@@ -735,6 +754,8 @@ app.on("before-quit", () => {
 // Scanner events → renderer
 scanner.on("update", (items: ServerInfo[]) => {
   projectStore.model.reconcile(items);
+  // After reconcile, so a just-stopped service keeps its launch recipe.
+  serverStarter.remember(items);
   win?.webContents.send("projects:update", projectStore.model.snapshot());
   win?.webContents.send("scanner:update", items);
   // Update health checker with current servers
@@ -852,7 +873,7 @@ ipcMain.handle("servers:restart", async (event, ref: unknown) => {
   if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
     throw new Error("Server restart is only available from the dashboard.");
   }
-  if (serverStopper.isBusy()) throw new Error("A stop operation is already running.");
+  if (serverStopper.isBusy() || serverStarter.isBusy()) throw new Error("A server operation is already running.");
   return serverRestarter.restart(ref);
 });
 ipcMain.handle("servers:restart-state", () => serverRestarter.getState());

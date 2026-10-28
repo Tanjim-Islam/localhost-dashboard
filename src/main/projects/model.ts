@@ -150,6 +150,8 @@ function sanitizeRecord(s: ServiceRecord): ServiceRecord {
 
 export class ProjectModel {
   private health = new Map<string, string>();
+  // Set by main when a start controller can relaunch stopped services.
+  startable?: (service: ServiceRecord) => boolean;
   constructor(
     readonly state: ProjectState,
     private changed: () => void = () => {},
@@ -164,7 +166,9 @@ export class ProjectModel {
     const { projects, recentlyStopped, activity, legacyNotes } = this.state;
     return structuredClone({
       projects,
-      recentlyStopped,
+      recentlyStopped: this.startable
+        ? recentlyStopped.map((s) => ({ ...s, canStart: this.startable!(s) }))
+        : recentlyStopped,
       activity,
       legacyNotes,
     });
@@ -385,6 +389,14 @@ export class ProjectModel {
       this.event("http-unresponsive", this.record(item), at);
     else if (old === "down")
       this.event("http-recovered", this.record(item), at);
+  }
+  // A started entry is running again. Its stop remains in activity history.
+  forgetStopped(refs: { key: string; firstSeen: number }[]): void {
+    const started = new Set(refs.map((r) => `${r.key}:${r.firstSeen}`));
+    this.state.recentlyStopped = this.state.recentlyStopped.filter(
+      (s) => !started.has(`${s.key}:${s.firstSeen}`),
+    );
+    this.changed();
   }
   restarted(item: ServerInfo): void {
     this.event("restarted", this.record(item));

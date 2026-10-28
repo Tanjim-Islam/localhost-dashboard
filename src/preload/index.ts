@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, clipboard } from "electron";
-import { associationEdit, id, object, projectEdit, stopScope, terminalDirectory, type ProjectSnapshot, type ServerInfo } from "../shared/servers";
+import { associationEdit, id, object, projectEdit, startScope, stopScope, terminalDirectory, type ProjectSnapshot, type ServerInfo } from "../shared/servers";
 import { validateServerRef, type RestartProgress } from "../main/server-restart/types";
 import {
   validateCliInstallationRef,
@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld("api", {
   associateService: (value: unknown) => ipcRenderer.invoke("projects:associate", associationEdit(value)),
   attachLegacyNote: (value: unknown) => { const v = object(value); return ipcRenderer.invoke("projects:legacy-note", { noteId: id(v.noteId), projectId: id(v.projectId) }); },
   stopServers: (value: unknown) => ipcRenderer.invoke("servers:stop", stopScope(value)),
+  startServers: (value: unknown) => ipcRenderer.invoke("servers:start", startScope(value)),
   onProjectsUpdate: (cb: (snapshot: ProjectSnapshot) => void) => {
     const listener = (_: Electron.IpcRendererEvent, snapshot: ProjectSnapshot) => cb(snapshot);
     ipcRenderer.on("projects:update", listener);

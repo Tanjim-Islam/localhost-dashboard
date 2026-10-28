@@ -77,6 +77,14 @@ export function sameObservedStart(
   return nativeComparison ? before === after : Math.abs(before - after) <= 2000;
 }
 
+// Names an unidentified listener after its Windows service or its process.
+export function listenerLabel(processName?: string, services?: string[]): string {
+  if (services?.length) return services[0];
+  const name = (processName || "").replace(/\.exe$/i, "").trim();
+  if (/^system$/i.test(name)) return "Windows System";
+  return name || "Local listener";
+}
+
 // Only successful observations advance disappearance counts.
 export class ListenerTracker {
   private items = new Map<string, ServerInfo>();

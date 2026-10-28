@@ -27,6 +27,10 @@ export type ServerInfo = ServerRef & {
   serviceName: string;
   association?: "detected" | "manual";
   canStop: boolean;
+  // Unidentified listeners only: Windows services hosted by the process, and
+  // whether the port answered a one-time local HTTP request.
+  windowsServices?: string[];
+  answersHttp?: boolean;
 };
 export type Project = {
   id: string;
@@ -67,6 +71,8 @@ export type ServiceRecord = Pick<
   status: "listening" | "http-unresponsive" | "listener-disappeared";
   lastStatus?: "listening" | "http-unresponsive";
   stoppedAt?: number;
+  // Computed for the renderer only. Launch details never leave main memory.
+  canStart?: boolean;
 };
 export type Activity = {
   id: string;
@@ -105,6 +111,14 @@ export type StopPreview = {
   targets: StopTarget[];
 };
 export type StopResult = { target: StopTarget; ok: boolean; message: string };
+export type StartScope = StopScope;
+export type StartResult = {
+  ref: ServerRef;
+  serviceName: string;
+  port: number;
+  ok: boolean;
+  message: string;
+};
 
 export function serverRef(value: unknown): ServerRef {
   const v = object(value);
@@ -184,4 +198,7 @@ export function stopScope(value: unknown): StopScope {
     refs,
     ...(v.projectId === undefined ? {} : { projectId: id(v.projectId) }),
   };
+}
+export function startScope(value: unknown): StartScope {
+  return stopScope(value);
 }

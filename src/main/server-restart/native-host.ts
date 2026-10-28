@@ -78,6 +78,19 @@ export class NativeProcessHost {
     return result;
   }
 
+  // Windows only: running service display names grouped by hosting PID.
+  async services(): Promise<Map<number, string[]>> {
+    const result = await this.request("services");
+    const services = new Map<number, string[]>();
+    for (const entry of Array.isArray(result) ? result : []) {
+      const { pid, name } = (entry || {}) as { pid?: unknown; name?: unknown };
+      if (!Number.isSafeInteger(pid) || typeof name !== "string" || !name.trim()) continue;
+      services.set(pid as number, [...(services.get(pid as number) || []), name.trim().slice(0, 120)]);
+    }
+    for (const names of services.values()) names.sort((a, b) => a.localeCompare(b));
+    return services;
+  }
+
   async interrupt(targets: ProcessIdentity[]): Promise<boolean> {
     const result = await this.request("interrupt", { pid: targets[0].pid, targets: targets.map(identityOnly) });
     return Array.isArray(result) ? result.some(Boolean) : result === true;

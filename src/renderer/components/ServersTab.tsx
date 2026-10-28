@@ -5,6 +5,7 @@ import type {
   ProjectSnapshot,
   ServerInfo,
   ServerRef,
+  ServiceRecord,
   StopScope,
 } from "../../shared/servers";
 import type { HealthStatus } from "../../types/preload";
@@ -16,7 +17,9 @@ import ProjectActions from "./servers/ProjectActions";
 import ProjectMenu from "./servers/ProjectMenu";
 import ServiceRow from "./servers/ServiceRow";
 import ServerDisclosure from "./servers/ServerDisclosure";
-import StoppedServiceRow from "./servers/StoppedServiceRow";
+import StoppedProjectGroup, {
+  type StoppedGroup,
+} from "./servers/StoppedProjectGroup";
 import ServicesDrawer from "./servers/ServicesDrawer";
 import { button, input } from "./servers/presentation";
 
@@ -43,6 +46,7 @@ export default function ServersTab({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [stopping, setStopping] = useState<number[]>([]);
+  const [starting, setStarting] = useState<string[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [edit, setEdit] = useState<Project | null>(null);
   const [assign, setAssign] = useState<ServerInfo | null>(null);
@@ -145,6 +149,23 @@ export default function ServersTab({
         setStopping([]);
       }
     });
+  const startStopped = (services: ServiceRecord[], projectId?: string) =>
+    void run(async () => {
+      setStarting(services.map(identity));
+      try {
+        const results = await window.api.startServers({
+          refs: services.map(({ key, firstSeen }) => ({ key, firstSeen })),
+          ...(projectId ? { projectId } : {}),
+        });
+        const failures = results.filter((r) => !r.ok);
+        if (failures.length)
+          setError(
+            failures.map((r) => `${r.serviceName}: ${r.message}`).join(" "),
+          );
+      } finally {
+        setStarting([]);
+      }
+    });
   const startRestart = (item: ServerInfo) =>
     void run(async () => {
       setRestart({
@@ -229,6 +250,32 @@ export default function ServersTab({
         .join(" ")
         .toLowerCase()
         .includes(query.toLowerCase()),
+  );
+  // Newest stop per service, grouped by the project it belonged to.
+  const stoppedGroups: StoppedGroup[] = [];
+  const seenStopped = new Set<string>();
+  for (const s of recentlyStopped) {
+    const unique = s.serviceId || identity(s);
+    if (seenStopped.has(unique)) continue;
+    seenStopped.add(unique);
+    const project = data.projects.find((p) => p.id === s.projectId);
+    const groupId = project?.id || s.projectId || "unassigned";
+    let group = stoppedGroups.find((g) => g.id === groupId);
+    if (!group) {
+      group = {
+        id: groupId,
+        projectId: project?.id,
+        name: project?.name || s.projectName || "Unassigned services",
+        directory: project?.directory,
+        services: [],
+      };
+      stoppedGroups.push(group);
+    }
+    group.services.push(s);
+  }
+  const stoppedCount = stoppedGroups.reduce(
+    (sum, g) => sum + g.services.length,
+    0,
   );
   const visibleIds = new Set(
     items
@@ -491,21 +538,20 @@ export default function ServersTab({
         onClose={() => setDrawerOpen(false)}
         error={error}
       >
-        {recentlyStopped.length > 0 && (
-          <ServerDisclosure
-            title="Recently stopped"
-            count={recentlyStopped.length}
-          >
-            <ul className="divide-y divide-gray-300/40 px-4">
-              {recentlyStopped.map((s, i) => (
-                <StoppedServiceRow
-                  key={`${s.key}-${s.firstSeen}-${i}`}
-                  service={s}
-                  project={data.projects.find((p) => p.id === s.projectId)}
+        {stoppedCount > 0 && (
+          <ServerDisclosure title="Recently stopped" count={stoppedCount}>
+            <div className="px-4">
+              {stoppedGroups.map((g) => (
+                <StoppedProjectGroup
+                  key={g.id}
+                  group={g}
+                  locked={locked}
+                  starting={(s) => starting.includes(identity(s))}
+                  onStart={startStopped}
                   onError={setError}
                 />
               ))}
-            </ul>
+            </div>
           </ServerDisclosure>
         )}
         {applications.length > 0 && (
@@ -577,7 +623,7 @@ export default function ServersTab({
             </div>
           </ServerDisclosure>
         )}
-        {!recentlyStopped.length &&
+        {!stoppedCount &&
           !applications.length &&
           !other.length &&
           (ignoredView || !data.legacyNotes.length) && (

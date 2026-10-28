@@ -1,5 +1,5 @@
 import path from "node:path";
-import { isNpmLauncher } from "./npm-context";
+import { isNpmLauncher, recoverNpmContexts } from "./npm-context";
 import { RestartError, sameProcess, type LaunchContext, type Listener, type ProcessIdentity, type ProcessSnapshot } from "./types";
 
 export type RestartPlan = {
@@ -7,6 +7,8 @@ export type RestartPlan = {
   tree: ProcessIdentity[];
   ports: number[];
 };
+// Private launch details kept in main memory so a stopped service can start again.
+export type LaunchRecipe = { launch: LaunchContext; ports: number[] };
 
 const runtimes = /^(?:node|nodejs|bun|deno|python(?:\d+(?:\.\d+)?)?|ruby(?:\d+(?:\.\d+)?)?|php(?:\d+(?:\.\d+)?)?|go|cargo|dotnet|uv|uvicorn|gunicorn|npm|pnpm|yarn)(?:\.exe)?$/i;
 const shells = /^(?:cmd|powershell|pwsh|bash|zsh|sh|fish)(?:\.exe)?$/i;
@@ -32,6 +34,37 @@ export function descendants(root: ProcessIdentity, processes: ProcessIdentity[])
     }
   }
   return found;
+}
+
+// The dashboard and its launching terminal or IDE are never part of a plan.
+export function protectedAncestors(snapshot: ProcessSnapshot, ownPid: number): Set<number> {
+  const protectedPids = new Set([ownPid]);
+  let item = snapshot.processes.find((p) => p.pid === ownPid);
+  for (let i = 0; item && i < 32; i++) {
+    protectedPids.add(item.pid);
+    item = snapshot.processes.find((p) => p.pid === item!.ppid && p.startedMs <= item!.startedMs);
+    if (item && protectedPids.has(item.pid)) break;
+  }
+  return protectedPids;
+}
+
+// Captured while the service runs, using the same launcher rules as restart.
+// Unsupported or ambiguous launchers produce no recipe, never a guessed command.
+export async function captureLaunchRecipe(
+  snapshot: ProcessSnapshot,
+  listeners: Listener[],
+  pid: number,
+  platform: NodeJS.Platform,
+  ownPid: number,
+): Promise<LaunchRecipe | undefined> {
+  try {
+    const protectedPids = protectedAncestors(snapshot, ownPid);
+    const recovered = await recoverNpmContexts(snapshot, platform, protectedPids);
+    const { launch, ports } = buildRestartPlan(recovered, listeners, pid, platform, protectedPids);
+    return structuredClone({ launch, ports });
+  } catch {
+    return undefined;
+  }
 }
 
 export function buildRestartPlan(

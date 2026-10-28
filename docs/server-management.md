@@ -13,6 +13,7 @@
 | Versioned persistence and coalesced writes | `src/main/projects/store.ts` |
 | Main-frame IPC handlers | `src/main/projects/ipc.ts` |
 | One-click stop and identity revalidation | `src/main/projects/stop-controller.ts` |
+| Starting recently stopped services | `src/main/projects/start-controller.ts` |
 | Native process inspection and existing restart engine | `src/main/server-restart/` |
 | Safe native terminal launch | `src/main/project-terminal.ts` |
 | Project and service UI | `src/renderer/components/ServersTab.tsx`, `components/servers/` |
@@ -60,7 +61,19 @@ Preload and main validate `getProjects`, `editProject`, `associateService`, `att
 
 Filtering never selects services. The selection toolbar displays how many selected services are hidden by search. Project stop includes only verified services belonging to that project. The old `app:kill-pid`, `app:kill-all-servers`, and port-note mutation IPC no longer exist.
 
+## Starting stopped services
+
+While a development service runs, the scanner captures a launch recipe with the restart engine's launcher rules (`captureLaunchRecipe` in `server-restart/plan.ts`): the npm, shell, or watcher root, its exact argv, working directory, environment, and every port its tree owns. Recipes stay in main memory, keyed by the observed instance (`key` plus `firstSeen`), and are kept while that instance is listed in Recently stopped. They are never persisted, logged, or sent to the renderer, so services that stopped before the dashboard started, or before their first inspection, show a disabled Start.
+
+`startServers({ refs, projectId? })` accepts only stopped-service references. Before launching anything, main rejects unknown recipes, ignored projects, a project mismatch, a service already running under the same service ID, an occupied port, two selections claiming one port, a surviving original launcher, and a missing executable or folder. Services sharing one launcher start it once. Launch uses the restart engine (`launchServer`, hidden, detached, no shell) and the same readiness check: every original port owned by the launched tree, stable for one second, within 45 seconds. A started entry leaves Recently stopped; its stop stays in activity history. Start, stop, and restart are mutually exclusive.
+
+Servers launched by restart or start are children of the dashboard process. Main records their root PIDs and launch times so the stop controller does not mistake them for dashboard helpers; other dashboard children stay protected.
+
+Recently stopped appears in the drawer grouped by project (`servers/StoppedProjectGroup.tsx`), newest stop per service, with per-service Start and a project Start all when two or more services can start.
+
 HTTP failure means an unresponsive HTTP endpoint, not a crashed process. Late health results cannot update a replacement instance. Listener disappearance, process change, port reuse, recovery, and restart are distinct events. The app cannot recover terminal output or determine why a process exited.
+
+Other local listeners are named after the Windows service they host (display names from the native helper's `services` operation, refreshed at most every five minutes or 30 seconds after an unfamiliar PID) or their process name. Details list every hosted service. Each unidentified instance receives a local HTTP HEAD probe (3 second timeout). Any reply is final; a timeout is unknown and retried after 30 seconds, up to four attempts, because cold dev servers can answer slowly. Open and the clickable URL appear only after a plain HTTP response; RPC, SMB, database, binary, silent, and upgrade-only ports never offer a browser action.
 
 HTTP status and protocol evidence appear in service Details. A 426 response is reachable but requires an upgrade; only an explicit WebSocket Upgrade header labels it WebSocket. Neither an HTTP error nor reclassifying a live application helper produces a stopped-process claim.
 
@@ -71,6 +84,7 @@ HTTP status and protocol evidence appear in service Details. A 426 response is r
 ```text
 npm test
 npm run test:servers:stop-live
+npm run test:servers:start-live
 npm run test:servers:live
 npm run test:startup
 npm run test:env-keys
@@ -82,7 +96,7 @@ npm run test:servers:ui
 
 Unit tests cover project and monorepo evidence, conflicting roots, persistence, note migration, metadata failures, lifecycle deduplication, IPv6 parsers, health identity, CLI changes, and stop authorization. Live suites generate isolated dummy servers only. Set `DASHBOARD_TEST_PYTHON` to an absolute interpreter for the Python restart scenario. Never test destructive server actions against unrelated real processes. Windows runs do not prove native macOS behavior; run the native suites on macOS before claiming that coverage.
 
-Ownership, portable browser helpers, misleading runtime/ancestor names, macOS bundles, ignore migration, stale stop authorization, HTTP upgrade responses, and literal terminal paths have focused `server-classification`, `server-projects`, `server-stop`, `server-health`, and `server-terminal` tests. Verify Terminal through the actual project button, including a visible console and the intended working directory; process spawn alone is insufficient.
+Ownership, portable browser helpers, misleading runtime/ancestor names, macOS bundles, ignore migration, stale stop authorization, HTTP upgrade responses, and literal terminal paths have focused `server-classification`, `server-projects`, `server-stop`, `server-start`, `server-health`, and `server-terminal` tests. `test:servers:start-live` stops and starts generated dummy servers only, covering exact argv/env/cwd, npm hooks, two-port processes, occupied ports, startup failure, and stopping a dashboard-started server again. Verify Terminal through the actual project button, including a visible console and the intended working directory; process spawn alone is insufficient.
 
 For UI checks, launch the built app with `LOCAL_DASHBOARD_CLIS_TEST_ROOT` set to a temporary fixture directory. This isolates Electron data and CLI operations; the server scanner still observes real local listeners. Select only generated dummy services. Verify project edits and manual associations after an app restart, hidden selections, one-click stopping and error retention, HTTP failure/recovery, recent history, cached CLI startup, two-column cards at minimum width, light/dark themes, and drawer keyboard focus/Escape behavior.
 

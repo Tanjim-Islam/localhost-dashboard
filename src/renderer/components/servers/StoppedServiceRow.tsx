@@ -1,43 +1,37 @@
 import { useId, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ChevronDown } from "lucide-react";
-import type { Project, ServiceRecord } from "../../../shared/servers";
-import ProjectActions from "./ProjectActions";
-import { date } from "./presentation";
+import { ChevronDown, Loader2, Play } from "lucide-react";
+import type { ServiceRecord } from "../../../shared/servers";
+import { button, date } from "./presentation";
 
+// Rows render inside a project group, so the service name leads.
 export default function StoppedServiceRow({
   service,
-  project,
-  onError,
+  directory,
+  locked,
+  starting,
+  onStart,
 }: {
   service: ServiceRecord;
-  project?: Project;
-  onError(message: string): void;
+  directory?: string;
+  locked: boolean;
+  starting: boolean;
+  onStart(): void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const id = useId();
   const reduced = useReducedMotion();
-  const name = project?.name || service.projectName || service.serviceName;
-  const directory = project?.directory || service.directory;
   const stoppedAt = service.stoppedAt || service.lastSeen;
   const processStarted = Date.parse(service.processStarted || "");
 
   return (
     <li className="py-4">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-        <div className="min-w-0 flex-1 basis-56">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
+        <div className="min-w-0 flex-1 basis-28">
           <div className="flex min-w-0 items-baseline gap-2 text-sm leading-5">
-            <span className="truncate font-medium" title={name}>
-              {name}
+            <span className="truncate font-medium" title={service.serviceName}>
+              {service.serviceName}
             </span>
-            {service.serviceName !== name && (
-              <span
-                className="max-w-[40%] shrink-0 truncate text-gray-600"
-                title={service.serviceName}
-              >
-                {service.serviceName}
-              </span>
-            )}
             <span className="shrink-0 font-mono text-xs text-gray-600">
               :{service.port}
             </span>
@@ -51,9 +45,23 @@ export default function StoppedServiceRow({
           </time>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          {directory && (
-            <ProjectActions project={{ directory }} onError={onError} />
-          )}
+          <button
+            className={`${button} inline-flex items-center gap-1.5 bg-success-surface text-success-text`}
+            disabled={locked || !service.canStart}
+            title={
+              service.canStart
+                ? undefined
+                : "Launch details were not captured in this session. Start it from its terminal."
+            }
+            onClick={onStart}
+          >
+            {starting ? (
+              <Loader2 size={14} aria-hidden="true" className="animate-spin" />
+            ) : (
+              <Play size={14} aria-hidden="true" />
+            )}
+            {starting ? "Starting" : "Start"}
+          </button>
           <button
             id={`${id}-trigger`}
             className="inline-flex items-center gap-1.5 rounded-lg px-2 py-2 text-xs text-gray-600 outline-none transition-colors duration-150 hover:bg-gray-200 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-gray-500 motion-reduce:transition-none"

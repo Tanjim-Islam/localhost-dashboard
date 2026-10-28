@@ -151,6 +151,7 @@ export interface Api {
   attachLegacyNote(value: { noteId: string; projectId: string }): Promise<import("../shared/servers").ProjectSnapshot>;
   onProjectsUpdate(cb: (snapshot: import("../shared/servers").ProjectSnapshot) => void): () => void;
   stopServers(value: import("../shared/servers").StopScope): Promise<import("../shared/servers").StopResult[]>;
+  startServers(value: import("../shared/servers").StartScope): Promise<import("../shared/servers").StartResult[]>;
   // scanning
   onScanUpdate(cb: (items: ServerInfo[]) => void): () => void;
   onScanError(cb: (msg: string) => void): () => void;

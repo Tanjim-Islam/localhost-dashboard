@@ -96,38 +96,51 @@ export class HealthChecker extends EventEmitter {
     }
   }
 
-  private pingUrl(url: string): Promise<{ responseTime: number; httpStatus?: number; endpoint: 'http' | 'websocket' | 'upgrade' }> {
-    return new Promise((resolve, reject) => {
-      const start = Date.now();
-      const parsedUrl = new URL(url);
-      const client = parsedUrl.protocol === 'https:' ? https : http;
-
-      const req = client.request(
-        {
-          hostname: parsedUrl.hostname.replace(/^\[|\]$/g, ''),
-          port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
-          path: parsedUrl.pathname || '/',
-          method: 'HEAD',
-          timeout: CHECK_TIMEOUT_MS,
-        },
-        (res) => {
-          res.destroy();
-          const upgrade = String(res.headers.upgrade || '').toLowerCase();
-          resolve({ responseTime: Date.now() - start, httpStatus: res.statusCode, endpoint: upgrade === 'websocket' ? 'websocket' : res.statusCode === 426 ? 'upgrade' : 'http' });
-        }
-      );
-
-      req.on('timeout', () => {
-        req.destroy();
-        reject(new Error('Timeout'));
-      });
-
-      req.on('error', (err) => {
-        reject(err);
-      });
-
-      req.end();
-    });
+  private pingUrl(url: string) {
+    return pingUrl(url, CHECK_TIMEOUT_MS);
   }
 }
 
+// True for a plain HTTP response, false when the port replies with another
+// protocol or refuses. A timeout is unknown: cold dev servers can be slow.
+export async function probeHttp(url: string, timeoutMs = 3000): Promise<boolean | undefined> {
+  try {
+    return (await pingUrl(url, timeoutMs)).endpoint === 'http';
+  } catch (error) {
+    return error instanceof Error && error.message === 'Timeout' ? undefined : false;
+  }
+}
+
+function pingUrl(url: string, timeoutMs: number): Promise<{ responseTime: number; httpStatus?: number; endpoint: 'http' | 'websocket' | 'upgrade' }> {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const parsedUrl = new URL(url);
+    const client = parsedUrl.protocol === 'https:' ? https : http;
+
+    const req = client.request(
+      {
+        hostname: parsedUrl.hostname.replace(/^\[|\]$/g, ''),
+        port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+        path: parsedUrl.pathname || '/',
+        method: 'HEAD',
+        timeout: timeoutMs,
+      },
+      (res) => {
+        res.destroy();
+        const upgrade = String(res.headers.upgrade || '').toLowerCase();
+        resolve({ responseTime: Date.now() - start, httpStatus: res.statusCode, endpoint: upgrade === 'websocket' ? 'websocket' : res.statusCode === 426 ? 'upgrade' : 'http' });
+      }
+    );
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Timeout'));
+    });
+
+    req.on('error', (err) => {
+      reject(err);
+    });
+
+    req.end();
+  });
+}

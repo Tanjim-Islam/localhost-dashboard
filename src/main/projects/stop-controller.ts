@@ -51,7 +51,7 @@ export class ServerStopController {
   private busy = false;
   private restarted = new Map<number, ProcessIdentity>();
   constructor(private deps: StopDependencies) {}
-  // Only the main-process restarter can grant this exception for its verified
+  // Only the main-process restarter or starter can grant this exception for its verified
   // replacement listeners. PID reuse never inherits it.
   rememberRestarted(identities: ProcessIdentity[]): void {
     for (const identity of identities)
@@ -135,7 +135,7 @@ export class ServerStopController {
       if (!snapshot.processes.some((p) => sameProcess(p, identity)))
         this.restarted.delete(pid);
     // Protect Dashboard helpers, while allowing exact listeners intentionally
-    // relaunched by Restart. Detached servers still have Dashboard as parent.
+    // relaunched by Restart or Start. Detached servers still have Dashboard as parent.
     const children = new Set([this.deps.ownPid]);
     for (let depth = 0; depth < 32; depth++) {
       const size = children.size;

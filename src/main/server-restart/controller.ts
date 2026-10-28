@@ -2,14 +2,14 @@ import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { NativeProcessHost } from "./native-host";
-import { buildRestartPlan, descendants, type RestartPlan } from "./plan";
+import { buildRestartPlan, descendants, protectedAncestors, type RestartPlan } from "./plan";
 import { readListeners } from "./listeners";
 import { recoverNpmContexts } from "./npm-context";
 import { RestartError, sameProcess, validateServerRef, type LaunchContext, type Listener, type ProcessIdentity, type ProcessSnapshot, type RestartProgress, type RestartResult, type ServerRef } from "./types";
 
 export type TrackedServer = ServerRef & { pid: number; port: number; processStarted?: string };
 type Host = Pick<NativeProcessHost, "snapshot" | "interrupt" | "stop" | "dispose">;
-type RunningChild = { pid: number; exited: () => boolean; detach: () => void };
+export type RunningChild = { pid: number; exited: () => boolean; detach: () => void };
 
 export type RestartDependencies = {
   platform: NodeJS.Platform;
@@ -43,6 +43,11 @@ export async function launchServer(context: LaunchContext): Promise<RunningChild
   return { pid: child.pid!, exited: () => exited, detach: () => child.unref() };
 }
 
+export async function preflightLaunch(context: LaunchContext): Promise<void> {
+  const [executable, cwd] = await Promise.all([fs.stat(context.executable), fs.stat(context.cwd)]);
+  if (!executable.isFile() || !cwd.isDirectory()) throw new RestartError("The original executable or project folder is missing. The server has been left running.");
+}
+
 export function createRestartDependencies(
   resourceDir: string,
   callbacks: Pick<RestartDependencies, "getServer" | "progress" | "completed">,
@@ -51,10 +56,7 @@ export function createRestartDependencies(
     ...callbacks, platform: process.platform, ownPid: process.pid,
     createHost: () => new NativeProcessHost(resourceDir),
     listeners: () => readListeners(), launch: launchServer,
-    preflight: async (context) => {
-      const [executable, cwd] = await Promise.all([fs.stat(context.executable), fs.stat(context.cwd)]);
-      if (!executable.isFile() || !cwd.isDirectory()) throw new RestartError("The original executable or project folder is missing. The server has been left running.");
-    },
+    preflight: preflightLaunch,
     pause: delay, now: Date.now, startupTimeoutMs: 45000,
   };
 }
@@ -134,14 +136,7 @@ export class ServerRestartController {
   }
 
   private protectedPids(snapshot: ProcessSnapshot): Set<number> {
-    const protectedPids = new Set([this.deps.ownPid]);
-    let item = snapshot.processes.find((p) => p.pid === this.deps.ownPid);
-    for (let i = 0; item && i < 32; i++) {
-      protectedPids.add(item.pid);
-      item = snapshot.processes.find((p) => p.pid === item!.ppid && p.startedMs <= item!.startedMs);
-      if (item && protectedPids.has(item.pid)) break;
-    }
-    return protectedPids;
+    return protectedAncestors(snapshot, this.deps.ownPid);
   }
 
   private async stopTree(host: Host, plan: RestartPlan): Promise<void> {
@@ -185,36 +180,49 @@ export class ServerRestartController {
     }
     throw new RestartError("The server could not be fully stopped. No replacement was started.");
   }
-
-  private async waitForReady(host: Host, plan: RestartPlan, child: RunningChild): Promise<ProcessIdentity[]> {
-    const deadline = this.deps.now() + this.deps.startupTimeoutMs;
-    let stableSince: number | undefined;
-    let launchedRoot: ProcessIdentity | undefined;
-    const known = new Map<number, ProcessIdentity>();
-    do {
-      // Read sockets first. A launcher can create a listening child between OS
-      // reads, so the process snapshot must be newer than the observed socket.
-      const listeners = await this.deps.listeners();
-      const snapshot = await host.snapshot();
-      const root = snapshot.processes.find((p) => p.pid === child.pid);
-      if (root && !launchedRoot && !child.exited() && root.executable === plan.launch.executable) launchedRoot = root;
-      if (root && launchedRoot && sameProcess(root, launchedRoot)) {
-        for (const item of descendants(root, snapshot.processes)) known.set(item.pid, item);
-      }
-      const live = new Set(snapshot.processes.filter((p) => known.has(p.pid) && sameProcess(p, known.get(p.pid)!)).map((p) => p.pid));
-      if (listeners.some((l) => plan.ports.includes(l.localPort) && !live.has(l.pid) && snapshot.processes.some((p) => p.pid === l.pid))) {
-        throw new RestartError("A different process took the original port. Restart was not confirmed. Check the project before retrying.");
-      }
-      const ready = plan.ports.every((port) => listeners.some((l) => l.localPort === port && live.has(l.pid)));
-      if (ready) {
-        stableSince ??= this.deps.now();
-        if (this.deps.now() - stableSince >= 1000) return snapshot.processes.filter((p) => live.has(p.pid) && listeners.some((l) => l.pid === p.pid && plan.ports.includes(l.localPort)));
-      } else stableSince = undefined;
-      if (child.exited() && !live.size) {
-        throw new RestartError("The project exited before reopening its port. Check its configuration, then start it from its terminal.");
-      }
-      await this.deps.pause(250);
-    } while (this.deps.now() < deadline);
-    throw new RestartError("The project was started, but its original port did not return within 45 seconds. It may still be starting. Check it before launching another copy.");
+  private waitForReady(host: Host, plan: RestartPlan, child: RunningChild): Promise<ProcessIdentity[]> {
+    return waitForLaunch(this.deps, host, plan.launch, plan.ports, child);
   }
+}
+
+export type ReadyDependencies = Pick<RestartDependencies, "listeners" | "now" | "pause" | "startupTimeoutMs">;
+
+// Shared by restart and start: success requires every original port to be owned
+// by the launched tree, stable for one second, without a foreign listener.
+export async function waitForLaunch(
+  deps: ReadyDependencies,
+  host: Pick<Host, "snapshot">,
+  launch: LaunchContext,
+  ports: number[],
+  child: RunningChild,
+): Promise<ProcessIdentity[]> {
+  const deadline = deps.now() + deps.startupTimeoutMs;
+  let stableSince: number | undefined;
+  let launchedRoot: ProcessIdentity | undefined;
+  const known = new Map<number, ProcessIdentity>();
+  do {
+    // Read sockets first. A launcher can create a listening child between OS
+    // reads, so the process snapshot must be newer than the observed socket.
+    const listeners = await deps.listeners();
+    const snapshot = await host.snapshot();
+    const root = snapshot.processes.find((p) => p.pid === child.pid);
+    if (root && !launchedRoot && !child.exited() && root.executable === launch.executable) launchedRoot = root;
+    if (root && launchedRoot && sameProcess(root, launchedRoot)) {
+      for (const item of descendants(root, snapshot.processes)) known.set(item.pid, item);
+    }
+    const live = new Set(snapshot.processes.filter((p) => known.has(p.pid) && sameProcess(p, known.get(p.pid)!)).map((p) => p.pid));
+    if (listeners.some((l) => ports.includes(l.localPort) && !live.has(l.pid) && snapshot.processes.some((p) => p.pid === l.pid))) {
+      throw new RestartError("A different process took the original port. Startup was not confirmed. Check the project before retrying.");
+    }
+    const ready = ports.every((port) => listeners.some((l) => l.localPort === port && live.has(l.pid)));
+    if (ready) {
+      stableSince ??= deps.now();
+      if (deps.now() - stableSince >= 1000) return snapshot.processes.filter((p) => live.has(p.pid) && listeners.some((l) => l.pid === p.pid && ports.includes(l.localPort)));
+    } else stableSince = undefined;
+    if (child.exited() && !live.size) {
+      throw new RestartError("The project exited before reopening its port. Check its configuration, then start it from its terminal.");
+    }
+    await deps.pause(250);
+  } while (deps.now() < deadline);
+  throw new RestartError("The project was started, but its original port did not return within 45 seconds. It may still be starting. Check it before launching another copy.");
 }

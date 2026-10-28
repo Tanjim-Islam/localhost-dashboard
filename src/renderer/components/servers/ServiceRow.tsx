@@ -43,8 +43,11 @@ export default function ServiceRow({
   const application = item.discovery === "application";
   const actionable = item.discovery === "development" && !item.ignored;
   const stoppable = (actionable || application) && !item.ignored;
+  // Unidentified listeners are often RPC, SMB, or database ports. Offer the
+  // browser only after the port answered HTTP.
   const browsable =
     !application &&
+    (item.discovery !== "unidentified" || item.answersHttp === true) &&
     health?.endpoint !== "websocket" &&
     health?.endpoint !== "upgrade";
   const status =
@@ -199,6 +202,18 @@ export default function ServiceRow({
                           </span>
                         </dd>
                       </div>
+                      {item.windowsServices?.length ? (
+                        <div className="min-w-0">
+                          <dt className="text-gray-600">
+                            {item.windowsServices.length > 1
+                              ? "Windows services"
+                              : "Windows service"}
+                          </dt>
+                          <dd className="mt-1 break-words text-gray-900">
+                            {item.windowsServices.join(", ")}
+                          </dd>
+                        </div>
+                      ) : null}
                       <div>
                         <dt className="text-gray-600">First observed</dt>
                         <dd className="mt-1 text-gray-900">
