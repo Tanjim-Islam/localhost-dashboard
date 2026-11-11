@@ -1,3 +1,4 @@
+import { AnimatedDetails } from "../AnimatedPresence";
 import type {
   CliChanges as Changes,
   CliChangeKind,
@@ -43,8 +44,8 @@ export function CliChanges({ changes }: { changes?: Changes }) {
       </p>
     );
   return (
-    <details className="rounded-lg border border-gray-300/50 px-3 py-2 text-sm">
-      <summary className="cursor-pointer text-gray-700">{summary}</summary>
+    <AnimatedDetails className="rounded-lg border border-gray-300/50 px-3 py-2 text-sm"
+      summary={summary} summaryClassName="cursor-pointer text-gray-700">
       <ul className="mt-2 divide-y divide-gray-300/40">
         {changes.entries.map((e, i) => (
           <li key={`${e.productId}-${i}`} className="py-2">
@@ -73,6 +74,6 @@ export function CliChanges({ changes }: { changes?: Changes }) {
       {changes.truncated && (
         <p className="text-xs text-gray-600">Showing the first 200 changes.</p>
       )}
-    </details>
+    </AnimatedDetails>
   );
 }

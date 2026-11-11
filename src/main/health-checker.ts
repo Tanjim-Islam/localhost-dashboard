@@ -20,16 +20,18 @@ const CHECK_TIMEOUT_MS = 3000;
 
 export class HealthChecker extends EventEmitter {
   private timer?: NodeJS.Timeout;
+  private inFlight?: Promise<void>;
   private results = new Map<string, HealthStatus>();
-  private servers: Array<{ key: string; url: string; firstSeen?: number }> = [];
+  private servers = new Map<string, { key: string; url: string; firstSeen?: number }>();
   private intervalMs = 5000;
 
   setServers(servers: Array<{ key: string; url: string; firstSeen?: number }>) {
-    this.servers = servers;
+    this.servers = new Map(servers.map(server => [server.key, server]));
     // Clean up results for servers that no longer exist
-    const validKeys = new Set(servers.map(s => s.key));
     for (const key of this.results.keys()) {
-      if (!validKeys.has(key) || this.results.get(key)?.firstSeen !== servers.find(s => s.key === key)?.firstSeen) {
+      const server = this.servers.get(key);
+      const result = this.results.get(key);
+      if (!server || result?.firstSeen !== server.firstSeen || result?.url !== server.url) {
         this.results.delete(key);
       }
     }
@@ -58,8 +60,14 @@ export class HealthChecker extends EventEmitter {
     return Array.from(this.results.values());
   }
 
-  private async checkAll() {
-    const checks = this.servers.map(s => this.checkServer(s));
+  private checkAll(): Promise<void> {
+    return (this.inFlight ??= this.checkOnce().finally(() => {
+      this.inFlight = undefined;
+    }));
+  }
+
+  private async checkOnce(): Promise<void> {
+    const checks = Array.from(this.servers.values(), s => this.checkServer(s));
     await Promise.allSettled(checks);
     this.emit('update', this.getResults());
   }
@@ -69,7 +77,7 @@ export class HealthChecker extends EventEmitter {
     try {
       const response = await this.pingUrl(server.url);
       const { responseTime } = response;
-      if (!this.servers.some(s => s.key === server.key && s.firstSeen === server.firstSeen)) return;
+      if (!this.isCurrent(server)) return;
       const status: HealthStatus['status'] = 
         responseTime < SLOW_THRESHOLD_MS ? 'healthy' : 'slow';
 
@@ -84,7 +92,7 @@ export class HealthChecker extends EventEmitter {
         lastChecked: Date.now(),
       });
     } catch (err) {
-      if (!this.servers.some(s => s.key === server.key && s.firstSeen === server.firstSeen)) return;
+      if (!this.isCurrent(server)) return;
       this.results.set(server.key, {
         key: server.key,
         firstSeen: server.firstSeen,
@@ -94,6 +102,11 @@ export class HealthChecker extends EventEmitter {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  private isCurrent(server: { key: string; url: string; firstSeen?: number }): boolean {
+    const current = this.servers.get(server.key);
+    return current?.firstSeen === server.firstSeen && current?.url === server.url;
   }
 
   private pingUrl(url: string) {

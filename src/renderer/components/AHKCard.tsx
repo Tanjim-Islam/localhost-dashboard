@@ -93,7 +93,7 @@ export default function AHKCard({
     <div
       ref={ref}
       className={cx(
-        "app-card rounded-xl border border-pale_dogwood-400/40 bg-gray-100/94 p-4 shadow-soft transition-all duration-300 will-change-transform",
+        "app-card rounded-xl border border-pale_dogwood-400/40 bg-gray-100/94 p-4 shadow-soft transition-all duration-300",
         exiting === "left" && "-translate-x-[120%] opacity-0",
         exiting === "right" && "translate-x-[120%] opacity-0",
       )}

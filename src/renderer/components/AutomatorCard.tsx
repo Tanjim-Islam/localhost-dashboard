@@ -93,7 +93,7 @@ export default function AutomatorCard({
     <div
       ref={ref}
       className={cx(
-        "app-card rounded-xl border border-gray-300/40 bg-gray-100/94 p-4 shadow-soft transition-all duration-300 will-change-transform border-l-4 border-l-celadon-400",
+        "app-card rounded-xl border border-gray-300/40 bg-gray-100/94 p-4 shadow-soft transition-all duration-300 border-l-4 border-l-celadon-400",
         !isRunning && "border-l-gray-400",
         exiting === "left" && "-translate-x-[120%] opacity-0",
         exiting === "right" && "translate-x-[120%] opacity-0",

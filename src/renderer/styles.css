@@ -202,24 +202,13 @@ button.rounded-2xl {
       transparent 30%
     );
   opacity: 1;
-  transform: translate3d(0, 0, 0) scale(1.02);
   transition: opacity 220ms ease;
-  animation: ambient-drift 18s ease-in-out infinite alternate;
 }
 
 .title-bar,
 .dashboard-content {
   position: relative;
   z-index: 1;
-}
-
-@keyframes ambient-drift {
-  0% {
-    transform: translate3d(-1.5%, -1%, 0) scale(1.02);
-  }
-  100% {
-    transform: translate3d(1.5%, 1%, 0) scale(1.08);
-  }
 }
 
 /* custom title bar drag region helpers */

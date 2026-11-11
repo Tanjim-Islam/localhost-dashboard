@@ -265,5 +265,9 @@ test("tab, preload, and modal contracts expose no raw destructive input", async 
   assert.doesNotMatch(row, /removedCount|current installations/);
   assert.doesNotMatch(row, /installation\.issueCodes\.map/);
   assert.match(dialog, /role="alertdialog"/);
-  assert.match(dialog, /event.key === "Escape"/);
+  assert.match(dialog, /<AnimatedOverlay[\s\S]*?onClose=\{onClose\}[\s\S]*?busy=\{locked\}/);
+  const overlay = await readFile(path.join(process.cwd(), "src/renderer/components/AnimatedPresence.tsx"), "utf8");
+  assert.match(overlay, /event.key === "Escape" && !busyRef.current/);
+  assert.match(overlay, /inert=\{!present\}/);
+  assert.match(overlay, /previousFocus.current.focus\(\)/);
 });

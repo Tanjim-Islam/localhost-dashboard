@@ -1,4 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Collapse } from "../AnimatedPresence";
 import {
   AlertTriangle,
   Check,
@@ -168,7 +169,7 @@ export function CliProductRow({
         )}
       </button>
 
-      {expanded && (
+      <Collapse open={expanded}>
         <div className="border-t border-gray-300 bg-gray-200/28 px-4 py-4">
           <div className="space-y-3">
             {installations.map((installation) => (
@@ -190,7 +191,7 @@ export function CliProductRow({
             ))}
           </div>
         </div>
-      )}
+      </Collapse>
     </article>
   );
 }
@@ -389,15 +390,21 @@ export function InstallationPanel({
           <Detail
             label="Commands"
             value={
-              (showAllCommands ? commands : commands.slice(0, 8))
+              commands.slice(0, 8)
                 .map((command) => command.name)
                 .join(", ") || "None"
             }
           />
+          <Collapse open={showAllCommands}>
+            <p className="mt-1 break-words text-gray-900">
+              {commands.slice(8).map(command => command.name).join(", ")}
+            </p>
+          </Collapse>
           {commands.length > 8 && (
             <button
               type="button"
               className="mt-1 font-medium text-gray-800 underline"
+              aria-expanded={showAllCommands}
               onClick={() => setShowAllCommands((value) => !value)}
             >
               {showAllCommands
@@ -534,6 +541,7 @@ function CopyablePathsDetail({
         {label}
       </dt>
       <dd className="mt-0.5 space-y-0.5">
+        <AnimatePresence initial={false}>
         {paths.length === 0 ? (
           <span className="text-gray-900">Missing</span>
         ) : (
@@ -541,8 +549,13 @@ function CopyablePathsDetail({
             const pathKey = `${pathKind}:${index}:${pathValue}`;
             const copied = copiedKey === pathKey;
             return (
-              <button
+              <motion.div
                 key={pathValue}
+                initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: reduceMotion ? 0 : 0.2 }}
+                className="overflow-hidden"
+              >
+              <button
                 type="button"
                 onClick={() => onCopy(pathKey, pathValue)}
                 className={`group -mx-1.5 grid w-[calc(100%+0.75rem)] cursor-copy grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-1.5 py-1 text-left outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-night-700/25 motion-reduce:transition-none ${
@@ -585,13 +598,16 @@ function CopyablePathsDetail({
                   </motion.span>
                 </AnimatePresence>
               </button>
+              </motion.div>
             );
           })
         )}
+        </AnimatePresence>
         {paths.length > 3 && (
           <button
             type="button"
             className="pt-1 font-medium text-gray-800 underline"
+            aria-expanded={showAll}
             onClick={() => setShowAll((value) => !value)}
           >
             {showAll ? "Show fewer paths" : `Show all ${paths.length} paths`}

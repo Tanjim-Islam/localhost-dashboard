@@ -3,6 +3,8 @@ import { X } from "lucide-react";
 import AppearanceSettings from "./AppearanceSettings";
 import { useThemePreferences } from "../theme/ThemeProvider";
 import type { UpdateStatus } from "../../types/preload";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatedOverlay } from "./AnimatedPresence";
 
 type Props = {
   open: boolean;
@@ -21,7 +23,14 @@ export default function SettingsPanel({
   onSave,
   onReset,
 }: Props) {
-  const { resetPreferences } = useThemePreferences();
+  const { preferences, resetPreferences } = useThemePreferences();
+  const [appearanceBaseline, setAppearanceBaseline] = useState(preferences);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) setAppearanceBaseline(preferences);
+    wasOpen.current = open;
+  }, [open, preferences]);
+  const reduceMotion = useReducedMotion();
   const [scanIntervalMs, setScanIntervalMs] = useState(5000);
   const [startAtLogin, setStartAtLogin] = useState(false);
   const [openInTrayAtLogin, setOpenInTrayAtLogin] = useState(true);
@@ -30,6 +39,7 @@ export default function SettingsPanel({
   const [closeToTray, setCloseToTray] = useState(true);
   const [globalHotkey, setGlobalHotkey] = useState("Ctrl+Shift+D");
   const [recording, setRecording] = useState(false);
+  useEffect(() => { if (!open) setRecording(false); }, [open]);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle" });
@@ -40,26 +50,24 @@ export default function SettingsPanel({
   }, [open]);
   const supportsTrayStartup = platform === "darwin" || platform === "win32";
   const minimizedLocation = platform === "darwin" ? "background" : "tray";
-  const panelRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
-    panelRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    return () => previous?.focus();
-  }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !recording) { event.preventDefault(); onClose(); }
-      if (event.key !== "Tab") return;
-      const controls = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea, select, [tabindex="0"]') || []).filter(el => el.getClientRects().length);
-      const first = controls[0], last = controls.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose, recording]);
+  const editedHotkey = recording && recordedKeys.length > 0
+    ? keysToAccelerator(recordedKeys) ?? ""
+    : globalHotkey;
+  const legacyNotifications = typeof settings?.notifications === "boolean"
+    ? settings.notifications : true;
+  const hasChanges = Boolean(settings) && (
+    scanIntervalMs !== (settings.scanIntervalMs ?? 5000) ||
+    startAtLogin !== Boolean(settings.startAtLogin) ||
+    openInTrayAtLogin !== (settings.openInTrayAtLogin ?? true) ||
+    notifyOnStart !== (settings.notifyOnStart ?? legacyNotifications) ||
+    notifyOnStop !== (settings.notifyOnStop ?? legacyNotifications) ||
+    closeToTray !== (settings.closeToTray ?? true) ||
+    comparableHotkey(editedHotkey, platform) !== comparableHotkey(settings.globalHotkey || "Ctrl+Shift+D", platform) ||
+    preferences.mode !== appearanceBaseline.mode ||
+    preferences.lightPalette !== appearanceBaseline.lightPalette ||
+    preferences.darkPalette !== appearanceBaseline.darkPalette ||
+    preferences.font !== appearanceBaseline.font
+  );
 
   useEffect(() => {
     if (settings) {
@@ -96,7 +104,7 @@ export default function SettingsPanel({
   }, [settings]);
 
   useEffect(() => {
-    if (!recording) return;
+    if (!recording || !open) return;
     const handler = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -111,18 +119,20 @@ export default function SettingsPanel({
     window.addEventListener("keydown", handler, { capture: true });
     return () =>
       window.removeEventListener("keydown", handler, { capture: true });
-  }, [recording]);
+  }, [recording, open]);
 
-  if (!open) return null;
   return (
-    <div
+    <AnimatePresence>
+    {open && <AnimatedOverlay
+      key="settings"
+      onClose={() => { setRecording(false); onClose(); }}
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4 no-drag backdrop-blur-[2px]"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
     >
-      <section
-        ref={panelRef}
+      <motion.section
+        initial={{ y: 8, scale: 0.98 }}
+        animate={{ y: 0, scale: 1 }}
+        exit={{ y: 8, scale: 0.98 }}
+        transition={{ duration: reduceMotion ? 0 : 0.2 }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
@@ -363,7 +373,8 @@ export default function SettingsPanel({
             </section>
           </div>
 
-          <footer className="mt-4 flex items-center justify-between gap-2 border-t border-gray-300 pt-4">
+        </div>
+          <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-gray-300 bg-gray-100 px-4 py-3">
             <button
               type="button"
               onClick={async () => {
@@ -379,7 +390,9 @@ export default function SettingsPanel({
             </button>
             <button
               type="button"
+              disabled={!hasChanges}
               onClick={() => {
+                if (!hasChanges) return;
                 const keysForSave = recording
                   ? recordedKeys
                   : parseAccelerator(globalHotkey);
@@ -402,15 +415,28 @@ export default function SettingsPanel({
                 setGlobalHotkey(accel);
                 setHotkeyError(null);
               }}
-              className="rounded-full bg-night-700 px-3 py-1.5 text-night-100 hover:bg-night-800"
+              className={`rounded-full px-3 py-1.5 transition-colors ${hasChanges
+                ? "bg-night-700 text-night-100 hover:bg-night-800"
+                : "cursor-not-allowed bg-gray-300 text-gray-600"}`}
             >
               Save
             </button>
           </footer>
-        </div>
-      </section>
-    </div>
+      </motion.section>
+    </AnimatedOverlay>}
+    </AnimatePresence>
   );
+}
+
+function comparableHotkey(accelerator: string, platform?: string): string {
+  return accelerator.split("+").map(key => {
+    const normalized = key.toLowerCase();
+    if (normalized === "ctrl" || normalized === "control") return "control";
+    if (normalized === "commandorcontrol") return platform === "darwin" ? "command" : "control";
+    if (normalized === "cmd") return "command";
+    if (normalized === "win" || normalized === "super") return "super";
+    return normalized;
+  }).sort().join("+");
 }
 
 

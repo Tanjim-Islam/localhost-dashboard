@@ -854,9 +854,12 @@ if (automatorScanner) {
 
 // Health checker events → renderer
 healthChecker.on("update", (results) => {
+  const itemsByKey = new Map(scanner.getItems().map(item => [item.key, item]));
   for (const result of results) {
-    const item = scanner.getItems().find(i => i.key === result.key && i.firstSeen === result.firstSeen);
-    if (item?.discovery === "development") projectStore.model.updateHealth(item, result.status, result.lastChecked);
+    const item = itemsByKey.get(result.key);
+    if (item?.discovery === "development" && item.firstSeen === result.firstSeen) {
+      projectStore.model.updateHealth(item, result.status, result.lastChecked);
+    }
   }
   win?.webContents.send("health:update", results);
   win?.webContents.send("projects:update", projectStore.model.snapshot());
@@ -864,9 +867,7 @@ healthChecker.on("update", (results) => {
 
 // IPC
 ipcMain.handle("scanner:refresh", async () => {
-  await scanner.scan();
-  await ahkScanner?.scan();
-  await automatorScanner?.scan();
+  await Promise.all([scanner.scan(), ahkScanner?.scan(), automatorScanner?.scan()]);
 });
 ipcMain.on("app:open-url", (_evt, url: string) => shell.openExternal(url));
 ipcMain.handle("servers:restart", async (event, ref: unknown) => {

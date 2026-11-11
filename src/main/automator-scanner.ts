@@ -1,9 +1,9 @@
-import pidusage from "pidusage";
 import { EventEmitter } from "node:events";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as path from "node:path";
 import { settings } from "./settings";
+import { sampleProcessMetrics } from "./process-sampling";
 import {
   detectAutomatorProcesses,
   parsePsOutput,
@@ -47,6 +47,7 @@ type AutomatorSnapshot = Omit<
 
 export class AutomatorScanner extends EventEmitter {
   private timer?: NodeJS.Timeout;
+  private inFlight?: Promise<void>;
   private items = new Map<string, AutomatorScriptInfo>();
 
   start() {
@@ -61,7 +62,13 @@ export class AutomatorScanner extends EventEmitter {
     this.timer = undefined;
   }
 
-  async scan() {
+  scan(): Promise<void> {
+    return (this.inFlight ??= this.scanOnce().finally(() => {
+      this.inFlight = undefined;
+    }));
+  }
+
+  private async scanOnce(): Promise<void> {
     try {
       const now = Date.now();
       const processes = await getAutomatorProcesses();
@@ -113,18 +120,19 @@ export class AutomatorScanner extends EventEmitter {
         }
       }
 
+      const metrics = await sampleProcessMetrics(
+        Array.from(this.items.values(), (rec) => rec.pid || 0),
+      );
       for (const rec of this.items.values()) {
         if (!rec.pid) {
           rec.cpu = undefined;
           rec.memory = undefined;
           continue;
         }
-        try {
-          const usage = await pidusage(rec.pid);
+        const usage = metrics.get(rec.pid);
+        if (usage) {
           rec.cpu = usage.cpu;
           rec.memory = usage.memory;
-        } catch {
-          // Process may have exited between ps and pidusage.
         }
       }
 

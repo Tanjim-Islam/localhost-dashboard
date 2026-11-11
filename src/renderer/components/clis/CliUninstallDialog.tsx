@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { AnimatedOverlay } from "../AnimatedPresence";
 import { AlertTriangle, LoaderCircle, PackageX, X } from "lucide-react";
 import type {
   CliInstallation,
@@ -24,31 +24,19 @@ export function CliUninstallDialog({
   onConfirm(): void;
   onClose(): void;
 }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
   const locked = Boolean(progress);
 
-  useEffect(() => {
-    closeRef.current?.focus();
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !locked) onClose();
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [locked, onClose]);
-
   return (
-    <div
+    <AnimatedOverlay
       className="fixed inset-0 z-50 grid place-items-center bg-night/72 p-4 backdrop-blur-sm"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !locked) onClose();
-      }}
+      onClose={onClose}
+      busy={locked}
     >
       <section
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="cli-uninstall-title"
-        className="env-modal-panel app-card w-full max-w-lg border border-gray-300 bg-gray-100 p-5 shadow-soft"
+        className="app-card w-full max-w-lg border border-gray-300 bg-gray-100 p-5 shadow-soft"
       >
         <div className="flex items-start gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-status-danger-surface text-status-danger-text">
@@ -63,7 +51,6 @@ export function CliUninstallDialog({
             </p>
           </div>
           <button
-            ref={closeRef}
             type="button"
             aria-label="Close uninstall dialog"
             onClick={onClose}
@@ -145,7 +132,7 @@ export function CliUninstallDialog({
           </button>
         </div>
       </section>
-    </div>
+    </AnimatedOverlay>
   );
 }
 

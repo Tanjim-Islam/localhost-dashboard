@@ -1,3 +1,5 @@
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatedOverlay, AnimatedTab } from "./AnimatedPresence";
 import {
   AlertTriangle,
   Check,
@@ -126,10 +128,11 @@ export default function EnvironmentKeysTab({
     setNotice(`${item.name} deleted from Windows.`);
   };
 
-  if (!active) return null;
-
   return (
-    <section className="space-y-5" aria-label="Windows environment keys">
+    <AnimatePresence>
+    {active && <AnimatedTab
+      key="environment-tab"
+      className="min-w-0 space-y-5 [grid-area:1/1]" label="Windows environment keys">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center rounded-full border border-gray-300 bg-gray-200/80 p-1">
           <ScopeButton
@@ -226,8 +229,10 @@ export default function EnvironmentKeysTab({
         </div>
       )}
 
+      <AnimatePresence>
       {editorItem !== undefined && (
         <EnvironmentKeyEditor
+          key="environment-editor"
           item={editorItem}
           onClose={() => setEditorItem(undefined)}
           onSave={saveItem}
@@ -236,12 +241,15 @@ export default function EnvironmentKeysTab({
 
       {deleteItem && (
         <DeleteEnvironmentKeyDialog
+          key="environment-delete"
           item={deleteItem}
           onClose={() => setDeleteItem(null)}
           onDelete={() => removeItem(deleteItem)}
         />
       )}
-    </section>
+      </AnimatePresence>
+    </AnimatedTab>}
+    </AnimatePresence>
   );
 }
 
@@ -285,6 +293,7 @@ function EnvironmentKeyCard({
   const [revealing, setRevealing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
+  const reduceMotion = useReducedMotion();
   const [copiedReference, setCopiedReference] = useState<
     "name" | "usage" | null
   >(null);
@@ -391,8 +400,12 @@ function EnvironmentKeyCard({
                 <Copy className="h-3.5 w-3.5" />
               )}
             </IconButton>
+            <AnimatePresence>
             {copyMenuOpen && (
-              <div className="env-status-enter absolute right-0 top-10 z-20 w-56 rounded-xl border border-gray-300 bg-gray-100 p-1.5 shadow-soft">
+              <motion.div
+                initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: reduceMotion ? 0 : 0.2 }}
+                className="absolute right-0 top-10 z-20 w-56 rounded-xl border border-gray-300 bg-gray-100 p-1.5 shadow-soft">
                 <button
                   type="button"
                   onClick={() => copyReference("name")}
@@ -417,8 +430,9 @@ function EnvironmentKeyCard({
                     %{item.name}%
                   </code>
                 </button>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
           <IconButton label={`Edit ${item.name}`} onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
@@ -502,14 +516,6 @@ function EnvironmentKeyEditor({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !saving) onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, saving]);
-
-  useEffect(() => {
     if (!item) return;
     let cancelled = false;
     window.api
@@ -547,15 +553,14 @@ function EnvironmentKeyEditor({
   };
 
   return (
-    <div
-      className="env-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4 no-drag"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving) onClose();
-      }}
+    <AnimatedOverlay
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4 no-drag"
+      onClose={onClose}
+      busy={saving}
     >
       <form
         onSubmit={submit}
-        className="app-dialog env-modal-panel w-full max-w-[520px] rounded-2xl border border-gray-300 bg-gray-100 p-5 text-gray-900 shadow-soft"
+        className="app-dialog w-full max-w-[520px] rounded-2xl border border-gray-300 bg-gray-100 p-5 text-gray-900 shadow-soft"
         role="dialog"
         aria-modal="true"
         aria-labelledby="environment-key-editor-title"
@@ -710,7 +715,7 @@ function EnvironmentKeyEditor({
           </button>
         </div>
       </form>
-    </div>
+    </AnimatedOverlay>
   );
 }
 
@@ -738,14 +743,13 @@ function DeleteEnvironmentKeyDialog({
   };
 
   return (
-    <div
-      className="env-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4 no-drag"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !deleting) onClose();
-      }}
+    <AnimatedOverlay
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4 no-drag"
+      onClose={onClose}
+      busy={deleting}
     >
       <div
-        className="app-dialog env-modal-panel w-full max-w-[430px] rounded-2xl border border-gray-300 bg-gray-100 p-5 text-gray-900 shadow-soft"
+        className="app-dialog w-full max-w-[430px] rounded-2xl border border-gray-300 bg-gray-100 p-5 text-gray-900 shadow-soft"
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="delete-environment-key-title"
@@ -801,7 +805,7 @@ function DeleteEnvironmentKeyDialog({
           </button>
         </div>
       </div>
-    </div>
+    </AnimatedOverlay>
   );
 }
 

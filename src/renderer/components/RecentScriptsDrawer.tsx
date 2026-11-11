@@ -2,6 +2,8 @@ import React from "react";
 import cx from "classnames";
 import dayjs from "dayjs";
 import { Clock, Folder, SquarePen, Trash, X } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatedOverlay } from "./AnimatedPresence";
 
 type RecentScript = {
   id: string;
@@ -36,44 +38,8 @@ export default function RecentScriptsDrawer({
   onDelete: (id: string) => Promise<void>;
 }) {
   const [busy, setBusy] = React.useState<BusyState | null>(null);
+  const reduceMotion = useReducedMotion();
   const [error, setError] = React.useState<string | null>(null);
-  const panelRef = React.useRef<HTMLElement>(null);
-
-  React.useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
-    panelRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    return () => previous?.focus();
-  }, [open]);
-
-  React.useEffect(() => {
-    if (!open) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-      if (event.key === "Tab") {
-        const controls = Array.from(
-          panelRef.current?.querySelectorAll<HTMLButtonElement>(
-            "button:not(:disabled)",
-          ) || [],
-        );
-        const first = controls[0],
-          last = controls.at(-1);
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        }
-        if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
-
   React.useEffect(() => {
     if (!open) {
       setBusy(null);
@@ -107,30 +73,24 @@ export default function RecentScriptsDrawer({
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div
-      className={cx(
-        "fixed inset-0 z-40 transition pointer-events-none",
-        open && "pointer-events-auto",
-      )}
-      aria-hidden={!open}
+    <AnimatePresence>
+    {open && <AnimatedOverlay
+      key="recent-scripts"
+      onClose={onClose}
+      className="fixed inset-0 z-40"
     >
       <div
-        className={cx(
-          "absolute inset-0 bg-black/55 transition-opacity duration-200 backdrop-blur-[2px]",
-          open ? "opacity-100" : "opacity-0",
-        )}
+        className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
         onClick={onClose}
       />
 
-      <aside
-        ref={panelRef}
-        className={cx(
-          "app-dialog absolute right-0 top-0 h-full w-[390px] max-w-[calc(100vw-24px)] overflow-hidden border-l border-gray-300 bg-gray-100 shadow-soft transition-transform duration-300",
-          open ? "translate-x-0" : "translate-x-full",
-        )}
+      <motion.aside
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ duration: reduceMotion ? 0 : 0.2 }}
+        className="app-dialog absolute right-0 top-0 h-full w-[390px] max-w-[calc(100vw-24px)] overflow-hidden border-l border-gray-300 bg-gray-100 shadow-soft"
         role="dialog"
         aria-modal={open}
         aria-label={`Recently used ${label}`}
@@ -252,7 +212,8 @@ export default function RecentScriptsDrawer({
             )}
           </div>
         </div>
-      </aside>
-    </div>
+      </motion.aside>
+    </AnimatedOverlay>}
+    </AnimatePresence>
   );
 }

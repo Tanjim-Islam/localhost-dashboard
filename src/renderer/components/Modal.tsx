@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { motion, useIsPresent, useReducedMotion } from "framer-motion";
 
 export default function Modal({
   title,
@@ -15,14 +16,21 @@ export default function Modal({
   error?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const present = useIsPresent();
+  const reduceMotion = useReducedMotion();
   useEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
     return () => dialog.close();
   }, []);
   return (
-    <dialog
+    <motion.dialog
       ref={ref}
+      inert={!present}
+      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.98 }}
+      transition={{ duration: reduceMotion ? 0 : 0.2 }}
       aria-label={title}
       onCancel={(event) => {
         event.preventDefault();
@@ -48,6 +56,6 @@ export default function Modal({
         </p>
       )}
       {children}
-    </dialog>
+    </motion.dialog>
   );
 }

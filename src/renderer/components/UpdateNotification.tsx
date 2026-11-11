@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 type UpdateStatus =
   | { state: "idle" }
@@ -20,6 +21,7 @@ function formatBytes(bytes: number): string {
 export default function UpdateNotification() {
   const [status, setStatus] = useState<UpdateStatus>({ state: "idle" });
   const [dismissed, setDismissed] = useState(false);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     // Get initial status
@@ -53,17 +55,15 @@ export default function UpdateNotification() {
     window.api.checkForUpdates();
   };
 
-  if (!shouldShow) {
-    return null;
-  }
-
   return (
-    <div
-      className={`
-        fixed bottom-5 right-5 z-50 
-        transition-all duration-300 ease-out
-        opacity-100 translate-y-0
-      `}
+    <AnimatePresence>
+    {shouldShow && <motion.div
+      key="update-notification"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 12 }}
+      transition={{ duration: reduceMotion ? 0 : 0.2 }}
+      className="fixed bottom-5 right-5 z-50"
     >
       <div
         className="app-dialog rounded-2xl shadow-soft overflow-hidden min-w-[320px] max-w-[380px] bg-gray-100 border border-gray-300"
@@ -182,7 +182,8 @@ export default function UpdateNotification() {
           )}
         </div>
       </div>
-    </div>
+    </motion.div>}
+    </AnimatePresence>
   );
 }
 

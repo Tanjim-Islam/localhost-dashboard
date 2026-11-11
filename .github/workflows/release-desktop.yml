@@ -28,11 +28,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes_file="docs/releases/$GITHUB_REF_NAME.md"
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+            if [ -s "$notes_file" ]; then
+              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$notes_file"
+            fi
           else
+            notes=(--generate-notes)
+            if [ -s "$notes_file" ]; then notes=(--notes-file "$notes_file"); fi
             gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-              --verify-tag --draft --title "Localhost Dashboard $GITHUB_REF_NAME" --generate-notes
+              --verify-tag --draft --title "Localhost Dashboard $GITHUB_REF_NAME" "${notes[@]}"
           fi
 
   mac:

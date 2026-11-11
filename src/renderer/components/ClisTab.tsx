@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence } from "framer-motion";
+import { AnimatedDetails, AnimatedTab, Collapse } from "./AnimatedPresence";
 import {
   AlertCircle,
   CheckCircle2,
@@ -259,16 +261,16 @@ export default function ClisTab({
     }
   };
 
-  if (!active) return null;
-
   const sourceFailures =
     inventory?.sourceResults.filter((source) => source.status === "failed") ??
     [];
 
   return (
-    <section
-      aria-label="Developer CLIs"
-      className="clis-motion-root space-y-4 pb-8"
+    <AnimatePresence>
+    {active && <AnimatedTab
+      key="clis-tab"
+      label="Developer CLIs"
+      className="clis-motion-root min-w-0 space-y-4 pb-8 [grid-area:1/1]"
     >
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -337,7 +339,7 @@ export default function ClisTab({
       </header>
       <CliChanges changes={inventory?.changes} />
 
-      {showScanDirectories && (
+      <Collapse open={showScanDirectories}>
         <section className="rounded-xl border border-gray-300 bg-gray-100 p-4 text-xs">
           {scanDirectories.map((directory) => (
             <div key={directory.id} className="mt-2 flex items-center gap-2">
@@ -379,7 +381,7 @@ export default function ClisTab({
             Add folder
           </button>
         </section>
-      )}
+      </Collapse>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SummaryButton
@@ -564,11 +566,12 @@ export default function ClisTab({
       )}
 
       {sourceFailures.length > 0 && (
-        <details className="rounded-xl border border-status-blocked-border bg-status-blocked-surface/70 px-3 py-2 text-xs text-status-blocked-text">
-          <summary className="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-status-blocked-border">
+        <AnimatedDetails className="rounded-xl border border-status-blocked-border bg-status-blocked-surface/70 px-3 py-2 text-xs text-status-blocked-text"
+          summaryClassName="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-status-blocked-border"
+          summary={<>
             {sourceFailures.length} package source
             {sourceFailures.length === 1 ? "" : "s"} could not be read
-          </summary>
+          </>}>
           <ul className="mt-2 space-y-1 pl-4">
             {sourceFailures.map((source) => (
               <li key={source.sourceId}>
@@ -576,7 +579,7 @@ export default function ClisTab({
               </li>
             ))}
           </ul>
-        </details>
+        </AnimatedDetails>
       )}
 
       {!inventory ? (
@@ -687,8 +690,10 @@ export default function ClisTab({
         </div>
       )}
 
+      <AnimatePresence>
       {dialog && (
         <CliUninstallDialog
+          key="cli-uninstall"
           installation={dialog.installation}
           preview={preview}
           loading={previewLoading}
@@ -698,7 +703,9 @@ export default function ClisTab({
           onClose={closeDialog}
         />
       )}
-    </section>
+      </AnimatePresence>
+    </AnimatedTab>}
+    </AnimatePresence>
   );
 }
 

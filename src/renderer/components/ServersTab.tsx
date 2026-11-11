@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { Bookmark, Loader2, PanelRight, Pin } from "lucide-react";
 import type {
   Project,
@@ -632,8 +633,10 @@ export default function ServersTab({
             </p>
           )}
       </ServicesDrawer>
+      <AnimatePresence>
       {edit && (
         <ProjectEditor
+          key="project-editor"
           edit={edit}
           busy={busy}
           error={error}
@@ -649,6 +652,7 @@ export default function ServersTab({
       )}
       {assign && (
         <Modal
+          key="associate-service"
           title={`Project for ${assign.serviceName} :${assign.port}`}
           busy={busy}
           error={error}
@@ -695,6 +699,7 @@ export default function ServersTab({
       )}
       {history && (
         <ActivityDialog
+          key="activity"
           data={
             history === "all"
               ? {
@@ -711,6 +716,7 @@ export default function ServersTab({
           onClose={() => setHistory(null)}
         />
       )}
+      </AnimatePresence>
     </section>
   );
 }

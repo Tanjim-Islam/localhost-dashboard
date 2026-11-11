@@ -1,9 +1,8 @@
-import si from 'systeminformation';
-import pidusage from 'pidusage';
 import { EventEmitter } from 'node:events';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { settings } from './settings';
+import { readProcessSnapshot, sampleProcessMetrics } from './process-sampling';
 
 const execAsync = promisify(exec);
 
@@ -21,6 +20,7 @@ export type AHKScriptInfo = {
 
 export class AHKScanner extends EventEmitter {
   private timer?: NodeJS.Timeout;
+  private inFlight?: Promise<void>;
   private items = new Map<string, AHKScriptInfo>();
 
   start() {
@@ -35,7 +35,13 @@ export class AHKScanner extends EventEmitter {
     this.timer = undefined;
   }
 
-  async scan() {
+  scan(): Promise<void> {
+    return (this.inFlight ??= this.scanOnce().finally(() => {
+      this.inFlight = undefined;
+    }));
+  }
+
+  private async scanOnce(): Promise<void> {
     try {
       const now = Date.now();
       const ahkProcesses = await getAHKProcesses();
@@ -74,13 +80,14 @@ export class AHKScanner extends EventEmitter {
       }
 
       // Enrich with CPU/memory usage
+      const metrics = await sampleProcessMetrics(
+        Array.from(this.items.values(), (rec) => rec.pid),
+      );
       for (const rec of this.items.values()) {
-        try {
-          const usage = await pidusage(rec.pid);
+        const usage = metrics.get(rec.pid);
+        if (usage) {
           rec.cpu = usage.cpu;
           rec.memory = usage.memory;
-        } catch {
-          // Process may have exited
         }
       }
 
@@ -115,7 +122,7 @@ async function getAHKProcesses(): Promise<AHKProcess[]> {
 
   try {
     // Get all processes
-    const procData = await si.processes();
+    const procData = await readProcessSnapshot();
     const ahkProcs = procData.list.filter((p) => {
       const name = (p.name || '').toLowerCase();
       return name.includes('autohotkey') || name.includes('ahk');
@@ -154,7 +161,9 @@ async function getAHKProcesses(): Promise<AHKProcess[]> {
       results.push(ahkProcess);
     }
   } catch (err) {
+    // An unavailable process query is not evidence that scripts stopped.
     console.error('Error scanning AHK processes:', err);
+    throw err;
   }
 
   return results;

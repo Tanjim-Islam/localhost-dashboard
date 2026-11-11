@@ -9,8 +9,9 @@ Version 1.8.1 is the first Mac build with Sparkle. People using a Mac build from
 ## Publish a new version
 
 1. Update `package.json` and `package-lock.json` together, for example `npm version patch --no-git-tag-version`.
-2. Commit and push the change to `master`.
-3. Tag that exact commit with `v<version>` and push the tag.
+2. Write changes-only release notes in `docs/releases/v<version>.md`. The workflow uses that file as the draft release body.
+3. Commit and push the change to `master`.
+4. Tag that exact commit with `v<version>` and push the tag.
 
 The `Release desktop apps` workflow builds a universal Mac DMG and ZIP and both Windows EXEs. It signs the Mac update ZIP, creates `appcast.xml`, and stages all files on a draft GitHub release. It publishes the release only after both platform builds and asset checks pass. If a build fails, the draft remains unpublished. Rerun the failed workflow after fixing the problem. Do not publish an incomplete draft by hand.
 

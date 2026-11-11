@@ -25,6 +25,10 @@ Discovery reads local TCP listeners without a port allowlist. Windows netstat an
 
 Network and process metadata queries have time limits. In particular, a macOS systeminformation query that never settles cannot block a successful native lsof table. Native and coarse process start timestamps are reconciled without inventing replacement events when inspection arrives or the app restarts. Exact native identities still authorize destructive actions.
 
+Server and AHK scans share an outstanding process enumeration, without caching completed results. The server still stops waiting for metadata after five seconds; the AHK scan can finish a slower observation. A caller timeout does not launch a duplicate native query. The dependency does not expose cancellation, so a genuinely hung enumeration remains pending until it settles or the app restarts; independent listener discovery continues. Script scanners and health checks also coalesce overlapping cycles. Scan intervals and disappearance rules are unchanged.
+
+CPU and memory sampling uses bounded batches of up to 128 unique PIDs. Multiple ports owned by one process share a sample and retain separate six-sample histories. A failed metrics batch falls back to individual PIDs so a vanished process cannot hide the remaining readings. Health-result membership checks use a keyed map and still reject results for replaced instances or changed URLs.
+
 Python.org and Command Line Tools interpreter bundles (`Python.app` inside a Python framework) are runtimes, so their HTTP/Flask projects retain grouping and safe controls. Homebrew and MacPorts installation directories cannot supply project roots merely because the package manager has a Git repository.
 
 Native process context is cached for 60 seconds and inspected for at most 12 processes per polling pass. Project identification walks at most 12 ancestors, caches up to 1,000 contexts, and never traverses a project tree. Package manifests, workspace markers, Python/Cargo/Go manifests, and repository boundaries establish roots. Nested repositories stay separate. Conflicting CWD and script roots remain unassigned. Global tool directories and a manifest in the user's home are not sufficient project evidence.
@@ -92,9 +96,13 @@ npx tsc --noEmit
 npm run lint
 npm run build
 npm run test:servers:ui
+node --test scripts/scanner-sampling.test.cjs
+node scripts/benchmark-process-sampling.cjs
 ```
 
 Unit tests cover project and monorepo evidence, conflicting roots, persistence, note migration, metadata failures, lifecycle deduplication, IPv6 parsers, health identity, CLI changes, and stop authorization. Live suites generate isolated dummy servers only. Set `DASHBOARD_TEST_PYTHON` to an absolute interpreter for the Python restart scenario. Never test destructive server actions against unrelated real processes. Windows runs do not prove native macOS behavior; run the native suites on macOS before claiming that coverage.
+
+The process-sampling benchmark compares the former individual queries with shared enumeration and batched metrics using four generated dummy processes and six service rows. It reports child-process launch counts, wall time, and parent CPU across alternating runs. Compile tests first. It reads the real process table, but terminates only its own dummy children. These measurements describe the sampling work, not total Electron memory or whole-app idle CPU.
 
 Ownership, portable browser helpers, misleading runtime/ancestor names, macOS bundles, ignore migration, stale stop authorization, HTTP upgrade responses, and literal terminal paths have focused `server-classification`, `server-projects`, `server-stop`, `server-start`, `server-health`, and `server-terminal` tests. `test:servers:start-live` stops and starts generated dummy servers only, covering exact argv/env/cwd, npm hooks, two-port processes, occupied ports, startup failure, and stopping a dashboard-started server again. Verify Terminal through the actual project button, including a visible console and the intended working directory; process spawn alone is insufficient.
 

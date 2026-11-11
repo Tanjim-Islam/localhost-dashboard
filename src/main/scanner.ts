@@ -1,5 +1,4 @@
 import si from "systeminformation";
-import pidusage from "pidusage";
 import fs from "node:fs/promises";
 import { EventEmitter } from "node:events";
 import { settings } from "./settings";
@@ -23,6 +22,7 @@ import {
   sameObservedStart,
 } from "./projects/discovery";
 import { probeHttp } from "./health-checker";
+import { readProcessSnapshot, sampleProcessMetrics } from "./process-sampling";
 import {
   applicationOwner,
   classifyListener,
@@ -153,10 +153,11 @@ export class Scanner extends EventEmitter {
   }
   private publishRemoved(removed: ServerInfo[]): void {
     if (!removed.length) return;
+    const livePids = new Set(this.getItems().map((item) => item.pid));
     for (const item of removed) {
       this.retiredDuringScan.add(item.key);
       this.nativePresence.delete(item.key);
-      if (!this.getItems().some((s) => s.pid === item.pid))
+      if (!livePids.has(item.pid))
         this.inspections.delete(item.pid);
       if (item.discovery === "development") this.emit("stopped", item);
     }
@@ -278,7 +279,7 @@ export class Scanner extends EventEmitter {
         process.platform === "win32" || process.platform === "darwin"
           ? readListeners()
           : Promise.resolve(null),
-        boundedObservation(si.processes(), 5000),
+        boundedObservation(readProcessSnapshot(), 5000),
       ]);
       if (
         nativeResult.status === "rejected" ||
@@ -317,13 +318,11 @@ export class Scanner extends EventEmitter {
               ipv6: c.ipv6 || false,
             });
         }
+      const ownedPorts = new Set(
+        [...listeners.values()].filter((listener) => listener.pid > 0).map((listener) => listener.port),
+      );
       for (const [key, listener] of listeners)
-        if (
-          listener.pid === 0 &&
-          [...listeners.values()].some(
-            (c) => c.pid > 0 && c.port === listener.port,
-          )
-        )
+        if (listener.pid === 0 && ownedPorts.has(listener.port))
           listeners.delete(key);
       const processes = new Map(
         processResult.status === "fulfilled"
@@ -332,13 +331,19 @@ export class Scanner extends EventEmitter {
       );
       const now = Date.now(),
         oldItems = this.getItems();
+      const oldByKey = new Map(oldItems.map((item) => [item.key, item]));
+      const previousByKey = new Map(this.previousRuns.map((item) => [item.key, item]));
+      const launchListeners = [...listeners.values()].map((listener) => ({
+        pid: listener.pid,
+        localPort: listener.port,
+      }));
       const observed: ServerInfo[] = [];
       let inspectionBudget = 12;
       for (const { pid, port, ipv6 } of listeners.values()) {
         const p = processes.get(pid);
-        const old = oldItems.find((i) => i.key === `${pid}:${port}`);
+        const old = oldByKey.get(`${pid}:${port}`);
         const prior =
-          old || this.previousRuns.find((i) => i.key === `${pid}:${port}`);
+          old || previousByKey.get(`${pid}:${port}`);
         let cached = this.inspections.get(pid);
         const nativeKnownBefore =
           !!cached?.identity || (!old && !!prior?.processStarted);
@@ -419,10 +424,7 @@ export class Scanner extends EventEmitter {
                 if (!application)
                   info.launch = await captureLaunchRecipe(
                     snapshot,
-                    [...listeners.values()].map((l) => ({
-                      pid: l.pid,
-                      localPort: l.port,
-                    })),
+                    launchListeners,
                     pid,
                     process.platform,
                     process.pid,
@@ -501,21 +503,21 @@ export class Scanner extends EventEmitter {
           cpuHistory: same ? [...(old?.cpuHistory || [])] : [],
           memoryHistory: same ? [...(old?.memoryHistory || [])] : [],
         };
-        if (item.discovery === "development")
-          try {
-            const usage = await pidusage(pid);
-            item.cpu = usage.cpu;
-            item.memory = usage.memory;
-            item.cpuHistory = [...item.cpuHistory!, usage.cpu].slice(-6);
-            item.memoryHistory = [...item.memoryHistory!, usage.memory].slice(
-              -6,
-            );
-          } catch {
-            /* Optional metrics must not turn an observation into a failure. */
-          }
         observed.push(
           this.decorate(item, cached?.evidence, cached?.associationKey),
         );
+      }
+      const metrics = await sampleProcessMetrics(
+        observed.filter((item) => item.discovery === "development").map((item) => item.pid),
+      );
+      for (const item of observed) {
+        if (item.discovery !== "development") continue;
+        const usage = metrics.get(item.pid);
+        if (!usage) continue;
+        item.cpu = usage.cpu;
+        item.memory = usage.memory;
+        item.cpuHistory = [...(item.cpuHistory || []), usage.cpu].slice(-6);
+        item.memoryHistory = [...(item.memoryHistory || []), usage.memory].slice(-6);
       }
       const unidentified = observed.filter(
         (item) => item.discovery === "unidentified",
@@ -536,12 +538,9 @@ export class Scanner extends EventEmitter {
         observed.filter((item) => !this.retiredDuringScan.has(item.key)),
         (item) => this.nativePresence.get(item.key) !== item.firstSeen,
       );
+      const currentInstances = new Map(result.items.map((item) => [item.key, item.firstSeen]));
       for (const [key, firstSeen] of this.nativePresence)
-        if (
-          !result.items.some(
-            (item) => item.key === key && item.firstSeen === firstSeen,
-          )
-        )
+        if (currentInstances.get(key) !== firstSeen)
           this.nativePresence.delete(key);
       this.hasObservation = true;
       this.previousRuns = [];

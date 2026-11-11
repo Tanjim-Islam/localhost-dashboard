@@ -1,17 +1,29 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "framer-motion";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-import TitleBar from "./components/TitleBar";
-import ServersTab from "./components/ServersTab";
+import TitleBarComponent from "./components/TitleBar";
+import ServersTabComponent from "./components/ServersTab";
 import type { HealthStatus as HealthResult } from "../types/preload";
 import type { ServerInfo } from "../shared/servers";
 import AHKCard from "./components/AHKCard";
 import AutomatorCard from "./components/AutomatorCard";
-import SettingsPanel from "./components/SettingsPanel";
-import UpdateNotification from "./components/UpdateNotification";
-import RecentScriptsDrawer from "./components/RecentScriptsDrawer";
-import EnvironmentKeysTab from "./components/EnvironmentKeysTab";
-import ClisTab from "./components/ClisTab";
+import SettingsPanelComponent from "./components/SettingsPanel";
+import UpdateNotificationComponent from "./components/UpdateNotification";
+import RecentScriptsDrawerComponent from "./components/RecentScriptsDrawer";
+import EnvironmentKeysTabComponent from "./components/EnvironmentKeysTab";
+import ClisTabComponent from "./components/ClisTab";
+
+// Scanner and health updates must not render unrelated settings or CLI rows.
+const TitleBar = memo(TitleBarComponent);
+const ServersTab = memo(ServersTabComponent);
+const SettingsPanel = memo(SettingsPanelComponent);
+const UpdateNotification = memo(UpdateNotificationComponent);
+const RecentScriptsDrawer = memo(RecentScriptsDrawerComponent);
+const EnvironmentKeysTab = memo(EnvironmentKeysTabComponent);
+const ClisTab = memo(ClisTabComponent);
+const refresh = () => window.api.refresh();
+const revealScript = (scriptPath: string) => window.api.openExplorer(scriptPath);
 
 dayjs.extend(relativeTime);
 
@@ -93,6 +105,16 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<any>(null);
   const [openSettings, setOpenSettings] = useState(false);
+  const showSettings = useCallback(() => setOpenSettings(true), []);
+  const closeSettings = useCallback(() => setOpenSettings(false), []);
+  const saveSettings = useCallback(async (s: Parameters<typeof window.api.updateSettings>[0]) => {
+    setSettings(await window.api.updateSettings(s));
+    setOpenSettings(false);
+  }, []);
+  const resetSettings = useCallback(async () => {
+    setSettings(await window.api.resetSettings());
+    setOpenSettings(false);
+  }, []);
   const [query, setQuery] = useState("");
   const [ahkHidden, setAHKHidden] = useState<Record<string, number>>({});
   const [automatorHidden, setAutomatorHidden] = useState<
@@ -100,6 +122,13 @@ export default function App() {
   >({});
   const [recentScripts, setRecentScripts] = useState<RecentScript[]>([]);
   const [recentOpen, setRecentOpen] = useState(false);
+  const closeRecent = useCallback(() => setRecentOpen(false), []);
+  const startRecent = useCallback(async (id: string) => {
+    setRecentScripts(await window.api.startRecentScript(id));
+  }, []);
+  const deleteRecent = useCallback(async (id: string) => {
+    setRecentScripts(await window.api.deleteRecentScript(id));
+  }, []);
   const [environmentKeyCount, setEnvironmentKeyCount] = useState(0);
   const [cliCount, setCliCount] = useState(0);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -183,7 +212,10 @@ export default function App() {
     }
   }, [supportedTabs, activeTab, meta]);
 
-  const filtered = items.filter(item => item.discovery === "development" && !item.ignored);
+  const filtered = useMemo(
+    () => items.filter(item => item.discovery === "development" && !item.ignored),
+    [items],
+  );
 
   const filteredAHK = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -249,8 +281,8 @@ export default function App() {
   return (
     <div className="app-shell flex h-screen w-screen flex-col bg-night text-gray-900 select-none">
       <TitleBar
-        onRefresh={() => window.api.refresh()}
-        onSettings={() => setOpenSettings(true)}
+        onRefresh={refresh}
+        onSettings={showSettings}
         search={query}
         onSearchChange={setQuery}
         searchPlaceholder={
@@ -339,11 +371,13 @@ export default function App() {
           </div>
         </div>
 
-        {activeTab === "servers" && <ServersTab items={items} health={healthResults} query={query} platform={platform} />}
+        <div className="grid items-start">
+        <AnimatePresence initial={false}>
+        {activeTab === "servers" && <TabSurface key="servers"><ServersTab items={items} health={healthResults} query={query} platform={platform} /></TabSurface>}
 
         {/* AHK Tab Content */}
         {activeTab === "ahk" && (
-          <>
+          <TabSurface key="ahk">
             {filteredAHK.length === 0 && (
               <div className="text-gray-600 text-center mt-20">
                 No AutoHotkey scripts running.
@@ -366,12 +400,12 @@ export default function App() {
                 />
               ))}
             </div>
-          </>
+          </TabSurface>
         )}
 
         {/* Automator Tab Content */}
         {activeTab === "automator" && (
-          <>
+          <TabSurface key="automator">
             {filteredAutomator.length === 0 && (
               <div className="text-gray-600 text-center mt-20">
                 No Automator scripts found.
@@ -394,8 +428,9 @@ export default function App() {
                 />
               ))}
             </div>
-          </>
+          </TabSurface>
         )}
+        </AnimatePresence>
 
         {platformFeatures.environmentKeys && (
           <EnvironmentKeysTab
@@ -412,23 +447,16 @@ export default function App() {
             onCountChange={setCliCount}
           />
         )}
+        </div>
       </div>
 
       <SettingsPanel
         open={openSettings}
-        onClose={() => setOpenSettings(false)}
+        onClose={closeSettings}
         settings={settings}
         platform={meta?.platform}
-        onSave={async (s) => {
-          const updated = await window.api.updateSettings(s);
-          setSettings(updated);
-          setOpenSettings(false);
-        }}
-        onReset={async () => {
-          const updated = await window.api.resetSettings();
-          setSettings(updated);
-          setOpenSettings(false);
-        }}
+        onSave={saveSettings}
+        onReset={resetSettings}
       />
 
       {/* Auto-update notification */}
@@ -438,18 +466,29 @@ export default function App() {
         open={recentOpen}
         scripts={recentScripts}
         label={automationTabLabel}
-        onClose={() => setRecentOpen(false)}
-        onStart={async (id) => {
-          const next = await window.api.startRecentScript(id);
-          setRecentScripts(next);
-        }}
-        onReveal={(scriptPath) => window.api.openExplorer(scriptPath)}
-        onDelete={async (id) => {
-          const next = await window.api.deleteRecentScript(id);
-          setRecentScripts(next);
-        }}
+        onClose={closeRecent}
+        onStart={startRecent}
+        onReveal={revealScript}
+        onDelete={deleteRecent}
       />
     </div>
+  );
+}
+
+function TabSurface({ children }: { children: React.ReactNode }) {
+  const present = useIsPresent();
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      className="min-w-0 [grid-area:1/1]"
+      inert={!present}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.18 }}
+    >
+      {children}
+    </motion.div>
   );
 }
 
