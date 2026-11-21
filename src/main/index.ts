@@ -40,6 +40,7 @@ import { ServerStopController } from "./projects/stop-controller";
 import { NativeProcessHost } from "./server-restart/native-host";
 import { readListeners } from "./server-restart/listeners";
 import type { ServerInfo } from "../shared/servers";
+import { hotkeyParts, isValidHotkey, sameHotkey } from "../shared/hotkey";
 import { getPlatformFeatures } from "./platform-features";
 import {
   deleteEnvironmentVariable,
@@ -87,6 +88,7 @@ let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let autolaunch: AutoLaunch | null = null;
 let currentGlobalHotkey: string | null = null;
+let recordingGlobalHotkey = false;
 let cliController: CliController | null = null;
 const serverResourceDir = packagedApplication ? path.join(process.resourcesPath, "server-restart") : path.join(app.getAppPath(), "resources/server-restart");
 const projectStore = createProjectStore();
@@ -279,129 +281,6 @@ async function startRecentScript(id: string) {
   }
 }
 
-const allowedHotkeyModifiers = new Set([
-  "commandorcontrol",
-  "command",
-  "control",
-  "ctrl",
-  "shift",
-  "alt",
-  "super",
-  "meta",
-]);
-
-const letterHotkeyKeys = Array.from({ length: 26 }, (_, i) =>
-  String.fromCharCode(65 + i),
-);
-const numberHotkeyKeys = Array.from({ length: 10 }, (_, i) => `${i}`);
-const functionHotkeyKeys = Array.from({ length: 24 }, (_, i) => `F${i + 1}`);
-const numpadHotkeyKeys = [
-  ...Array.from({ length: 10 }, (_, i) => `Num${i}`),
-  ...Array.from({ length: 10 }, (_, i) => `Numpad${i}`),
-  "NumpadAdd",
-  "NumpadSubtract",
-  "NumpadMultiply",
-  "NumpadDivide",
-  "NumpadDecimal",
-  "NumpadEnter",
-];
-const namedHotkeyKeys = [
-  "Space",
-  "Tab",
-  "Enter",
-  "Return",
-  "Escape",
-  "Esc",
-  "Backspace",
-  "Delete",
-  "Del",
-  "Insert",
-  "Home",
-  "End",
-  "PageUp",
-  "PageDown",
-  "Up",
-  "Down",
-  "Left",
-  "Right",
-  "CapsLock",
-  "NumLock",
-  "ScrollLock",
-  "PrintScreen",
-  "Pause",
-  "Break",
-  "VolumeUp",
-  "VolumeDown",
-  "VolumeMute",
-  "MediaNextTrack",
-  "MediaPreviousTrack",
-  "MediaStop",
-  "MediaPlayPause",
-];
-const punctuationHotkeyKeys = [
-  "Plus",
-  "Minus",
-  "Equals",
-  "Equal",
-  "Comma",
-  "Period",
-  "Slash",
-  "Backslash",
-  "Semicolon",
-  "Quote",
-  "Tilde",
-  ",",
-  ".",
-  "/",
-  "\\",
-  ";",
-  "'",
-  '"',
-  "`",
-  "~",
-  "-",
-  "=",
-  "[",
-  "]",
-];
-
-const allowedHotkeyKeys = new Set<string>(
-  [
-    ...letterHotkeyKeys,
-    ...numberHotkeyKeys,
-    ...functionHotkeyKeys,
-    ...numpadHotkeyKeys,
-    ...namedHotkeyKeys,
-    ...punctuationHotkeyKeys,
-  ].map((key) => key.toLowerCase()),
-);
-
-function splitHotkeyParts(hotkey: string): string[] {
-  return hotkey
-    .split("+")
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-function normalizeHotkey(hotkey: string): string {
-  return splitHotkeyParts(hotkey).join("+");
-}
-
-function isValidHotkey(hotkey: string): boolean {
-  const parts = splitHotkeyParts(hotkey);
-  if (parts.length < 2 || parts.length > 4) return false;
-  const keyPart = parts[parts.length - 1];
-  if (!keyPart) return false;
-  const modifierParts = parts.slice(0, -1);
-  const modifiersValid = modifierParts.every((mod) =>
-    allowedHotkeyModifiers.has(mod.toLowerCase()),
-  );
-  if (!modifiersValid) return false;
-  const keyPartNormalized = keyPart.toLowerCase();
-  if (allowedHotkeyModifiers.has(keyPartNormalized)) return false;
-  return allowedHotkeyKeys.has(keyPartNormalized);
-}
-
 function resolveResource(rel: string): string | null {
   const candidates = [
     path.join(process.resourcesPath || "", rel),
@@ -474,6 +353,7 @@ async function createWindow(showWhenReady = true) {
     },
   });
 
+  win.webContents.on("did-start-loading", () => { recordingGlobalHotkey = false; });
   win.on("ready-to-show", () => {
     if (showWhenReady) showDashboard();
   });
@@ -560,34 +440,30 @@ function setupShortcuts() {
   registerGlobalHotkey();
 }
 
-function registerGlobalHotkey(acceleratorOverride?: string) {
-  const acceleratorRaw =
-    acceleratorOverride || settings.get("globalHotkey") || "Ctrl+Shift+D";
-  if (!isValidHotkey(acceleratorRaw)) {
-    console.error("Skipping invalid global hotkey", acceleratorRaw);
-    return;
-  }
-  const accelerator = normalizeHotkey(acceleratorRaw);
-  // Unregister previous
-  if (currentGlobalHotkey) {
-    try {
-      globalShortcut.unregister(currentGlobalHotkey);
-    } catch {
-      // ignore
-    }
+function registerGlobalHotkey(shortcut = settings.get("globalHotkey")): boolean {
+  const accelerator = hotkeyParts(shortcut, process.platform).join("+");
+  if (!isValidHotkey(accelerator)) return false;
+  if (currentGlobalHotkey && sameHotkey(currentGlobalHotkey, accelerator, process.platform)) {
+    return true;
   }
   try {
-    globalShortcut.register(accelerator, () => {
+    const registered = globalShortcut.register(accelerator, () => {
       if (!win) return;
       if (win.isVisible() && win.isFocused()) {
-        hideDashboard();
+        // macOS delivers the active shortcut here before the renderer sees its final key.
+        if (recordingGlobalHotkey) win.webContents.send("settings:recorded-hotkey", accelerator);
+        else hideDashboard();
       } else {
         showDashboard();
       }
     });
+    if (!registered) return false;
+    if (currentGlobalHotkey) globalShortcut.unregister(currentGlobalHotkey);
     currentGlobalHotkey = accelerator;
+    return true;
   } catch (err) {
     console.error("Failed to register global hotkey", accelerator, err);
+    return false;
   }
 }
 
@@ -915,9 +791,23 @@ ipcMain.handle("environment:delete", (_evt, input: unknown) =>
 );
 ipcMain.handle("settings:get", () => settings.store);
 ipcMain.handle("stats:get", () => statsStore.store);
+ipcMain.on("settings:record-hotkey", (event, active: unknown) => {
+  if (win && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame) {
+    recordingGlobalHotkey = active === true;
+  }
+});
 ipcMain.handle("settings:update", async (_evt, incoming: any) => {
   // Type helper not available at runtime; trust payload shape from preload validation.
-  let hotkeyError: string | null = null;
+  if (typeof incoming.globalHotkey === "string") {
+    const accelerator = hotkeyParts(incoming.globalHotkey, process.platform).join("+");
+    if (!isValidHotkey(accelerator)) {
+      return { ...settings.store, error: "Choose a shortcut with a modifier and a final key." };
+    }
+    if (!registerGlobalHotkey(accelerator)) {
+      return { ...settings.store, error: "This shortcut is unavailable. Choose another combination." };
+    }
+    settings.set("globalHotkey", accelerator);
+  }
   if (typeof incoming.scanIntervalMs === "number")
     settings.set("scanIntervalMs", incoming.scanIntervalMs);
   if (typeof incoming.startAtLogin === "boolean")
@@ -938,20 +828,6 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
     settings.set("notifyOnStop", incoming.notifyOnStop);
   if (typeof incoming.closeToTray === "boolean")
     settings.set("closeToTray", incoming.closeToTray);
-  if (
-    typeof incoming.globalHotkey === "string" &&
-    incoming.globalHotkey.trim()
-  ) {
-    const trimmed = incoming.globalHotkey.trim();
-    if (!isValidHotkey(trimmed)) {
-      hotkeyError =
-        "Global hotkey must use 2-4 keys with valid modifiers and a final key.";
-    } else {
-      const normalizedHotkey = normalizeHotkey(trimmed);
-      settings.set("globalHotkey", normalizedHotkey);
-      registerGlobalHotkey(normalizedHotkey);
-    }
-  }
   scanner.start();
   ahkScanner?.start();
   automatorScanner?.start();
@@ -959,9 +835,6 @@ ipcMain.handle("settings:update", async (_evt, incoming: any) => {
     ...settings.store,
     portsText: portsToString(settings.get("ports")),
   };
-  if (hotkeyError) {
-    return { ...payload, error: hotkeyError };
-  }
   return payload;
 });
 

@@ -169,7 +169,8 @@ export interface Api {
 
   // settings
   getSettings(): Promise<RendererSettings>;
-  updateSettings(partial: Partial<RendererSettings>): Promise<RendererSettings>;
+  updateSettings(partial: Partial<RendererSettings>): Promise<RendererSettings & { error?: string }>;
+  onRecordGlobalHotkey(cb: (accelerator: string) => void): () => void;
   resetSettings(): Promise<RendererSettings>;
   onSettingsUpdate(cb: (s: RendererSettings) => void): () => void;
 

@@ -123,6 +123,15 @@ contextBridge.exposeInMainWorld("api", {
   openExplorer: (path: string) => ipcRenderer.send("app:open-explorer", path),
   // settings
   getSettings: () => ipcRenderer.invoke("settings:get"),
+  onRecordGlobalHotkey: (cb: (accelerator: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, accelerator: string) => cb(accelerator);
+    ipcRenderer.on("settings:recorded-hotkey", listener);
+    ipcRenderer.send("settings:record-hotkey", true);
+    return () => {
+      ipcRenderer.removeListener("settings:recorded-hotkey", listener);
+      ipcRenderer.send("settings:record-hotkey", false);
+    };
+  },
   updateSettings: (partial: any) =>
     ipcRenderer.invoke("settings:update", partial),
   resetSettings: () => ipcRenderer.invoke("settings:reset"),

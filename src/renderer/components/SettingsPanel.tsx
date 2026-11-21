@@ -4,6 +4,7 @@ import AppearanceSettings from "./AppearanceSettings";
 import { useThemePreferences } from "../theme/ThemeProvider";
 import type { UpdateStatus } from "../../types/preload";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { hotkeyParts, isValidHotkey, recordedAccelerator, sameHotkey } from "../../shared/hotkey";
 import { AnimatedOverlay } from "./AnimatedPresence";
 
 type Props = {
@@ -40,7 +41,8 @@ export default function SettingsPanel({
   const [globalHotkey, setGlobalHotkey] = useState("Ctrl+Shift+D");
   const [recording, setRecording] = useState(false);
   useEffect(() => { if (!open) setRecording(false); }, [open]);
-  const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
+  const [recordedHotkey, setRecordedHotkey] = useState("");
+  const [saving, setSaving] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle" });
   useEffect(() => {
@@ -50,9 +52,10 @@ export default function SettingsPanel({
   }, [open]);
   const supportsTrayStartup = platform === "darwin" || platform === "win32";
   const minimizedLocation = platform === "darwin" ? "background" : "tray";
-  const editedHotkey = recording && recordedKeys.length > 0
-    ? keysToAccelerator(recordedKeys) ?? ""
-    : globalHotkey;
+  const savedHotkey = settings?.globalHotkey || "Ctrl+Shift+D";
+  const editedHotkey = recording && recordedHotkey ? recordedHotkey : globalHotkey;
+  const hotkeyChanged = !sameHotkey(editedHotkey, savedHotkey, platform);
+  const canAcceptRecording = isValidHotkey(recordedHotkey) && !sameHotkey(recordedHotkey, globalHotkey, platform);
   const legacyNotifications = typeof settings?.notifications === "boolean"
     ? settings.notifications : true;
   const hasChanges = Boolean(settings) && (
@@ -62,15 +65,17 @@ export default function SettingsPanel({
     notifyOnStart !== (settings.notifyOnStart ?? legacyNotifications) ||
     notifyOnStop !== (settings.notifyOnStop ?? legacyNotifications) ||
     closeToTray !== (settings.closeToTray ?? true) ||
-    comparableHotkey(editedHotkey, platform) !== comparableHotkey(settings.globalHotkey || "Ctrl+Shift+D", platform) ||
+    hotkeyChanged ||
     preferences.mode !== appearanceBaseline.mode ||
     preferences.lightPalette !== appearanceBaseline.lightPalette ||
     preferences.darkPalette !== appearanceBaseline.darkPalette ||
     preferences.font !== appearanceBaseline.font
   );
 
+  const canSave = hasChanges && isValidHotkey(editedHotkey) && !saving;
+
   useEffect(() => {
-    if (settings) {
+    if (settings && open) {
       setScanIntervalMs(settings.scanIntervalMs ?? 5000);
       setStartAtLogin(Boolean(settings.startAtLogin));
       setOpenInTrayAtLogin(
@@ -98,28 +103,25 @@ export default function SettingsPanel({
           : true
       );
       setGlobalHotkey(settings.globalHotkey || "Ctrl+Shift+D");
-      setRecordedKeys([]);
+      setRecordedHotkey("");
       setHotkeyError(null);
     }
-  }, [settings]);
+  }, [settings, open]);
 
   useEffect(() => {
     if (!recording || !open) return;
-    const handler = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const key = normalizeKey(e);
-      if (!key) return;
-      setRecordedKeys((prev) => {
-        if (prev.length >= 4) return prev;
-        if (prev.includes(key)) return prev;
-        return [...prev, key];
-      });
+    const stopListening = window.api.onRecordGlobalHotkey(setRecordedHotkey);
+    const handler = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) setRecordedHotkey(recordedAccelerator(event, platform));
     };
     window.addEventListener("keydown", handler, { capture: true });
-    return () =>
+    return () => {
       window.removeEventListener("keydown", handler, { capture: true });
-  }, [recording, open]);
+      stopListening();
+    };
+  }, [recording, open, platform]);
 
   return (
     <AnimatePresence>
@@ -280,7 +282,7 @@ export default function SettingsPanel({
                       type="button"
                       onClick={() => {
                         setRecording(true);
-                        setRecordedKeys([]);
+                        setRecordedHotkey("");
                         setHotkeyError(null);
                       }}
                       className="rounded-full bg-gray-300 px-3 py-1.5 text-sm text-gray-900 hover:bg-gray-400"
@@ -293,7 +295,7 @@ export default function SettingsPanel({
                       <button
                         type="button"
                         onClick={() => {
-                          setRecordedKeys([]);
+                          setRecordedHotkey("");
                           setRecording(false);
                           setHotkeyError(null);
                         }}
@@ -304,19 +306,13 @@ export default function SettingsPanel({
                       <button
                         type="button"
                         onClick={() => {
-                          if (!isValidHotkey(recordedKeys)) {
-                            setHotkeyError("Shortcut must be 2-4 keys.");
-                            return;
-                          }
-                          const accel = keysToAccelerator(recordedKeys);
-                          if (!accel) return;
-                          setGlobalHotkey(accel);
+                          setGlobalHotkey(recordedHotkey);
                           setRecording(false);
                           setHotkeyError(null);
                         }}
-                        disabled={!isValidHotkey(recordedKeys)}
+                        disabled={!canAcceptRecording}
                         className={`rounded-full px-3 py-1.5 text-sm ${
-                          !isValidHotkey(recordedKeys)
+                          !canAcceptRecording
                             ? "cursor-not-allowed bg-gray-300 text-gray-600"
                             : "bg-night-700 text-night-100 hover:bg-night-800"
                         }`}
@@ -329,9 +325,8 @@ export default function SettingsPanel({
               </div>
               <div className="flex min-h-[36px] flex-wrap items-center gap-2">
                 {renderKeys(
-                  recording
-                    ? recordedKeys
-                    : parseAccelerator(globalHotkey || "Ctrl+Shift+D"),
+                  hotkeyParts(recording ? recordedHotkey : globalHotkey, platform),
+                  platform,
                 )}
                 {recording && (
                   <span className="flex items-center gap-1 text-xs text-danger-text animate-pulse">
@@ -340,9 +335,9 @@ export default function SettingsPanel({
                   </span>
                 )}
               </div>
-              {recording && recordedKeys.length === 0 && (
+              {recording && !recordedHotkey && (
                 <div className="mt-2 text-xs text-gray-700">
-                  Press 2-4 keys (e.g., Ctrl, Shift, D)
+                  Press a modifier and a key together.
                 </div>
               )}
               {hotkeyError && (
@@ -390,32 +385,29 @@ export default function SettingsPanel({
             </button>
             <button
               type="button"
-              disabled={!hasChanges}
-              onClick={() => {
-                if (!hasChanges) return;
-                const keysForSave = recording
-                  ? recordedKeys
-                  : parseAccelerator(globalHotkey);
-                if (!isValidHotkey(keysForSave)) {
-                  setHotkeyError("Shortcut must be 2-4 keys.");
-                  return;
-                }
-                const accel = keysToAccelerator(keysForSave);
-                if (!accel) return;
-                onSave({
-                  scanIntervalMs,
-                  startAtLogin,
-                  openInTrayAtLogin,
-                  notifyOnStart,
-                  notifyOnStop,
-                  closeToTray,
-                  globalHotkey: accel,
-                });
-                setRecording(false);
-                setGlobalHotkey(accel);
+              disabled={!canSave}
+              onClick={async () => {
+                if (!canSave) return;
+                setSaving(true);
                 setHotkeyError(null);
+                try {
+                  await onSave({
+                    scanIntervalMs,
+                    startAtLogin,
+                    openInTrayAtLogin,
+                    notifyOnStart,
+                    notifyOnStop,
+                    closeToTray,
+                    ...(hotkeyChanged ? { globalHotkey: editedHotkey } : {}),
+                  });
+                  setRecording(false);
+                } catch (error) {
+                  setHotkeyError(error instanceof Error ? error.message : "Could not save settings.");
+                } finally {
+                  setSaving(false);
+                }
               }}
-              className={`rounded-full px-3 py-1.5 transition-colors ${hasChanges
+              className={`rounded-full px-3 py-1.5 transition-colors ${canSave
                 ? "bg-night-700 text-night-100 hover:bg-night-800"
                 : "cursor-not-allowed bg-gray-300 text-gray-600"}`}
             >
@@ -428,62 +420,7 @@ export default function SettingsPanel({
   );
 }
 
-function comparableHotkey(accelerator: string, platform?: string): string {
-  return accelerator.split("+").map(key => {
-    const normalized = key.toLowerCase();
-    if (normalized === "ctrl" || normalized === "control") return "control";
-    if (normalized === "commandorcontrol") return platform === "darwin" ? "command" : "control";
-    if (normalized === "cmd") return "command";
-    if (normalized === "win" || normalized === "super") return "super";
-    return normalized;
-  }).sort().join("+");
-}
-
-
-function normalizeKey(e: KeyboardEvent): string | null {
-  const map: Record<string, string> = {
-    Control: "Ctrl",
-    Meta: "Super",
-    Alt: "Alt",
-    Shift: "Shift",
-    " ": "Space",
-    Escape: "Esc",
-    ArrowUp: "Up",
-    ArrowDown: "Down",
-    ArrowLeft: "Left",
-    ArrowRight: "Right",
-    Enter: "Enter",
-    Tab: "Tab",
-  };
-  const raw = e.key;
-  if (!raw) return null;
-  const name = raw.length === 1 ? raw.toUpperCase() : raw;
-  const resolved = map[name] || name;
-  if (resolved.toLowerCase() === "dead" || resolved === "Unidentified")
-    return null;
-  return resolved;
-}
-
-function keysToAccelerator(keys: string[]): string | null {
-  if (!keys.length) return null;
-  const mapped = keys.map((k) => {
-    if (k === "Ctrl") return "CommandOrControl";
-    if (k === "Super") return "Super";
-    return k;
-  });
-  return mapped.join("+");
-}
-
-function parseAccelerator(accel: string): string[] {
-  if (!accel) return [];
-  return accel.split("+").map((p) => {
-    if (p === "CommandOrControl") return "Ctrl";
-    if (p === "Super") return "Win";
-    return p;
-  });
-}
-
-function renderKeys(keys: string[]) {
+function renderKeys(keys: string[], platform?: string) {
   if (!keys.length) {
     return <span className="text-sm text-gray-700">No shortcut set</span>;
   }
@@ -492,12 +429,7 @@ function renderKeys(keys: string[]) {
       key={k}
       className="px-2.5 py-1 rounded-full bg-gray-300 text-gray-900 text-xs font-semibold shadow-sm border border-gray-400"
     >
-      {k}
+      {platform !== "darwin" && k === "Super" ? "Win" : k}
     </span>
   ));
-}
-
-function isValidHotkey(keys: string[]): boolean {
-  if (!keys) return false;
-  return keys.length >= 2 && keys.length <= 4;
 }

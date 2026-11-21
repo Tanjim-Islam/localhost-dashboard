@@ -325,10 +325,13 @@ export function resetToDefaults(): AppSettings {
   settings.set('scanAllPorts', next.scanAllPorts);
   settings.set('closeToTray', next.closeToTray);
   settings.set('globalHotkey', next.globalHotkey);
+  settings.set('__platformHotkeyDefaultsMigrated', true);
   return next;
 }
 
 export function applyPlatformSettingsDefaults() {
+  // Only migrate the old defaults once. These combinations are also valid user choices.
+  if (settings.get('__platformHotkeyDefaultsMigrated') === true) return;
   const currentHotkey = settings.get('globalHotkey');
   const defaultHotkey = getDefaultGlobalHotkey(process.platform);
   const legacyDefaults = new Set([
@@ -341,4 +344,5 @@ export function applyPlatformSettingsDefaults() {
   if (legacyDefaults.has(String(currentHotkey)) && currentHotkey !== defaultHotkey) {
     settings.set('globalHotkey', defaultHotkey);
   }
+  settings.set('__platformHotkeyDefaultsMigrated', true);
 }
