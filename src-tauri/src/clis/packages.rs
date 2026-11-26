@@ -1041,19 +1041,17 @@ pub(super) fn probe_plan(ep: &Endpoint, es: &[Endpoint], args: &[String]) -> Opt
             es,
             ep,
         )?
-    } else {
-        if cfg!(windows) && !["exe", "com"].contains(&ep.ext.as_str()) {
-            let target = Path::new(ep.data["shimTarget"].as_str()?);
-            if !target
-                .extension()
-                .is_some_and(|v| v.eq_ignore_ascii_case("exe") || v.eq_ignore_ascii_case("com"))
-            {
-                return None;
-            }
-            Plan::new(target, &[])
-        } else {
-            Plan::new(&ep.path, &[])
+    } else if cfg!(windows) && !["exe", "com"].contains(&ep.ext.as_str()) {
+        let target = Path::new(ep.data["shimTarget"].as_str()?);
+        if !target
+            .extension()
+            .is_some_and(|v| v.eq_ignore_ascii_case("exe") || v.eq_ignore_ascii_case("com"))
+        {
+            return None;
         }
+        Plan::new(target, &[])
+    } else {
+        Plan::new(&ep.path, &[])
     };
     p.args.extend_from_slice(args);
     Some(p)

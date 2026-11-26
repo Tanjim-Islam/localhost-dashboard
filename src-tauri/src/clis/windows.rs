@@ -276,7 +276,7 @@ fn version_info(p: &Path) -> VersionInfo {
         let address = pointer as usize;
         if n == 0
             || n > 512
-            || address % 2 != 0
+            || !pointer.cast::<u16>().is_aligned()
             || address < base
             || address - base > len as usize
             || n * 2 > len as usize - (address - base)

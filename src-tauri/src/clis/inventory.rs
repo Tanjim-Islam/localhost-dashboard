@@ -190,16 +190,15 @@ fn group(es: &mut Vec<Endpoint>, packages: Vec<Package>, env: &Environment) -> V
                         && e.canonical
                             .parent()
                             .is_some_and(|d| d == prefix.join("shims"))
-                    {
-                        if read_text(&e.path.with_extension("shim"), 8192).is_some_and(|s| {
+                        && read_text(&e.path.with_extension("shim"), 8192).is_some_and(|s| {
                             s.lines().any(|line| {
                                 line.trim().strip_prefix("path = ").is_some_and(|v| {
                                     normal(&real(Path::new(v.trim_matches('"')))) == normal(&target)
                                 })
                             })
-                        }) {
-                            matches.push(ei);
-                        }
+                        })
+                    {
+                        matches.push(ei);
                     }
                 }
                 for i in matches {

@@ -405,14 +405,15 @@ pub(super) fn inspect(
     if link.is_dir() {
         return None;
     }
-    let catalog = by_command(name).is_some();
-    if cfg!(windows)
-        && !declared
-        && !catalog
-        && !matches!(ext.as_str(), "cmd" | "bat" | "ps1")
-        && !(ext == "exe" && console_pe(path))
-    {
-        return None;
+    if cfg!(windows) && !declared && by_command(name).is_none() {
+        let admitted = match ext.as_str() {
+            "cmd" | "bat" | "ps1" => true,
+            "exe" => console_pe(path),
+            _ => false,
+        };
+        if !admitted {
+            return None;
+        }
     }
     let meta = if link.is_symlink() {
         fs::metadata(path).ok()
@@ -436,10 +437,8 @@ pub(super) fn inspect(
     } else {
         "native"
     };
-    if cfg!(windows) {
-        if alias && !declared && name != "winget" {
-            return None;
-        }
+    if alias && !declared && name != "winget" {
+        return None;
     }
     #[cfg(unix)]
     let executable = {
