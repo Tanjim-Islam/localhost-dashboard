@@ -9,6 +9,7 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { checkShellOpen } from "./desktop-shell-open.mjs";
+import { checkInstalledAhk } from "./desktop-ahk.mjs";
 
 assert.equal(
   process.platform,
@@ -209,6 +210,7 @@ try {
   pass("Title-bar buttons and double-click update native window state");
   if (hosted) {
     await osActions();
+    await checkInstalledAhk({ dir, page, invoke, until, windows, pass });
     await checkShellOpen({ dir, observer, invoke, until });
   } else {
     await invoke("updateSettings", { closeToTray: true });

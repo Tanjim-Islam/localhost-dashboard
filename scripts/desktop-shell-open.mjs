@@ -4,6 +4,30 @@ import { once } from "node:events";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+export function inspectShell(dir, action, target) {
+  const powershell = path.join(
+    process.env.SystemRoot,
+    "System32/WindowsPowerShell/v1.0/powershell.exe",
+  );
+  return execFileSync(
+    powershell,
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-File",
+      path.resolve("scripts/desktop-shell-open.ps1"),
+      "-Action",
+      action,
+      "-FixtureDirectory",
+      dir,
+      "-File",
+      target,
+    ],
+    { windowsHide: true, encoding: "utf8" },
+  ).trim();
+}
+
 export async function checkShellOpen({ dir, observer, invoke, until }) {
   assert(
     process.env.GITHUB_ACTIONS === "true" &&
@@ -31,28 +55,7 @@ export async function checkShellOpen({ dir, observer, invoke, until }) {
       'app.listen(0,"127.0.0.1",()=>console.log(app.address().port));',
     ].join("\n"),
   );
-  const powershell = path.join(
-    process.env.SystemRoot,
-    "System32/WindowsPowerShell/v1.0/powershell.exe",
-  );
-  const shell = (action, target) =>
-    execFileSync(
-      powershell,
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-File",
-        path.resolve("scripts/desktop-shell-open.ps1"),
-        "-Action",
-        action,
-        "-FixtureDirectory",
-        dir,
-        "-File",
-        target,
-      ],
-      { windowsHide: true, encoding: "utf8" },
-    ).trim();
+  const shell = (action, target) => inspectShell(dir, action, target);
   const server = spawn(process.execPath, [script], {
     cwd: fixture,
     windowsHide: true,
@@ -68,6 +71,13 @@ export async function checkShellOpen({ dir, observer, invoke, until }) {
           (s) => s.pid === server.pid && s.port === port && s.projectId,
         ),
       "fixture project",
+    );
+    const project = (await invoke("getProjects")).projects.find(
+      (p) => p.id === service.projectId,
+    );
+    assert.equal(
+      await fs.realpath(project.directory),
+      await fs.realpath(fixture),
     );
     await invoke("openExplorer", sample);
     await until(
@@ -87,7 +97,7 @@ export async function checkShellOpen({ dir, observer, invoke, until }) {
     console.log("PASS", "System browser opened a discovered local service");
     try {
       shell("install-handler", observer);
-      await invoke("openInVSCode", { path: fixture });
+      await invoke("openInVSCode", { path: project.directory });
       const value = await until(
         () =>
           fs
@@ -99,8 +109,8 @@ export async function checkShellOpen({ dir, observer, invoke, until }) {
       assert.equal(url.protocol, "vscode:");
       assert.equal(url.host, "file");
       assert.equal(
-        decodeURIComponent(url.pathname.slice(1)).toLowerCase(),
-        fixture.replaceAll("\\", "/").toLowerCase(),
+        await fs.realpath(decodeURIComponent(url.pathname.slice(1))),
+        await fs.realpath(fixture),
       );
       console.log(
         "PASS",

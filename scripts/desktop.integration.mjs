@@ -11,7 +11,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import { chromium } from "playwright-core";
 import { checkServerScreen } from "./desktop-servers.mjs";
+import { checkCliActions } from "./desktop-clis.mjs";
 import { checkMigration } from "./desktop-migration.mjs";
+import { checkAhkScreen } from "./desktop-ahk.mjs";
 
 if (process.platform !== "win32")
   throw new Error("This WebView2 integration suite requires Windows.");
@@ -259,6 +261,7 @@ try {
   pass(
     "CLI scan, progress, partial source, cancellation, cache integrity and uninstall rejection",
   );
+  const cliRevision = await checkCliActions({ root, page, api, pass, inventory });
   const bounded = await api("getProjects");
   for (const key of ["projects", "activity", "recentlyStopped", "legacyNotes"])
     assert(Array.isArray(bounded[key]));
@@ -269,6 +272,7 @@ try {
   await assert.rejects(api("restartServer", { key: "0:0", firstSeen: 1 }));
   pass("Server, project and port-stat contracts and invalid action rejection");
 
+  await checkAhkScreen({ root, page, api, until, pass });
   const project = await checkServerScreen({ root, page, api, until });
   pass(
     "Project editor, activity, ignored protection, hidden selection, Stop Selected and Start in the drawer",
@@ -276,7 +280,7 @@ try {
   await button(/^CLIs/).click();
   await closeApp();
   await launch();
-  assert.equal((await api("getCliInventory")).revision, inventory.revision);
+  assert.equal((await api("getCliInventory")).revision, cliRevision);
   assert.equal((await api("getSettings")).scanIntervalMs, 2200);
   assert(
     (await api("getProjects")).projects.some(

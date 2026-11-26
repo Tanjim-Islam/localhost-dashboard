@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory)][ValidateSet('install-handler','remove-handler','selected-file')][string]$Action,
+  [Parameter(Mandatory)][ValidateSet('install-handler','remove-handler','selected-file','edited-file','toast-setting','toast-started','toast-stopped')][string]$Action,
   [Parameter(Mandatory)][string]$FixtureDirectory,
   [Parameter(Mandatory)][string]$File
 )
@@ -33,13 +33,34 @@ if ($Action -eq 'install-handler') {
     $handler.Dispose()
     if ($ours) { $registry.DeleteSubKeyTree($key) }
   }
+} elseif ($Action -like 'toast-*') {
+  $manager = [Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime]
+  $appId = 'com.localdashboard.app'
+  if ($Action -eq 'toast-setting') {
+    Write-Output ($manager::CreateToastNotifier($appId).Setting.ToString())
+    return
+  }
+  $title = if ($Action -eq 'toast-started') { 'AHK Script Started' } else { 'AHK Script Stopped' }
+  foreach ($toast in $manager::History.GetHistory($appId)) {
+    $xml = [xml]$toast.Content.GetXml()
+    $values = @($xml.GetElementsByTagName('text') | ForEach-Object InnerText)
+    if ($values -contains $title -and $values -contains [IO.Path]::GetFileName($target)) { Write-Output 'delivered'; return }
+  }
 } else {
+  if ($Action -eq 'edited-file') {
+    $fileName = [IO.Path]::GetFileName($target)
+    foreach ($editor in [Diagnostics.Process]::GetProcessesByName('Code')) {
+      if ($editor.MainWindowTitle.Contains($fileName)) { Write-Output 'editor'; return }
+    }
+  }
   $shell = New-Object -ComObject Shell.Application
+  $explorerFolder = $shell.NameSpace([IO.Path]::GetDirectoryName($target))
+  $explorerPath = $explorerFolder.ParseName([IO.Path]::GetFileName($target)).Path
   foreach ($window in $shell.Windows()) {
     if ([IO.Path]::GetFileName($window.FullName) -ine 'explorer.exe') { continue }
-    if ($window.Document.Folder.Self.Path -ine [IO.Path]::GetDirectoryName($target)) { continue }
+    if ($window.Document.Folder.Self.Path -ine [IO.Path]::GetDirectoryName($explorerPath)) { continue }
     foreach ($selection in $window.Document.SelectedItems()) {
-      if ($selection.Path -eq $target) { Write-Output 'selected'; return }
+      if ($selection.Path -eq $explorerPath) { Write-Output 'selected'; return }
     }
   }
 }
