@@ -28,6 +28,8 @@ internal static class DashboardShellCheck {
     [DllImport("user32")] static extern bool SetProcessDPIAware();
     [DllImport("user32")] static extern bool GetCursorPos(out Point p);
     [DllImport("user32",CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string cls,string title);
+    [DllImport("user32",CharSet=CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls,string title);
+    [DllImport("user32")] static extern IntPtr SendMessageTimeout(IntPtr h,uint msg,IntPtr w,IntPtr l,uint flags,uint timeout,out IntPtr result);
     [DllImport("shell32")] static extern int Shell_NotifyIconGetRect(ref TrayIdentifier item,out Rect rect);
     [DllImport("user32")] static extern bool SetCursorPos(int x,int y);
     [DllImport("user32")] static extern bool ClientToScreen(IntPtr h, ref Point p);
@@ -54,6 +56,20 @@ internal static class DashboardShellCheck {
     }
 
     static bool HasTaskbar() { return FindWindow("Shell_TrayWnd",null)!=IntPtr.Zero; }
+
+    static void OpenTrayOverflow() {
+        if(!Hosted) return;
+        var visibleOverflow=FindWindow("NotifyIconOverflowWindow",null);
+        if(visibleOverflow!=IntPtr.Zero && IsWindowVisible(visibleOverflow)) return;
+        var taskbar=FindWindow("Shell_TrayWnd",null);
+        var area=FindWindowEx(taskbar,IntPtr.Zero,"TrayNotifyWnd",null);
+        if(area==IntPtr.Zero) return;
+        var chevron=FindWindowEx(area,IntPtr.Zero,"Button",null);
+        if(chevron==IntPtr.Zero) return;
+        IntPtr result;
+        // Expose the hidden notification icons as a user would on Windows Server.
+        SendMessageTimeout(chevron,0x00F5,IntPtr.Zero,IntPtr.Zero,2,1000,out result);
+    }
 
     static void PrepareDesktop() {
         Point p;
@@ -117,7 +133,7 @@ internal static class DashboardShellCheck {
                     Console.WriteLine("unavailable: taskbar="+HasTaskbar()+" cursor="+GetCursorPos(out cursor));
                     return 0;
                 }
-                bool found=false, sent=false; uint fixture=uint.Parse(args[0]);
+                bool found=false, sent=false; int firstResult=0; uint fixture=uint.Parse(args[0]);
                 EnumWindows((handle,data)=>{
                     uint id; GetWindowThreadProcessId(handle,out id);
                     if(id!=fixture) return true;
@@ -128,7 +144,9 @@ internal static class DashboardShellCheck {
                     Rect rect;
                     for(uint iconId=1;iconId<8;iconId++){
                         item.id=iconId;
-                        if(Shell_NotifyIconGetRect(ref item,out rect)==0) {
+                        int result=Shell_NotifyIconGetRect(ref item,out rect);
+                        if(iconId==1) firstResult=result;
+                        if(result==0) {
                             sent=PostMessage(handle,6002,new IntPtr(iconId),new IntPtr(0x202));
                             break;
                         }
@@ -136,7 +154,8 @@ internal static class DashboardShellCheck {
                     return false;
                 },IntPtr.Zero);
                 if(!found) throw new Exception("Fixture tray window not found.");
-                Console.WriteLine(sent ? "sent" : "Windows has not exposed a rectangle for the fixture tray icon");
+                if(!sent) OpenTrayOverflow();
+                Console.WriteLine(sent ? "sent" : "Shell_NotifyIconGetRect returned 0x"+firstResult.ToString("X8"));
                 return 0;
             }
             if(!Hosted) throw new Exception("Desktop-wide input requires a disposable Windows runner.");

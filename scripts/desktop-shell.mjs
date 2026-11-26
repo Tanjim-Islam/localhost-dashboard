@@ -279,8 +279,11 @@ try {
     assert.equal(app.exitCode, null);
     pass("Close-to-tray hid the native window and kept its process alive");
     await exercise("Native notification-area restoration", async () => {
+      let lastStatus;
       const delivered = await until(() => {
         const result = windows("tray-callback");
+        if (result !== lastStatus && result !== "sent") console.log("Windows tray:", result);
+        lastStatus = result;
         return result === "sent" || result.startsWith("unavailable:")
           ? result
           : false;
