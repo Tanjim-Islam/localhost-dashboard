@@ -553,7 +553,10 @@ fn windows_terminal_uses_literal_project_folder_and_system_processes_stay_protec
     table.refresh();
     assert!(launch::protected(&table, &terminal.0, &HashMap::new()));
     let ctx = table.context(&terminal.0).unwrap();
-    assert_eq!(project::path_key(&ctx.cwd), project::path_key(&folder));
+    assert_eq!(
+        ctx.cwd.canonicalize().unwrap(),
+        folder.canonicalize().unwrap()
+    );
     assert_eq!(&ctx.argv[1..], &["/d", "/k"].map(OsString::from));
     let pid = terminal.0.pid;
     drop(terminal);
