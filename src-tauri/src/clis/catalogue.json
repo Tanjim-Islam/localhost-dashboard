@@ -1,0 +1,2040 @@
+[
+  {
+    "id": "codex",
+    "displayName": "OpenAI Codex CLI",
+    "category": "ai-coding",
+    "commands": [
+      "codex"
+    ],
+    "packages": {
+      "npm": [
+        "@openai/codex"
+      ],
+      "winget": [
+        "OpenAI.Codex"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "codex",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "claude-code",
+    "displayName": "Claude Code",
+    "category": "ai-coding",
+    "commands": [
+      "claude"
+    ],
+    "packages": {
+      "npm": [
+        "@anthropic-ai/claude-code"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "claude",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "opencode",
+    "displayName": "OpenCode",
+    "category": "ai-coding",
+    "commands": [
+      "opencode"
+    ],
+    "packages": {
+      "npm": [
+        "opencode-ai"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "opencode",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "gemini-cli",
+    "displayName": "Gemini CLI",
+    "category": "ai-coding",
+    "commands": [
+      "gemini"
+    ],
+    "packages": {
+      "npm": [
+        "@google/gemini-cli"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "gemini",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "qwen-code",
+    "displayName": "Qwen Code",
+    "category": "ai-coding",
+    "commands": [
+      "qwen"
+    ],
+    "packages": {
+      "npm": [
+        "@qwen-code/qwen-code"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "qwen",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "github-copilot",
+    "displayName": "GitHub Copilot CLI",
+    "category": "ai-coding",
+    "commands": [
+      "copilot",
+      "github-copilot-cli"
+    ],
+    "packages": {
+      "npm": [
+        "@github/copilot",
+        "@githubnext/github-copilot-cli"
+      ],
+      "winget": [
+        "GitHub.Copilot"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "copilot",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "factory",
+    "displayName": "Factory CLI",
+    "category": "ai-coding",
+    "commands": [
+      "droid",
+      "factory"
+    ],
+    "packages": {
+      "npm": [
+        "@factory-ai/cli"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "droid",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "amp",
+    "displayName": "Amp",
+    "category": "ai-coding",
+    "commands": [
+      "amp"
+    ],
+    "packages": {
+      "npm": [
+        "@sourcegraph/amp"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "amp",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "node",
+    "displayName": "Node.js",
+    "category": "runtime",
+    "commands": [
+      "node"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "node",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "python",
+    "displayName": "Python",
+    "category": "runtime",
+    "commands": [
+      "python",
+      "python3",
+      "py"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "python",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "python-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "java",
+    "displayName": "Java",
+    "category": "runtime",
+    "commands": [
+      "java"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "java",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "go",
+    "displayName": "Go",
+    "category": "runtime",
+    "commands": [
+      "go"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "go",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "rustc",
+    "displayName": "Rust",
+    "category": "runtime",
+    "commands": [
+      "rustc"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "rustc",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "dotnet",
+    "displayName": ".NET",
+    "category": "runtime",
+    "commands": [
+      "dotnet"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "dotnet",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    },
+    "incompleteProbe": {
+      "commandName": "dotnet",
+      "args": [
+        "--list-sdks"
+      ],
+      "emptyMeansIncomplete": true
+    }
+  },
+  {
+    "id": "php",
+    "displayName": "PHP",
+    "category": "runtime",
+    "commands": [
+      "php"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "php",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "ruby",
+    "displayName": "Ruby",
+    "category": "runtime",
+    "commands": [
+      "ruby"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "ruby",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "perl",
+    "displayName": "Perl",
+    "category": "runtime",
+    "commands": [
+      "perl"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "perl",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "deno",
+    "displayName": "Deno",
+    "category": "runtime",
+    "commands": [
+      "deno"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "packages": {},
+    "versionProbe": {
+      "commandName": "deno",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "bun",
+    "displayName": "Bun",
+    "category": "runtime",
+    "commands": [
+      "bun"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "packages": {
+      "winget": [
+        "Oven-sh.Bun"
+      ],
+      "homebrew-formula": [
+        "bun"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "bun",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "npm",
+    "displayName": "npm",
+    "category": "package-manager",
+    "commands": [
+      "npm"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "npm",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "npx",
+    "displayName": "npx",
+    "category": "package-manager",
+    "commands": [
+      "npx"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true
+  },
+  {
+    "id": "pnpm",
+    "displayName": "pnpm",
+    "category": "package-manager",
+    "commands": [
+      "pnpm"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "pnpm",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    },
+    "preferVersionProbe": true,
+    "alwaysProbeVersion": true
+  },
+  {
+    "id": "yarn",
+    "displayName": "Yarn",
+    "category": "package-manager",
+    "commands": [
+      "yarn"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "yarn",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "pip",
+    "displayName": "pip",
+    "category": "package-manager",
+    "commands": [
+      "pip",
+      "pip3"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "pip",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "pipx",
+    "displayName": "pipx",
+    "category": "package-manager",
+    "commands": [
+      "pipx"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "pipx",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "uv",
+    "displayName": "uv",
+    "category": "package-manager",
+    "commands": [
+      "uv",
+      "uvx"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "versionProbe": {
+      "commandName": "uv",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "poetry",
+    "displayName": "Poetry",
+    "category": "package-manager",
+    "commands": [
+      "poetry"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "versionProbe": {
+      "commandName": "poetry",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "cargo",
+    "displayName": "Cargo",
+    "category": "package-manager",
+    "commands": [
+      "cargo"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "cargo",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "rustup",
+    "displayName": "Rustup",
+    "category": "package-manager",
+    "commands": [
+      "rustup"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "rustup",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "composer",
+    "displayName": "Composer",
+    "category": "package-manager",
+    "commands": [
+      "composer"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "versionProbe": {
+      "commandName": "composer",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "corepack",
+    "displayName": "Corepack",
+    "category": "package-manager",
+    "commands": [
+      "corepack"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "corepack",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "nvm",
+    "displayName": "NVM",
+    "category": "package-manager",
+    "commands": [
+      "nvm"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true
+  },
+  {
+    "id": "winget",
+    "displayName": "Winget",
+    "category": "package-manager",
+    "commands": [
+      "winget"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "winget",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "chocolatey",
+    "displayName": "Chocolatey",
+    "category": "package-manager",
+    "commands": [
+      "choco"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "choco",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "scoop",
+    "displayName": "Scoop",
+    "category": "package-manager",
+    "commands": [
+      "scoop"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "scoop",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "homebrew",
+    "displayName": "Homebrew",
+    "category": "package-manager",
+    "commands": [
+      "brew"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "brew",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "macports",
+    "displayName": "MacPorts",
+    "category": "package-manager",
+    "commands": [
+      "port"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "port",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "maven",
+    "displayName": "Maven",
+    "category": "build-tool",
+    "commands": [
+      "mvn"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "mvn",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "gradle",
+    "displayName": "Gradle",
+    "category": "build-tool",
+    "commands": [
+      "gradle"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "gradle",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "cmake",
+    "displayName": "CMake",
+    "category": "build-tool",
+    "commands": [
+      "cmake"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "cmake",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "ninja",
+    "displayName": "Ninja",
+    "category": "build-tool",
+    "commands": [
+      "ninja"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "ninja",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "make",
+    "displayName": "Make",
+    "category": "build-tool",
+    "commands": [
+      "make"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "make",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "gcc",
+    "displayName": "GCC",
+    "category": "build-tool",
+    "commands": [
+      "gcc"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "gcc",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "clang",
+    "displayName": "Clang",
+    "category": "build-tool",
+    "commands": [
+      "clang"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "clang",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "msbuild",
+    "displayName": "MSBuild",
+    "category": "build-tool",
+    "commands": [
+      "msbuild"
+    ],
+    "platforms": [
+      "win32"
+    ],
+    "versionProbe": {
+      "commandName": "msbuild",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "aws",
+    "displayName": "AWS CLI",
+    "category": "cloud",
+    "commands": [
+      "aws"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "aws",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "azure",
+    "displayName": "Azure CLI",
+    "category": "cloud",
+    "commands": [
+      "az"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "az",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "gcloud",
+    "displayName": "Google Cloud CLI",
+    "category": "cloud",
+    "commands": [
+      "gcloud"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "registry": [
+        "Google Cloud SDK"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "gcloud",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    },
+    "aliases": [
+      "Google Cloud SDK"
+    ]
+  },
+  {
+    "id": "supabase",
+    "displayName": "Supabase CLI",
+    "category": "cloud",
+    "commands": [
+      "supabase"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "supabase"
+      ],
+      "homebrew-formula": [
+        "supabase/tap/supabase"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "supabase",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "vercel",
+    "displayName": "Vercel CLI",
+    "category": "cloud",
+    "commands": [
+      "vercel"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "vercel"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "vercel",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "netlify",
+    "displayName": "Netlify CLI",
+    "category": "cloud",
+    "commands": [
+      "netlify"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "netlify-cli"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "netlify",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "railway",
+    "displayName": "Railway CLI",
+    "category": "cloud",
+    "commands": [
+      "railway"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "@railway/cli"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "railway",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "render",
+    "displayName": "Render CLI",
+    "category": "cloud",
+    "commands": [
+      "render"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "render",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "fly",
+    "displayName": "Fly.io CLI",
+    "category": "cloud",
+    "commands": [
+      "flyctl"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "flyctl",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "heroku",
+    "displayName": "Heroku CLI",
+    "category": "cloud",
+    "commands": [
+      "heroku"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "heroku",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "firebase",
+    "displayName": "Firebase CLI",
+    "category": "cloud",
+    "commands": [
+      "firebase"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "firebase-tools"
+      ]
+    }
+  },
+  {
+    "id": "wrangler",
+    "displayName": "Cloudflare Wrangler",
+    "category": "cloud",
+    "commands": [
+      "wrangler"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "wrangler"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "wrangler",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "terraform",
+    "displayName": "Terraform",
+    "category": "cloud",
+    "commands": [
+      "terraform"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "terraform",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "pulumi",
+    "displayName": "Pulumi",
+    "category": "cloud",
+    "commands": [
+      "pulumi"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "pulumi",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "docker",
+    "displayName": "Docker",
+    "category": "infrastructure",
+    "commands": [
+      "docker"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "packages": {
+      "registry": [
+        "Docker Desktop"
+      ],
+      "winget": [
+        "Docker.DockerDesktop"
+      ]
+    },
+    "preferVersionProbe": true,
+    "versionProbe": {
+      "commandName": "docker",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "docker-compose",
+    "displayName": "Docker Compose",
+    "category": "infrastructure",
+    "commands": [
+      "docker-compose"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "preferVersionProbe": false,
+    "versionProbe": {
+      "commandName": "docker-compose",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "kubectl",
+    "displayName": "kubectl",
+    "category": "infrastructure",
+    "commands": [
+      "kubectl"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "preferVersionProbe": false,
+    "versionProbe": {
+      "commandName": "kubectl",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "helm",
+    "displayName": "Helm",
+    "category": "infrastructure",
+    "commands": [
+      "helm"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "preferVersionProbe": false,
+    "versionProbe": {
+      "commandName": "helm",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "minikube",
+    "displayName": "Minikube",
+    "category": "infrastructure",
+    "commands": [
+      "minikube"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "preferVersionProbe": false,
+    "versionProbe": {
+      "commandName": "minikube",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "kind",
+    "displayName": "Kind",
+    "category": "infrastructure",
+    "commands": [
+      "kind"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "preferVersionProbe": false,
+    "versionProbe": {
+      "commandName": "kind",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "podman",
+    "displayName": "Podman",
+    "category": "infrastructure",
+    "commands": [
+      "podman"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "preferVersionProbe": false,
+    "versionProbe": {
+      "commandName": "podman",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "postgresql",
+    "displayName": "PostgreSQL Tools",
+    "category": "database",
+    "commands": [
+      "psql",
+      "pg_dump",
+      "pg_restore"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "psql",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "mongodb",
+    "displayName": "MongoDB Tools",
+    "category": "database",
+    "commands": [
+      "mongosh",
+      "mongo",
+      "mongod"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "mongosh",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "atlas",
+    "displayName": "MongoDB Atlas CLI",
+    "category": "database",
+    "commands": [
+      "atlas"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "atlas",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "prisma",
+    "displayName": "Prisma CLI",
+    "category": "database",
+    "commands": [
+      "prisma"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "prisma",
+        "@prisma/cli"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "prisma",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "neon",
+    "displayName": "Neon CLI",
+    "category": "database",
+    "commands": [
+      "neonctl"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "neonctl"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "neonctl",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "planetscale",
+    "displayName": "PlanetScale CLI",
+    "category": "database",
+    "commands": [
+      "pscale"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "pscale",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "turso",
+    "displayName": "Turso CLI",
+    "category": "database",
+    "commands": [
+      "turso"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "turso",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "redis",
+    "displayName": "Redis CLI",
+    "category": "database",
+    "commands": [
+      "redis-cli"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "redis-cli",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "sqlite",
+    "displayName": "SQLite",
+    "category": "database",
+    "commands": [
+      "sqlite3"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "sqlite3",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "stripe",
+    "displayName": "Stripe CLI",
+    "category": "database",
+    "commands": [
+      "stripe"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "versionProbe": {
+      "commandName": "stripe",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "sanity",
+    "displayName": "Sanity CLI",
+    "category": "database",
+    "commands": [
+      "sanity"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "@sanity/cli"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "sanity",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "shopify",
+    "displayName": "Shopify CLI",
+    "category": "database",
+    "commands": [
+      "shopify"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "packages": {
+      "npm": [
+        "@shopify/cli"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "shopify",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "git",
+    "displayName": "Git",
+    "category": "developer-tool",
+    "commands": [
+      "git"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "git",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "github",
+    "displayName": "GitHub CLI",
+    "category": "developer-tool",
+    "commands": [
+      "gh"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "versionProbe": {
+      "commandName": "gh",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "android-platform-tools",
+    "displayName": "Android Platform Tools",
+    "category": "developer-tool",
+    "commands": [
+      "adb",
+      "fastboot"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "versionProbe": {
+      "commandName": "adb",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "eas",
+    "displayName": "EAS CLI",
+    "category": "developer-tool",
+    "commands": [
+      "eas"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "packages": {
+      "npm": [
+        "eas-cli"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "eas",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "ngrok",
+    "displayName": "ngrok",
+    "category": "developer-tool",
+    "commands": [
+      "ngrok"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "versionProbe": {
+      "commandName": "ngrok",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "fd",
+    "displayName": "fd",
+    "category": "developer-tool",
+    "commands": [
+      "fd",
+      "fdfind"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "versionProbe": {
+      "commandName": "fd",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "ripgrep",
+    "displayName": "ripgrep",
+    "category": "developer-tool",
+    "commands": [
+      "rg"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "versionProbe": {
+      "commandName": "rg",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "ast-grep",
+    "displayName": "ast-grep",
+    "category": "developer-tool",
+    "commands": [
+      "ast-grep",
+      "sg"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "packages": {
+      "npm": [
+        "@ast-grep/cli"
+      ]
+    },
+    "versionProbe": {
+      "commandName": "ast-grep",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "wget",
+    "displayName": "Wget",
+    "category": "developer-tool",
+    "commands": [
+      "wget"
+    ],
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "foundational": false,
+    "versionProbe": {
+      "commandName": "wget",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "which",
+    "displayName": "Which",
+    "category": "developer-tool",
+    "commands": [
+      "which"
+    ]
+  },
+  {
+    "id": "powershell",
+    "displayName": "PowerShell",
+    "category": "runtime",
+    "commands": [
+      "pwsh"
+    ],
+    "foundational": true,
+    "versionProbe": {
+      "commandName": "pwsh",
+      "args": [
+        "--version"
+      ],
+      "timeoutMs": 3000,
+      "parser": "first-version",
+      "safe": true
+    }
+  },
+  {
+    "id": "powertoys-cli",
+    "displayName": "PowerToys command-line tools",
+    "category": "developer-tool",
+    "platforms": [
+      "win32"
+    ],
+    "applicationCli": true,
+    "commands": [
+      "fancyzonescli",
+      "filelocksmithcli",
+      "powertoys.dsc"
+    ]
+  },
+  {
+    "id": "bcu-console",
+    "displayName": "BCUninstaller console",
+    "category": "developer-tool",
+    "platforms": [
+      "win32"
+    ],
+    "applicationCli": true,
+    "commands": [
+      "bcu-console"
+    ]
+  }
+]
