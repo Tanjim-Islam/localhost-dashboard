@@ -22,6 +22,22 @@ The Windows production stylesheet is byte-identical to the Electron build. Its S
 
 In the 1100 × 720 Settings screenshots, 59.34% of pixels matched exactly. Just 0.027% differed by more than 12 levels in any RGB channel. These measurements describe that Windows screen, DPI and browser runtime. Other screens received functional checks. The two rendering engines can produce small differences in the final pixels.
 
+## Windows resource comparison
+
+The benchmark alternated three launches per executable. Each launch used a fresh fixture profile. Both apps found the same 21 local listeners. The sample includes the desktop process and its browser children 15 seconds after listener discovery. No manual CLI scan ran during sampling.
+
+| Measurement | Electron 1.13.0 | Rust and Tauri |
+| --- | ---: | ---: |
+| Windows x64 installer | 100,758,236 bytes | 5,597,387 bytes |
+| Total private memory, median | 337.8 MiB | 204.0 MiB |
+| Total working set, median | 487.7 MiB | 393.3 MiB |
+| Window content ready, median | 914 ms | 721 ms |
+| First listeners available, median | 942 ms | 755 ms |
+
+Private memory was 39.6% lower in this run. An earlier three-pair run on this machine measured 40.7% lower private memory, with median window readiness at 1,261 ms for Electron and 1,335 ms for Tauri. Startup ordering varied between runs. The small Tauri installer uses the Windows WebView2 runtime. Installing that runtime on a machine that lacks it requires an additional download.
+
+To repeat the comparison on Windows, run `node scripts/benchmark-windows.mjs "<installed Electron executable>" "<Tauri release executable>"`. The script writes the six individual observations to a temporary results file. The sample covers one workload on one machine.
+
 ## Reproducing the checks
 
 Use Node.js 24 and a stable Rust toolchain. Run these commands from the repository root.
