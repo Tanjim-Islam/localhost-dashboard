@@ -31,6 +31,9 @@ New-Item -ItemType Directory -Path $legacyData -Force | Out-Null
 $settingsFile = Join-Path $legacyData 'settings.json'
 $marker = '{"scanIntervalMs":3210,"notifyOnStart":false,"notifyOnStop":false,"startAtLogin":false}'
 [IO.File]::WriteAllText($settingsFile, $marker)
+$userRun = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\Run')
+if ($null -ne $userRun.GetValue('Localhost Dashboard')) { throw 'Existing login registration on the runner.' }
+$userRun.SetValue('Localhost Dashboard', ('"{0}" --hidden' -f (Join-Path $oldDir 'Localhost Dashboard.exe')))
 $installer = @(Get-ChildItem -LiteralPath $Stage -Filter 'Localhost-Dashboard-Setup-*.exe')
 if ($installer.Count -ne 1) { throw 'Expected exactly one new installer.' }
 Invoke-Installer $installer[0].FullName @('/S','--updated')
@@ -51,7 +54,12 @@ try {
   if (-not (Test-Path -LiteralPath $migration)) { throw 'The installed app did not migrate its profile.' }
   $migrated = Get-Content -Raw -LiteralPath (Join-Path $newData 'settings.json') | ConvertFrom-Json
   if ($migrated.scanIntervalMs -ne 3210) { throw 'Native settings do not match the legacy value.' }
+  while ([DateTime]::UtcNow -lt $deadline -and $null -ne $userRun.GetValue('Localhost Dashboard')) {
+    Start-Sleep -Milliseconds 150
+  }
+  if ($null -ne $userRun.GetValue('Localhost Dashboard')) { throw 'Disabled login preference left the previous executable registered.' }
 } finally {
+  $userRun.Dispose()
   if (-not $app.HasExited) { $app.Kill(); $app.WaitForExit() }
   $app.Dispose()
 }

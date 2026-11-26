@@ -53,12 +53,15 @@ internal static class DashboardShellCheck {
         try {
             SetProcessDPIAware();
             if(args[0]=="record-uri") {
-                if(!Hosted) throw new Exception("URL dispatch fixture requires a disposable runner.");
                 var receipt=System.IO.Path.GetFullPath(args[1]);
                 var directory=System.IO.Path.GetDirectoryName(receipt);
+                // Explorer launches URL handlers with its own environment. Bind the
+                // receipt to this generated helper and its own temporary directory.
+                var executable=System.Reflection.Assembly.GetEntryAssembly().Location;
                 if(System.IO.Path.GetFileName(receipt)!="received-uri.txt"
                     || !System.IO.Path.GetFileName(directory).StartsWith("dashboard-shell-")
-                    || System.IO.Directory.GetParent(directory).FullName!=System.IO.Path.GetTempPath().TrimEnd('\\'))
+                    || !String.Equals(System.IO.Path.GetDirectoryName(executable),directory,StringComparison.OrdinalIgnoreCase)
+                    || !String.Equals(System.IO.Directory.GetParent(directory).FullName,System.IO.Path.GetTempPath().TrimEnd('\\'),StringComparison.OrdinalIgnoreCase))
                     throw new Exception("Invalid fixture path.");
                 System.IO.File.WriteAllText(receipt,args[2]);
                 return 0;

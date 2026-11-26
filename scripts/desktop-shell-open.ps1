@@ -36,6 +36,8 @@ if ($Action -eq 'install-handler') {
 } else {
   $shell = New-Object -ComObject Shell.Application
   foreach ($window in $shell.Windows()) {
+    if ([IO.Path]::GetFileName($window.FullName) -ine 'explorer.exe') { continue }
+    if ($window.Document.Folder.Self.Path -ine [IO.Path]::GetDirectoryName($target)) { continue }
     foreach ($selection in $window.Document.SelectedItems()) {
       if ($selection.Path -eq $target) { Write-Output 'selected'; return }
     }
