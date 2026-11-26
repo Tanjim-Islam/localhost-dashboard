@@ -259,6 +259,64 @@ mod tests {
     }
 
     #[test]
+    fn machine_scope_uses_the_callers_actual_registry_permissions() {
+        let key =
+            format!("LOCAL_DASHBOARD_TEST_KEY_{}", uuid::Uuid::new_v4().simple()).to_uppercase();
+        let machine = json!({"scope":"machine","name":key});
+        let user = json!({"scope":"user","name":key});
+        for scope in [Scope::Machine, Scope::User] {
+            assert!(value_at(&scope.open(false).unwrap(), &key)
+                .unwrap()
+                .is_none());
+        }
+        struct Cleanup(String);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                for scope in [Scope::User, Scope::Machine] {
+                    if let Ok(handle) = scope.open(true) {
+                        let _ = handle.delete_value(&self.0);
+                    }
+                }
+            }
+        }
+        let _cleanup = Cleanup(key.clone());
+        let can_write = Scope::Machine.open(true).is_ok();
+        let created = dispatch(
+            "saveEnvironmentKey",
+            json!({"scope":"machine","name":key,"value":"machine fixture"}),
+        );
+        if !can_write {
+            assert!(created.is_err());
+            assert!(value_at(&Scope::Machine.open(false).unwrap(), &key)
+                .unwrap()
+                .is_none());
+            return;
+        }
+        created.unwrap();
+        dispatch(
+            "saveEnvironmentKey",
+            json!({"scope":"user","name":key,"value":"user override"}),
+        )
+        .unwrap();
+        let rows = dispatch("getEnvironmentKeys", Value::Null).unwrap();
+        assert!(rows.as_array().unwrap().iter().any(|r| r["name"] == key
+            && r["scope"] == "machine"
+            && r["sessionStatus"] == "shadowed"));
+        dispatch("deleteEnvironmentKey", user.clone()).unwrap();
+        dispatch(
+            "saveEnvironmentKey",
+            json!({"scope":"user","name":key,"value":"moved","original":machine}),
+        )
+        .unwrap();
+        assert!(dispatch("getEnvironmentKeyValue", machine).is_err());
+        assert_eq!(
+            dispatch("getEnvironmentKeyValue", user.clone()).unwrap(),
+            "moved"
+        );
+        dispatch("deleteEnvironmentKey", user).unwrap();
+    }
+
+    #[test]
     fn windows_user_key_lifecycle_and_masked_list() {
         let key = format!(
             "LOCAL_DASHBOARD_TEST_KEY_{}_{}",
