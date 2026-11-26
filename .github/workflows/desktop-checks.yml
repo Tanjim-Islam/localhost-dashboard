@@ -40,3 +40,17 @@ jobs:
       - run: npm run build:debug
       - if: runner.os == 'Windows'
         run: node scripts/desktop.integration.mjs
+      - if: runner.os == 'Windows'
+        run: node scripts/desktop-shell.mjs
+      - name: Exercise the installed Windows app on a disposable runner
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          npm run package -- --bundles nsis -- --locked
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $stage = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/installer-qa"
+          $installer = @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*-setup.exe')
+          if ($installer.Count -ne 1) { throw 'Expected exactly one release installer.' }
+          Copy-Item -LiteralPath $installer[0].FullName -Destination (Join-Path $stage 'Localhost-Dashboard-Setup-qa.exe')
+          ./scripts/check-windows-upgrade.ps1 -Stage $stage
+          node scripts/desktop-shell.mjs --installed
