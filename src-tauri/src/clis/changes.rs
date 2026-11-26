@@ -9,6 +9,7 @@ use std::{
 #[derive(Default)]
 struct Description {
     paths: BTreeSet<String>,
+    observed_paths: BTreeSet<String>,
     roles: BTreeSet<String>,
     active: BTreeMap<String, String>,
     owner: String,
@@ -25,10 +26,14 @@ fn descriptions(s: &Value) -> BTreeMap<String, Description> {
         {
             continue;
         }
-        let paths = strings(&i["endpointIds"])
-            .filter_map(|id| eps.get(id))
-            .map(|e| normal(Path::new(text(e, "path"))))
-            .collect();
+        let mut paths = BTreeSet::new();
+        let mut observed_paths = BTreeSet::new();
+        for endpoint in strings(&i["endpointIds"]).filter_map(|id| eps.get(id)) {
+            let observed = text(endpoint, "path");
+            let canonical = endpoint["canonicalPath"].as_str().unwrap_or(observed);
+            paths.insert(normal(Path::new(canonical)));
+            observed_paths.insert(observed.to_owned());
+        }
         let owner = &i["packageIdentity"];
         let owner = if owner.is_null() {
             "Unknown".into()
@@ -41,6 +46,7 @@ fn descriptions(s: &Value) -> BTreeMap<String, Description> {
             text(i, "id").to_owned(),
             Description {
                 paths,
+                observed_paths,
                 owner,
                 ..Description::default()
             },
@@ -206,8 +212,8 @@ pub(super) fn compare(prev: &Value, next: &Value) -> Value {
             && !list(next, "sourceResults")
                 .iter()
                 .any(|s| s["status"] == "failed" || !s["errorCode"].is_null())
-            && !d.paths.is_empty()
-            && d.paths.iter().all(|p| {
+            && !d.observed_paths.is_empty()
+            && d.observed_paths.iter().all(|p| {
                 fs::symlink_metadata(p).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
             });
         add(

@@ -275,6 +275,18 @@ fn lifecycle_changes_require_actual_absence_and_match_path_aliases() {
     file(&file_path, "@echo off");
     let e = isolated(t.path(), std::slice::from_ref(&bin));
     let a = scan(&e, &Value::Null);
+    // A cached endpoint can have the same filesystem identity under a different
+    // PATH spelling, including the short user directory on hosted Windows runners.
+    let mut via_alias = a.clone();
+    via_alias["endpoints"][0]["path"] = json!(t.path().join("another-path/eas.cmd"));
+    let changed_id = json!("cli-other-spelling");
+    via_alias["installations"][0]["id"] = changed_id.clone();
+    via_alias["commands"][0]["installationId"] = changed_id;
+    let alias_changes = changes::compare(&a, &via_alias);
+    assert!(!list(&alias_changes, "entries").iter().any(|row| matches!(
+        text(row, "kind"),
+        "added" | "removed" | "path" | "uncertain"
+    )));
     let mut b = a.clone();
     b["installations"] = json!([]);
     b["commands"] = json!([]);
@@ -287,10 +299,12 @@ fn lifecycle_changes_require_actual_absence_and_match_path_aliases() {
     old["schemaVersion"] = json!(1);
     let mut second = old["installations"][0].clone();
     second["id"] = json!("old-shim-id");
-    let mut ep = old["endpoints"][0].clone();
+    let ps1 = bin.join("eas.ps1");
+    file(&ps1, b"Write-Output fixture");
+    let (endpoints, _) = discovery::enumerate(&e, &AtomicBool::new(false)).unwrap();
+    let mut ep = endpoints.into_iter().find(|e| e.ext == "ps1").unwrap().data;
+    fs::remove_file(ps1).unwrap();
     ep["id"] = json!("old-ep-id");
-    ep["path"] = json!(bin.join("eas.ps1"));
-    ep["canonicalPath"] = ep["path"].clone();
     second["endpointIds"] = json!(["old-ep-id"]);
     old["installations"].as_array_mut().unwrap().push(second);
     old["endpoints"].as_array_mut().unwrap().push(ep);
