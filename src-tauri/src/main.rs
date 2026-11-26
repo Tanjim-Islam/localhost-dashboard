@@ -7,6 +7,8 @@ mod servers;
 mod settings;
 mod storage;
 mod updater;
+#[cfg(test)]
+mod updater_checks;
 mod window;
 
 use serde_json::{json, Value};
@@ -137,7 +139,8 @@ fn main() {
         }));
     }
     let login = tauri_plugin_autostart::Builder::new()
-        .app_name("Localhost Dashboard").arg("--hidden");
+        .app_name("Localhost Dashboard")
+        .arg("--hidden");
     #[cfg(target_os = "macos")]
     let login = login.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
     builder
@@ -197,7 +200,10 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Initialize Localhost Dashboard")
         .run(|app, event| match event {
-            tauri::RunEvent::Exit => servers::flush(app),
+            tauri::RunEvent::Exit => {
+                servers::flush(app);
+                updater::finish(app);
+            }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => window::show(app),
             _ => {}
