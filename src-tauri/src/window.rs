@@ -38,6 +38,20 @@ pub fn sync_tray(app: &AppHandle, enabled: bool) {
 }
 pub fn tray(app: &AppHandle) -> tauri::Result<()> {
     if cfg!(target_os = "macos") {
+        let about = PredefinedMenuItem::about(app, Some("About Localhost Dashboard"), None)?;
+        let hide = PredefinedMenuItem::hide(app, Some("Hide Localhost Dashboard"))?;
+        let others = PredefinedMenuItem::hide_others(app, None)?;
+        let show = PredefinedMenuItem::show_all(app, None)?;
+        let quit = PredefinedMenuItem::quit(app, Some("Quit Localhost Dashboard"))?;
+        let first = PredefinedMenuItem::separator(app)?;
+        let last = PredefinedMenuItem::separator(app)?;
+        let application = tauri::menu::Submenu::with_items(
+            app,
+            "Localhost Dashboard",
+            true,
+            &[&about, &first, &hide, &others, &show, &last, &quit],
+        )?;
+        app.set_menu(Menu::with_items(app, &[&application])?)?;
         return Ok(());
     }
     let open = MenuItem::with_id(app, "open", "Open Dashboard", true, None::<&str>)?;
