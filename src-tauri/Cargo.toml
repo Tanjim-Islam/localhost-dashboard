@@ -50,6 +50,7 @@ custom-protocol = ["tauri/custom-protocol"]
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 [profile.release]
 codegen-units = 1

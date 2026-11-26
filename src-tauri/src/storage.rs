@@ -89,29 +89,43 @@ pub fn renderer_preferences(app: &AppHandle) -> Result<Value, String> {
     Ok(prefs)
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn sqlite_settings(path: &Path) -> rusqlite::Result<Value> {
+    use rusqlite::{Connection, OpenFlags};
+    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let mut statement = db.prepare("SELECT key,value FROM settings")?;
+    let rows = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut settings = json!({});
+    for row in rows {
+        let (key, raw) = row?;
+        if let Ok(value) = serde_json::from_str::<Value>(&raw) {
+            settings[key] = value;
+        }
+    }
+    Ok(settings)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn import_macos_settings(old: &Path, dir: &Path) -> Result<(), String> {
+    let database = old.join("settings.sqlite");
+    if !database.is_file() || dir.join("settings.json").exists() {
+        return Ok(());
+    }
+    let settings = match sqlite_settings(&database) {
+        Ok(settings) => settings,
+        // The previous Mac build used the JSON store if SQLite was unavailable.
+        Err(_) if old.join("settings.json").is_file() => {
+            read_json(old, "settings.json", Value::Null)?
+        }
+        Err(_) => return Err("Cannot read the previous settings.sqlite database.".into()),
+    };
+    write_json(dir, "settings.json", &settings)
+}
+
 fn import(old: &Path, dir: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    if old.join("settings.sqlite").is_file() && !dir.join("settings.json").exists() {
-        use rusqlite::{Connection, OpenFlags};
-        let db = Connection::open_with_flags(
-            old.join("settings.sqlite"),
-            OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .map_err(|e| e.to_string())?;
-        let mut statement = db
-            .prepare("SELECT key,value FROM settings")
-            .map_err(|e| e.to_string())?;
-        let rows = statement
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-            .map_err(|e| e.to_string())?;
-        let mut settings = read_json(old, "settings.json", json!({}))?;
-        for row in rows {
-            let (k, v) = row.map_err(|e| e.to_string())?;
-            if let Ok(value) = serde_json::from_str::<Value>(&v) {
-                settings[k] = value;
-            }
-        }
-        write_json(dir, "settings.json", &settings)?;
+    {
+        import_macos_settings(old, dir)?;
     }
     for name in STORES {
         if old.join(name).is_file() && !dir.join(name).exists() {
@@ -125,6 +139,43 @@ fn import(old: &Path, dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn imports_the_previous_mac_sqlite_store_and_its_json_fallback() {
+        let old = tempfile::tempdir().unwrap();
+        let new = tempfile::tempdir().unwrap();
+        let db_path = old.path().join("settings.sqlite");
+        {
+            let db = rusqlite::Connection::open(&db_path).unwrap();
+            db.execute_batch("CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+                INSERT INTO settings VALUES ('scanIntervalMs','2100',1), ('notifyOnStop','false',1);").unwrap();
+        }
+        let bytes = fs::read(&db_path).unwrap();
+        let fallback = json!({"scanIntervalMs": 4000, "closeToTray": true});
+        write_json(old.path(), "settings.json", &fallback).unwrap();
+        import_macos_settings(old.path(), new.path()).unwrap();
+        let original = json!({"scanIntervalMs":2100,"notifyOnStop":false});
+        assert_eq!(
+            read_json(new.path(), "settings.json", Value::Null).unwrap(),
+            original
+        );
+        assert_eq!(fs::read(&db_path).unwrap(), bytes);
+        fs::write(&db_path, b"damaged legacy database").unwrap();
+        import_macos_settings(old.path(), new.path()).unwrap();
+        assert_eq!(
+            read_json(new.path(), "settings.json", Value::Null).unwrap(),
+            original
+        );
+        let fresh = tempfile::tempdir().unwrap();
+        import_macos_settings(old.path(), fresh.path()).unwrap();
+        assert_eq!(
+            read_json(fresh.path(), "settings.json", Value::Null).unwrap(),
+            fallback
+        );
+        fs::remove_file(old.path().join("settings.json")).unwrap();
+        let empty = tempfile::tempdir().unwrap();
+        assert!(import_macos_settings(old.path(), empty.path()).is_err());
+        assert!(!empty.path().join("settings.json").exists());
+    }
     #[test]
     #[ignore = "read-only import of an existing dashboard profile into a temporary directory"]
     fn existing_profile_opens_in_all_native_subsystems() {
