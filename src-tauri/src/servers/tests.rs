@@ -106,16 +106,26 @@ fn migration_preserves_project_notes_and_legacy_source() {
     assert_eq!(saved.projects[0].notes, "saved\nlegacy");
     assert!(saved.legacy_notes.is_empty());
 }
-#[test]
-fn health_checks_both_address_families_and_ignores_response_bodies() {
-    for (host, ipv6, reply, kind) in [
-        ("127.0.0.1", false, "200 OK", "http"),
-        ("::1", true, "426 Upgrade Required", "upgrade"),
-    ] {
-        let socket = TcpListener::bind((host, 0)).unwrap();
-        let port = socket.local_addr().unwrap().port();
-        let worker = thread::spawn(move || {
-            let (mut conn, _) = socket.accept().unwrap();
+fn probe_loopback(
+    host: &str,
+    serve: impl FnOnce(std::net::TcpStream) + Send,
+) -> (Value, Option<bool>, Duration) {
+    let socket = TcpListener::bind((host, 0)).unwrap();
+    let address = socket.local_addr().unwrap();
+    let target = health::Target {
+        reference: Reference {
+            key: format!("1:{}", address.port()),
+            first_seen: 9,
+        },
+        url: format!("http://{address}"),
+        port: address.port(),
+        ipv6: address.is_ipv6(),
+        unknown: true,
+    };
+    thread::scope(|scope| {
+        scope.spawn(move || {
+            let (conn, _) = socket.accept().unwrap();
+            conn.set_read_timeout(Some(Duration::from_secs(7))).unwrap();
             let mut reader = BufReader::new(&conn);
             let mut line = String::new();
             reader.read_line(&mut line).unwrap();
@@ -127,36 +137,90 @@ fn health_checks_both_address_families_and_ignores_response_bodies() {
                     break;
                 }
             }
+            serve(conn);
+        });
+        let begin = Instant::now();
+        let (result, answer) = health::probe(&target);
+        (result, answer, begin.elapsed())
+    })
+}
+#[test]
+fn health_checks_address_families_websocket_and_upgrade_without_exposing_response_body() {
+    for (host, status, reason, endpoint, plain_http) in [
+        ("127.0.0.1", 200, "OK", "http", true),
+        ("::1", 426, "Upgrade Required", "upgrade", false),
+        (
+            "127.0.0.1",
+            101,
+            "Switching Protocols\r\nUpGrAdE: WebSocket",
+            "websocket",
+            false,
+        ),
+    ] {
+        let (result, answer, _) = probe_loopback(host, |mut conn| {
             write!(
                 conn,
-                "HTTP/1.1 {reply}\r\nContent-Length: 17\r\n\r\nprivate-test-body"
+                "HTTP/1.1 {status} {reason}\r\nContent-Length: 17\r\n\r\nprivate-test-body"
             )
             .unwrap();
         });
-        let target = health::Target {
-            reference: Reference {
-                key: format!("1:{port}"),
-                first_seen: 9,
-            },
-            url: format!("http://{host}:{port}"),
-            port,
-            ipv6,
-            unknown: false,
-        };
-        let (result, _) = health::probe(&target);
-        worker.join().unwrap();
-        assert_eq!(result["endpoint"], kind);
+        assert_eq!(result["endpoint"], endpoint);
+        assert_eq!(result["httpStatus"], status);
         assert_eq!(result["firstSeen"], 9);
-        assert_eq!(
-            result["status"],
-            if result["responseTime"].as_u64().unwrap() < 500 {
-                "healthy"
-            } else {
-                "slow"
-            }
-        );
+        assert_eq!(answer, Some(plain_http));
+        if status == 200 {
+            assert_eq!(result["status"], "healthy");
+            assert!(result["responseTime"].as_u64().unwrap() < 500);
+        }
         assert!(!result.to_string().contains("private-test-body"));
     }
+}
+#[test]
+fn health_slow_is_a_successful_response_after_half_a_second() {
+    let (result, answer, _) = probe_loopback("127.0.0.1", |mut conn| {
+        thread::sleep(Duration::from_millis(600));
+        conn.write_all(b"HTTP/1.0 503 Starting\r\n\r\n").unwrap();
+    });
+    assert_eq!(result["status"], "slow");
+    assert_eq!(result["httpStatus"], 503);
+    assert!(result["responseTime"].as_u64().unwrap() >= 500);
+    assert_eq!(answer, Some(true));
+}
+#[test]
+fn health_malformed_and_non_http_responses_are_down() {
+    for invalid in [
+        "SSH-2.0-OpenSSH\r\n",
+        "HTTP/1.1 nope\r\n\r\n",
+        "HTTP/1.1 0200 Invalid status width\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nBroken header without a colon\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n",
+    ] {
+        let (result, answer, _) = probe_loopback("127.0.0.1", |mut conn| {
+            conn.write_all(invalid.as_bytes()).unwrap()
+        });
+        assert_eq!(result["status"], "down", "Malformed response: {invalid:?}");
+        assert!(result.get("httpStatus").is_none());
+        assert!(result.get("responseTime").is_none());
+        assert_eq!(answer, Some(false));
+    }
+}
+#[test]
+fn health_timeout_closes_the_connection_after_three_seconds() {
+    let (result, answer, elapsed) = probe_loopback("127.0.0.1", |mut conn| {
+        // Hold the connection open until the probe gives up. A longer client
+        // timeout also fails the independent fixture's seven-second read limit.
+        thread::sleep(Duration::from_millis(1800));
+        conn.write_all(b"HTTP/1.1 200 OK\r\nX-Unfinished: ")
+            .unwrap();
+        assert_eq!(conn.read(&mut [0u8; 1]).unwrap(), 0);
+    });
+    assert_eq!(result["status"], "down");
+    assert_eq!(result["error"], "Timeout");
+    assert_eq!(answer, None);
+    assert!(
+        (Duration::from_millis(2800)..Duration::from_secs(4)).contains(&elapsed),
+        "{elapsed:?}"
+    );
 }
 #[test]
 fn npm_literal_arguments_reject_expansions() {

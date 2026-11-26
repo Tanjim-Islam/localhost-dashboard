@@ -2464,6 +2464,7 @@ version = "1.13.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "httparse",
  "libc",
  "regex",
  "rusqlite",

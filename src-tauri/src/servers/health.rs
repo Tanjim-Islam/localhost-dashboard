@@ -34,7 +34,8 @@ pub fn probe(t: &Target) -> (Value, Option<bool>) {
         stream.write_all(request.as_bytes())?;
         let mut header = Vec::new();
         let mut buf = [0u8; 2048];
-        while header.len() < 32 * 1024 {
+        let invalid = || std::io::Error::from(std::io::ErrorKind::InvalidData);
+        let end = loop {
             let time = budget
                 .checked_sub(begin.elapsed())
                 .filter(|d| !d.is_zero())
@@ -42,37 +43,33 @@ pub fn probe(t: &Target) -> (Value, Option<bool>) {
             stream.set_read_timeout(Some(time))?;
             let bytes = stream.read(&mut buf)?;
             if bytes == 0 {
-                break;
+                return Err(invalid());
             }
+            let start = header.len().saturating_sub(3);
             header.extend_from_slice(&buf[..bytes]);
-            if header.windows(4).any(|w| w == b"\r\n\r\n") {
-                break;
+            if let Some(offset) = header[start..].windows(4).position(|w| w == b"\r\n\r\n") {
+                break start + offset + 4;
             }
-            if header.len() > 5 && !header.starts_with(b"HTTP/") {
-                break;
+            if header.len() >= 32 * 1024 || (header.len() >= 5 && !header.starts_with(b"HTTP/")) {
+                return Err(invalid());
             }
+        };
+        if end > 32 * 1024 {
+            return Err(invalid());
         }
-        let end = header
-            .windows(4)
-            .position(|w| w == b"\r\n\r\n")
-            .ok_or(std::io::ErrorKind::InvalidData)?;
-        let text = String::from_utf8_lossy(&header[..end]);
-        let mut lines = text.lines();
-        let status = lines
-            .next()
-            .and_then(|s| {
-                let mut parts = s.split_ascii_whitespace();
-                matches!(parts.next(), Some("HTTP/1.0" | "HTTP/1.1"))
-                    .then(|| parts.next())
-                    .flatten()
-            })
-            .and_then(|s| s.parse::<u16>().ok())
+        let bytes = &header[..end];
+        let capacity = bytes.iter().filter(|&&b| b == b'\n').count();
+        let mut fields = vec![httparse::EMPTY_HEADER; capacity];
+        let mut response = httparse::Response::new(&mut fields);
+        if !response.parse(bytes).map_err(|_| invalid())?.is_complete() {
+            return Err(invalid());
+        }
+        let status = response
+            .code
             .filter(|n| (100..600).contains(n))
-            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidData))?;
-        let websocket = lines.take_while(|s| !s.is_empty()).any(|s| {
-            s.split_once(':').is_some_and(|(k, v)| {
-                k.eq_ignore_ascii_case("upgrade") && v.trim().eq_ignore_ascii_case("websocket")
-            })
+            .ok_or_else(invalid)?;
+        let websocket = response.headers.iter().any(|h| {
+            h.name.eq_ignore_ascii_case("upgrade") && h.value.eq_ignore_ascii_case(b"websocket")
         });
         Ok((
             status,
