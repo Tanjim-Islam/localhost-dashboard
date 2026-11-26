@@ -57,6 +57,17 @@ pub fn association(cwd: &Path, exe: &Path, argv: &[OsString]) -> String {
     }
     hash(&parts.join("\0"))
 }
+pub fn process_association(id: &super::native::Identity) -> String {
+    #[cfg(target_os = "macos")]
+    let started = format!("{}:{}", id.started / 1_000_000, id.started % 1_000_000);
+    #[cfg(not(target_os = "macos"))]
+    let started = id.started.to_string();
+    hash(&format!(
+        "process:{}:{started}:{}",
+        id.pid,
+        display(&id.exe)
+    ))
+}
 #[derive(Clone)]
 pub struct Evidence {
     pub directory: PathBuf,

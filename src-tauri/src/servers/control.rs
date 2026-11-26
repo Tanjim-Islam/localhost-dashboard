@@ -38,7 +38,12 @@ struct Attachment {
     note_id: String,
     project_id: String,
 }
-pub(super) fn edit(app: &AppHandle, s: &Servers, method: &str, arg: Value) -> Result<Value> {
+pub(super) fn edit(
+    app: Option<&AppHandle>,
+    s: &Servers,
+    method: &str,
+    arg: Value,
+) -> Result<Value> {
     {
         let mut c = lock(&s.core)?;
         match method {
@@ -121,8 +126,24 @@ pub(super) fn edit(app: &AppHandle, s: &Servers, method: &str, arg: Value) -> Re
         c.revision += 1;
         c.dirty = true;
         save(&s.dir, &mut c)?;
+        if method != "associateService" {
+            // A cached project edit is not an OS listener observation. Apply its
+            // public fields immediately, including before the first scan.
+            let Core { model, live, .. } = &mut *c;
+            for row in live.values_mut() {
+                if let Some(p) = model.project(row.record.project_id.as_deref()) {
+                    row.public["ignored"] = json!(p.ignored);
+                    row.record.project_name = Some(p.name.clone());
+                }
+            }
+            let result = c.snapshot();
+            if let Some(app) = app {
+                publish(app, &c);
+            }
+            return Ok(result);
+        }
     }
-    scan(Some(app), s)?;
+    scan(app, s)?;
     Ok(lock(&s.core)?.snapshot())
 }
 #[derive(Deserialize)]
@@ -329,13 +350,13 @@ fn start_stopped(s: &Servers, scope: &Scope, app: Option<&AppHandle>) -> Result<
     }
     let mut results = Vec::new();
     for (r, records) in launches {
-        {
+        let result = launch::launch(&r, || {
             let c = lock(&s.core)?;
             for rec in &records {
                 startable(&c, &rec.reference, scope.project_id.as_deref())?;
             }
-        }
-        let result = launch::launch(&r);
+            Ok(c)
+        });
         let ok = result.is_ok();
         let message = match result {
             Ok(ids) => {
@@ -427,7 +448,13 @@ fn restart(s: &Servers, r: Reference, app: Option<&AppHandle>) -> Result<Value> 
             "starting",
             "Starting the project and waiting for its original port...",
         );
-        let replacement = launch::launch(&plan.recipe)?;
+        let replacement = launch::launch(&plan.recipe, || {
+            let c = lock(&s.core)?;
+            if c.ignored(&row.record) {
+                return Err("The project was ignored before its replacement started.".into());
+            }
+            Ok(c)
+        })?;
         {
             let mut c = lock(&s.core)?;
             remember(&mut c, replacement);
@@ -520,6 +547,7 @@ pub(super) fn open(app: &AppHandle, s: &Servers, method: &str, arg: Value) -> Re
             .opener()
             .open_path(&native_path, None::<&str>)
             .map_err(|_| "Could not open project folder.")?,
+        #[cfg(windows)]
         "openInVSCode" => {
             let mut url = url::Url::parse("vscode://file/").unwrap();
             {
@@ -536,6 +564,28 @@ pub(super) fn open(app: &AppHandle, s: &Servers, method: &str, arg: Value) -> Re
             app.opener()
                 .open_url(url.as_str(), None::<&str>)
                 .map_err(|_| "Could not open Visual Studio Code.")?;
+        }
+        #[cfg(target_os = "macos")]
+        "openInVSCode" => {
+            if !Command::new("/usr/bin/open")
+                .args(["-a", "Visual Studio Code", "--"])
+                .arg(&path)
+                .status()
+                .map_err(|_| "Could not open Visual Studio Code.")?
+                .success()
+            {
+                return Err("Could not open Visual Studio Code.".into());
+            }
+        }
+        #[cfg(target_os = "linux")]
+        "openInVSCode" => {
+            let mut child = Command::new("code")
+                .arg(&path)
+                .spawn()
+                .map_err(|_| "Could not open Visual Studio Code.")?;
+            thread::spawn(move || {
+                let _ = child.wait();
+            });
         }
         "openTerminal" => terminal(&path)?,
         _ => return Err("Unknown project action.".into()),

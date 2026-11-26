@@ -7,7 +7,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     ffi::OsStr,
     path::Path,
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
     sync::Arc,
     thread,
     time::{Duration, Instant},
@@ -235,6 +235,14 @@ pub fn preflight(recipe: &Recipe) -> Result<()> {
     if !recipe.launch.id.exe.is_file() || !recipe.launch.cwd.is_dir() {
         return Err("The original executable or project folder is missing.".into());
     }
+    #[cfg(unix)]
+    for path in [&recipe.launch.id.exe, &recipe.launch.cwd] {
+        use std::{ffi::CString, os::unix::ffi::OsStrExt};
+        let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| "Invalid launch path.")?;
+        if unsafe { libc::access(path.as_ptr(), libc::X_OK) } != 0 {
+            return Err("The original executable or project folder is inaccessible.".into());
+        }
+    }
     Ok(())
 }
 pub fn verify_plan(plan: &Plan, table: &Table, listeners: &[Listener]) -> Result<()> {
@@ -261,14 +269,10 @@ pub fn stop_tree(plan: &Plan) -> Result<()> {
     #[cfg(windows)]
     let interrupted = super::windows::interrupt(&plan.tree);
     #[cfg(target_os = "macos")]
-    let interrupted = plan
-        .tree
-        .iter()
-        .all(|id| native::identity(id.pid).as_ref() == Some(id))
-        && plan
-            .tree
-            .iter()
-            .all(|id| unsafe { libc::kill(id.pid as i32, libc::SIGINT) } == 0);
+    let interrupted = plan.tree.iter().all(|id| {
+        native::identity(id.pid).as_ref() == Some(id)
+            && unsafe { libc::kill(id.pid as i32, libc::SIGINT) } == 0
+    });
     #[cfg(not(any(windows, target_os = "macos")))]
     let interrupted = false;
     let deadline = Instant::now() + Duration::from_secs(if interrupted { 5 } else { 0 });
@@ -282,6 +286,11 @@ pub fn stop_tree(plan: &Plan) -> Result<()> {
             }
             for child in table.descendants(&root)? {
                 if !known.contains(&child) {
+                    // A watcher can recreate a known executable after SIGINT.
+                    // Never widen an in-progress stop to a different program.
+                    if !plan.tree.iter().any(|old| old.exe == child.exe) {
+                        return Err("The launcher's process tree changed during shutdown. No replacement was started.".into());
+                    }
                     known.push(child)
                 }
                 if known.len() > 128 {
@@ -293,7 +302,7 @@ pub fn stop_tree(plan: &Plan) -> Result<()> {
             .iter()
             .all(|id| native::identity(id.pid).as_ref() != Some(id))
         {
-            return Ok(());
+            return no_new_children(&known);
         }
         if Instant::now() >= deadline {
             break;
@@ -302,7 +311,16 @@ pub fn stop_tree(plan: &Plan) -> Result<()> {
     }
     for id in &known {
         if !system_process(id) && native::identity(id.pid).as_ref() == Some(id) {
-            native::stop(id)?;
+            #[cfg(windows)]
+            let sent = super::windows::signal_stop(id);
+            #[cfg(not(windows))]
+            let sent = native::stop(id);
+            if let Err(error) = sent {
+                // A child can exit naturally when its launcher stops.
+                if native::identity(id.pid).as_ref() == Some(id) {
+                    return Err(error);
+                }
+            }
         }
     }
     for _ in 0..15 {
@@ -310,13 +328,43 @@ pub fn stop_tree(plan: &Plan) -> Result<()> {
             .iter()
             .all(|id| native::identity(id.pid).as_ref() != Some(id))
         {
-            return Ok(());
+            return no_new_children(&known);
         }
         thread::sleep(Duration::from_millis(200));
     }
     Err("The launcher did not fully stop. No replacement was started.".into())
 }
-pub fn launch(recipe: &Recipe) -> Result<Vec<Identity>> {
+fn no_new_children(known: &[Identity]) -> Result<()> {
+    let mut table = Table::default();
+    table.refresh();
+    for process in table.system.processes().values() {
+        let Some(ppid) = process.parent() else {
+            continue;
+        };
+        let Some(old) = known.iter().find(|id| id.pid == ppid.as_u32()) else {
+            continue;
+        };
+        let pid = process.pid().as_u32();
+        // A reused parent never establishes ownership. Once the old parent is
+        // gone we can detect an unexpected survivor, but cannot authorize a kill.
+        if table.process(old.pid).is_some() {
+            continue;
+        }
+        if let Some(child) = native::identity(pid) {
+            if child.started >= old.started && !known.contains(&child) {
+                return Err(
+                    "A launcher child is still running. Check the project before restarting."
+                        .into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+pub fn launch<G>(recipe: &Recipe, authorize: impl FnOnce() -> Result<G>) -> Result<Vec<Identity>> {
+    // Hold the caller's project state guard only through spawn. Ignore/restore
+    // cannot race the final authorization, and readiness polling stays off that lock.
+    let guard = authorize()?;
     preflight(recipe)?;
     if native::listeners()?
         .iter()
@@ -351,13 +399,22 @@ pub fn launch(recipe: &Recipe) -> Result<Vec<Identity>> {
     let mut child = command
         .spawn()
         .map_err(|_| "Could not start the original launch command.")?;
+    drop(guard);
+    let result = wait_ready(recipe, &mut child);
+    #[cfg(unix)]
+    thread::spawn(move || {
+        let _ = child.wait();
+    });
+    result
+}
+fn wait_ready(recipe: &Recipe, child: &mut Child) -> Result<Vec<Identity>> {
     let root = native::identity(child.id())
-        .filter(|i| path_key(&i.exe) == path_key(&ctx.id.exe))
+        .filter(|i| path_key(&i.exe) == path_key(&recipe.launch.id.exe))
         .ok_or("The launched process identity could not be verified.")?;
     let deadline = Instant::now() + Duration::from_secs(45);
     let mut stable = None;
     let mut known = vec![root.clone()];
-    let result = loop {
+    loop {
         if Instant::now() > deadline {
             break Err("The original ports did not return within 45 seconds. Check the project before retrying.".into());
         }
@@ -365,7 +422,12 @@ pub fn launch(recipe: &Recipe) -> Result<Vec<Identity>> {
         let mut table = Table::default();
         table.refresh();
         if native::identity(root.pid).as_ref() == Some(&root) {
-            for id in table.descendants(&root)? {
+            let Ok(descendants) = table.descendants(&root) else {
+                stable = None;
+                thread::sleep(Duration::from_millis(200));
+                continue;
+            };
+            for id in descendants {
                 if !known.contains(&id) {
                     known.push(id)
                 }
@@ -394,10 +456,5 @@ pub fn launch(recipe: &Recipe) -> Result<Vec<Identity>> {
             break Err("The project exited before reopening its port.".into());
         }
         thread::sleep(Duration::from_millis(200));
-    };
-    #[cfg(unix)]
-    thread::spawn(move || {
-        let _ = child.wait();
-    });
-    result
+    }
 }

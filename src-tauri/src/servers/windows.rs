@@ -189,7 +189,7 @@ pub fn interrupt(tree: &[Identity]) -> bool {
     }
 }
 
-pub fn stop(id: &Identity) -> Result<()> {
+fn request_stop(id: &Identity) -> Result<ProcessHandle> {
     let handle = ProcessHandle::open(id.pid, PROCESS_TERMINATE | PROCESS_SYNCHRONIZE)
         .ok_or("Access to this process was denied.")?;
     if handle.identity(id.pid).as_ref() != Some(id) {
@@ -197,8 +197,18 @@ pub fn stop(id: &Identity) -> Result<()> {
     }
     // Compare and terminate through the same kernel object. PID reuse cannot redirect the stop.
     if unsafe { TerminateProcess(handle.0, 1) } == 0
-        || unsafe { WaitForSingleObject(handle.0, 3000) } != 0
+        && unsafe { WaitForSingleObject(handle.0, 250) } != 0
     {
+        return Err("Windows denied the process termination request.".into());
+    }
+    Ok(handle)
+}
+pub fn signal_stop(id: &Identity) -> Result<()> {
+    request_stop(id).map(drop)
+}
+pub fn stop(id: &Identity) -> Result<()> {
+    let handle = request_stop(id)?;
+    if unsafe { WaitForSingleObject(handle.0, 3000) } != 0 {
         return Err("Windows did not confirm that the process stopped.".into());
     }
     Ok(())

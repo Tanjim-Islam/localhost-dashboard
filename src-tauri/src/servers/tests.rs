@@ -65,6 +65,18 @@ fn migration_preserves_project_notes_and_legacy_source() {
             ["4242"],
         "legacy"
     );
+    let note = c.model.legacy_notes[0].id.clone();
+    drop(c);
+    control::edit(
+        None,
+        &servers,
+        "attachLegacyNote",
+        json!({"noteId": note, "projectId": "p"}),
+    )
+    .unwrap();
+    let saved = Model::load(dir.path()).unwrap();
+    assert_eq!(saved.projects[0].notes, "saved\nlegacy");
+    assert!(saved.legacy_notes.is_empty());
 }
 #[test]
 fn health_checks_both_address_families_and_ignores_response_bodies() {
@@ -340,6 +352,44 @@ fn live_selected_stop_restart_start_and_port_conflict() {
         row.record.project_id.clone().unwrap()
     };
     let scope = |r: &Reference| json!({"refs":[r],"projectId":project});
+    {
+        let _operation = servers.operation.lock().unwrap();
+        assert!(control::operate(None, &servers, "restartServer", json!(r)).is_err());
+        assert!(control::operate(None, &servers, "stopServers", scope(&r)).is_err());
+    }
+    {
+        let mut c = servers.core.lock().unwrap();
+        let present = HashSet::from([r.key.clone()]);
+        let empty = HashSet::new();
+        let saved: Vec<_> = c
+            .model
+            .recently_stopped
+            .iter()
+            .map(|r| r.reference.clone())
+            .collect();
+        // A successful presence observation resets the missing counter; an
+        // observation of a stale instance cannot retire the newer listener.
+        assert!(c.missing_twice(vec![r.clone()], &empty).is_empty());
+        assert!(c.missing_twice(vec![r.clone()], &present).is_empty());
+        assert!(c.missing_twice(vec![r.clone()], &empty).is_empty());
+        assert!(c
+            .missing_twice(
+                vec![Reference {
+                    key: r.key.clone(),
+                    first_seen: r.first_seen + 1
+                }],
+                &empty
+            )
+            .is_empty());
+        assert_eq!(c.missing_twice(vec![r.clone()], &empty).len(), 1);
+        c.missing_twice(vec![r.clone()], &present);
+        assert!(c
+            .model
+            .recently_stopped
+            .iter()
+            .map(|r| &r.reference)
+            .eq(saved.iter()));
+    }
     assert!(control::operate(
         None,
         &servers,
@@ -347,28 +397,61 @@ fn live_selected_stop_restart_start_and_port_conflict() {
         json!({"refs":[r],"projectId":"wrong"})
     )
     .is_err());
-    {
-        let mut c = servers.core.lock().unwrap();
-        c.model
-            .projects
-            .iter_mut()
-            .find(|p| p.id == project)
-            .unwrap()
-            .ignored = true;
-    }
+    let edit = |ignored| {
+        json!({
+            "id":project,"name":"Renamed","notes":"Fixture notes","pinned":true,
+            "bookmarked":true,"ignored":ignored
+        })
+    };
+    control::edit(None, &servers, "editProject", edit(true)).unwrap();
     assert!(control::operate(None, &servers, "stopServers", scope(&r)).is_err());
     {
-        servers
-            .core
-            .lock()
-            .unwrap()
-            .model
-            .projects
-            .iter_mut()
-            .find(|p| p.id == project)
-            .unwrap()
-            .ignored = false;
+        let c = servers.core.lock().unwrap();
+        let row = c.row(&r).unwrap();
+        assert_eq!(row.public["ignored"], true);
+        assert_eq!(row.record.project_name.as_deref(), Some("Renamed"));
+        let p = c.model.project(Some(&project)).unwrap();
+        assert!(p.pinned && p.bookmarked && p.ignored);
+        assert_eq!(p.notes, "Fixture notes");
     }
+    control::edit(None, &servers, "editProject", edit(false)).unwrap();
+    let another_ref = get_ref(other.child.id(), other_ports[0]);
+    let another_project = servers
+        .core
+        .lock()
+        .unwrap()
+        .row(&another_ref)
+        .unwrap()
+        .record
+        .project_id
+        .clone()
+        .unwrap();
+    control::edit(
+        None,
+        &servers,
+        "associateService",
+        json!({"ref":r,"projectId":another_project}),
+    )
+    .unwrap();
+    assert!(control::operate(None, &servers, "stopServers", scope(&r)).is_err());
+    {
+        let c = servers.core.lock().unwrap();
+        for port in &ports {
+            let row = &c.live[&format!("{original}:{port}")];
+            assert_eq!(
+                row.record.project_id.as_deref(),
+                Some(another_project.as_str())
+            );
+            assert_eq!(row.public["association"], "manual");
+        }
+    }
+    control::edit(
+        None,
+        &servers,
+        "associateService",
+        json!({"ref":r,"projectId":project}),
+    )
+    .unwrap();
     let restarted = control::operate(None, &servers, "restartServer", json!(r)).unwrap();
     assert_eq!(restarted["ok"], true, "{restarted}");
     let replaced = fixture_pid(&mut f, ports[0]);

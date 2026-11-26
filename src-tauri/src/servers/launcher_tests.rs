@@ -132,7 +132,7 @@ http.createServer((q,r)=>{r.setHeader("content-length",Buffer.byteLength(body));
         launch::preflight(&p.recipe)?;
         launch::verify_plan(&p, &table, &native::listeners()?)?;
         launch::stop_tree(&p)?;
-        let ids = launch::launch(&p.recipe)?;
+        let ids = launch::launch(&p.recipe, || Ok(()))?;
         self.known.extend(ids);
         Ok(())
     }

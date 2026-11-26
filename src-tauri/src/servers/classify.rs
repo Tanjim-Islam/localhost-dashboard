@@ -82,10 +82,15 @@ fn application(table: &Table, id: &Identity) -> Option<Value> {
             }
         }
     }
+    let mut child_started = id.started;
     for parent_pid in table.ancestors(id.pid, 12).iter().skip(1) {
-        let Some(exe) = table.process(*parent_pid).and_then(|p| p.exe()) else {
+        let Some(parent) =
+            super::native::identity(*parent_pid).filter(|p| p.started <= child_started)
+        else {
             break;
         };
+        child_started = parent.started;
+        let exe = parent.exe.as_path();
         let name = basename(exe);
         if runtime(&name)
             || shell(&name)

@@ -4,6 +4,8 @@ mod health;
 mod launch;
 #[cfg(all(test, any(windows, target_os = "macos")))]
 mod launcher_tests;
+#[cfg(any(target_os = "macos", test))]
+mod mac_args;
 mod native;
 #[cfg(any(target_os = "macos", test))]
 mod npm;
@@ -141,6 +143,28 @@ impl Core {
         self.revision += 1;
         self.reconcile();
     }
+    fn missing_twice(
+        &mut self,
+        observed: Vec<Reference>,
+        keys: &HashSet<String>,
+    ) -> Vec<Reference> {
+        let mut removed = Vec::new();
+        for r in observed {
+            if self.row(&r).is_err() {
+                continue;
+            }
+            if keys.contains(&r.key) {
+                self.missing.remove(&r.key);
+                continue;
+            }
+            let count = self.missing.entry(r.key.clone()).or_default();
+            *count = count.saturating_add(1);
+            if *count >= 2 {
+                removed.push(r)
+            }
+        }
+        removed
+    }
 }
 pub struct Servers {
     dir: PathBuf,
@@ -268,17 +292,20 @@ fn scan(app: Option<&AppHandle>, servers: &Servers) -> Result<()> {
         if stale && budget > 0 && !classify::system_process(&id) {
             budget -= 1;
             if let Some(p) = table.process(pid) {
-                let stage = classify::classify(
-                    table,
-                    Some(&id),
-                    &p.name().to_string_lossy(),
-                    p.cwd(),
-                    p.cmd(),
-                );
-                let association = p
-                    .cwd()
-                    .map(|cwd| project::association(cwd, &id.exe, p.cmd()));
-                let cwd = p.cwd().map(Path::to_owned);
+                #[cfg(target_os = "macos")]
+                let captured = table.context(&id);
+                #[cfg(target_os = "macos")]
+                let args = captured.as_ref().map(|c| c.argv.as_slice()).unwrap_or(&[]);
+                #[cfg(not(target_os = "macos"))]
+                let args = p.cmd();
+                #[cfg(target_os = "macos")]
+                let cwd = captured.as_ref().map(|context| context.cwd.as_path());
+                #[cfg(not(target_os = "macos"))]
+                let cwd = p.cwd();
+                let stage =
+                    classify::classify(table, Some(&id), &p.name().to_string_lossy(), cwd, args);
+                let association = cwd.map(|cwd| project::association(cwd, &id.exe, args));
+                let cwd = cwd.map(Path::to_owned);
                 let recipe = if stage.discovery == "development" {
                     launch::plan(table, &id, &listeners, &allowed)
                         .ok()
@@ -320,20 +347,40 @@ fn scan(app: Option<&AppHandle>, servers: &Servers) -> Result<()> {
             .get(&pid)
             .filter(|cached| Some(&cached.identity) == id);
         let started = id.and_then(|i| iso(i.unix_ms));
+        let same =
+            previous.filter(|r| r.identity.as_ref() == id || r.identity.is_none() || id.is_none());
         let saved = c
             .model
             .last_observed
             .iter()
-            .find(|r| r.reference.key == key && started.is_some() && r.process_started == started)
+            .find(|r| {
+                (previous.is_none() || same.is_some())
+                    && r.reference.key == key
+                    && started.is_some()
+                    && r.process_started == started
+            })
             .cloned();
-        let same =
-            previous.filter(|r| r.identity.as_ref() == id || r.identity.is_none() || id.is_none());
         let reference = Reference {
             key: key.clone(),
             first_seen: same
                 .map(|r| r.record.reference.first_seen)
                 .or_else(|| saved.as_ref().map(|r| r.reference.first_seen))
-                .unwrap_or(ts),
+                .unwrap_or_else(|| {
+                    // Separate generations even when the clock moves back or the
+                    // same PID and port are observed again in the same millisecond.
+                    previous
+                        .map(|r| &r.record)
+                        .into_iter()
+                        .chain(
+                            c.model
+                                .recently_stopped
+                                .iter()
+                                .filter(|r| r.reference.key == key),
+                        )
+                        .fold(ts, |value, r| {
+                            value.max(r.reference.first_seen.saturating_add(1))
+                        })
+                }),
         };
         let process = table.process(pid);
         let name = process
@@ -350,6 +397,7 @@ fn scan(app: Option<&AppHandle>, servers: &Servers) -> Result<()> {
         let mut discovery = classification.discovery;
         let private_key = metadata
             .and_then(|v| v.association.clone())
+            .or_else(|| id.map(project::process_association))
             .unwrap_or_else(|| project::hash(&format!("instance:{key}:{}", reference.first_seen)));
         let (project, association) = if discovery != "application" {
             c.model
@@ -496,29 +544,17 @@ fn presence(app: &AppHandle) -> Result<()> {
         .map(|l| format!("{}:{}", l.pid, l.port))
         .collect();
     let mut c = lock(&s.core)?;
-    let mut removed = Vec::new();
     let settings = crate::settings::snapshot(app);
-    for r in observed {
-        if c.row(&r).is_err() {
-            continue;
-        }
-        if keys.contains(&r.key) {
-            c.missing.remove(&r.key);
-            continue;
-        }
-        let n = c.missing.entry(r.key.clone()).or_default();
-        *n += 1;
-        if *n >= 2 {
+    let removed = c.missing_twice(observed, &keys);
+    if !removed.is_empty() {
+        for r in &removed {
             notify(
                 app,
                 settings["notifyOnStop"] == true,
                 "Listener disappeared",
-                c.row(&r)?,
+                c.row(r)?,
             );
-            removed.push(r)
         }
-    }
-    if !removed.is_empty() {
         c.retire(&removed);
         publish(app, &c)
     }
@@ -544,9 +580,13 @@ fn health_cycle(app: &AppHandle) -> Result<()> {
     if targets.is_empty() {
         return Ok(());
     }
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let workers = targets.len().min(8);
+    let labels_changed = AtomicBool::new(false);
+    let history_changed = AtomicBool::new(false);
     let jobs = Mutex::new(targets.into_iter());
     thread::scope(|scope| {
-        for _ in 0..8 {
+        for _ in 0..workers {
             scope.spawn(|| loop {
                 let target = jobs.lock().unwrap().next();
                 let Some(t) = target else { break };
@@ -560,6 +600,7 @@ fn health_cycle(app: &AppHandle) -> Result<()> {
                 if t.unknown {
                     if let Some(a) = answer {
                         c.live.get_mut(&t.reference.key).unwrap().public["answersHttp"] = json!(a);
+                        labels_changed.store(true, Ordering::Relaxed);
                     }
                 } else {
                     let down = value["status"] == "down";
@@ -591,6 +632,7 @@ fn health_cycle(app: &AppHandle) -> Result<()> {
                             now(),
                         );
                         c.dirty = true;
+                        history_changed.store(true, Ordering::Relaxed);
                     }
                     c.health.insert(t.reference, value);
                 }
@@ -599,7 +641,12 @@ fn health_cycle(app: &AppHandle) -> Result<()> {
     });
     let c = lock(&s.core)?;
     let _ = app.emit("onHealthUpdate", c.health.values().collect::<Vec<_>>());
-    publish(app, &c);
+    if labels_changed.load(Ordering::Relaxed) {
+        let _ = app.emit("onScanUpdate", c.items());
+    }
+    if history_changed.load(Ordering::Relaxed) {
+        let _ = app.emit("onProjectsUpdate", c.snapshot());
+    }
     Ok(())
 }
 pub fn start(app: AppHandle) {
@@ -637,7 +684,7 @@ pub async fn dispatch(app: AppHandle, method: &str, arg: Value) -> Result<Value>
                 Ok(Value::Null)
             }
             "editProject" | "associateService" | "attachLegacyNote" => {
-                control::edit(&app, &s, &method, arg)
+                control::edit(Some(&app), &s, &method, arg)
             }
             "stopServers" | "startServers" | "restartServer" => {
                 control::operate(Some(&app), &s, &method, arg)

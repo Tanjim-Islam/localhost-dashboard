@@ -117,6 +117,11 @@ impl Table {
         }
         Ok(found)
     }
+    #[cfg(target_os = "macos")]
+    pub fn context(&self, id: &Identity) -> Option<Context> {
+        super::mac_args::context(id)
+    }
+    #[cfg(not(target_os = "macos"))]
     pub fn context(&self, id: &Identity) -> Option<Context> {
         if identity(id.pid).as_ref() != Some(id) {
             return None;
@@ -163,6 +168,9 @@ pub fn service_names() -> HashMap<u32, Vec<String>> {
 #[cfg(target_os = "macos")]
 pub fn identity(pid: u32) -> Option<Identity> {
     use std::{ffi::OsStr, mem, os::unix::ffi::OsStrExt};
+    if pid <= 1 {
+        return None;
+    }
     unsafe {
         let mut info = mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
         let size = mem::size_of::<libc::proc_bsdinfo>() as i32;
@@ -177,6 +185,9 @@ pub fn identity(pid: u32) -> Option<Identity> {
             return None;
         }
         let info = info.assume_init();
+        if info.pbi_uid != libc::getuid() || info.pbi_status == libc::SZOMB {
+            return None;
+        }
         let mut path = [0u8; 4096];
         let len = libc::proc_pidpath(pid as i32, path.as_mut_ptr().cast(), path.len() as u32);
         if len <= 0 {

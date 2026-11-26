@@ -52,12 +52,20 @@ pub fn probe(t: &Target) -> (Value, Option<bool>) {
                 break;
             }
         }
-        let text = String::from_utf8_lossy(&header);
+        let end = header
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .ok_or(std::io::ErrorKind::InvalidData)?;
+        let text = String::from_utf8_lossy(&header[..end]);
         let mut lines = text.lines();
         let status = lines
             .next()
-            .and_then(|s| s.strip_prefix("HTTP/"))
-            .and_then(|s| s.split_ascii_whitespace().nth(1))
+            .and_then(|s| {
+                let mut parts = s.split_ascii_whitespace();
+                matches!(parts.next(), Some("HTTP/1.0" | "HTTP/1.1"))
+                    .then(|| parts.next())
+                    .flatten()
+            })
             .and_then(|s| s.parse::<u16>().ok())
             .filter(|n| (100..600).contains(n))
             .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidData))?;
