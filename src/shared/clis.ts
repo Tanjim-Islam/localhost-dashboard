@@ -321,39 +321,6 @@ export type CliInventorySnapshot = {
   sourceResults: CliSourceResult[];
 };
 
-export type CliScanAttemptSummary = {
-  scanSessionId: string;
-  startedAt: number;
-  finishedAt: number;
-  status: Exclude<CliScanStatus, "idle" | "scanning" | "cancelling">;
-  sourceFailureCount: number;
-  message?: string;
-};
-
-export type CliUninstallAuditSummary = {
-  requestId: string;
-  installationId: string;
-  source: CliPackageSource;
-  packageId?: string;
-  startedAt: number;
-  finishedAt: number;
-  status: "succeeded" | "failed" | "verification-failed";
-  message: string;
-};
-
-export type CliStoreSchema = {
-  scanDirectories?: string[];
-  schemaVersion: 2;
-  inventory: CliInventorySnapshot | null;
-  comparisonBaseline?: CliInventorySnapshot | null;
-  lastScanStartedAt: number | null;
-  lastCompletedScanAt: number | null;
-  lastSuccessfulScanAt: number | null;
-  lastScanStatus: CliScanStatus;
-  scanAttempts: CliScanAttemptSummary[];
-  uninstallAudits: CliUninstallAuditSummary[];
-};
-
 export type CliUninstallPreview = {
   token: string;
   expiresAt: number;

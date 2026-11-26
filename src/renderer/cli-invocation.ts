@@ -41,7 +41,7 @@ export function getCliInvocation(
       } else if (![".exe", ".com", ".cmd", ".bat"].includes(extension ?? ""))
         continue;
     }
-    // The terminal can have a different PATH or aliases from Electron.
+    // The terminal can have a different PATH or aliases from the dashboard.
     if (shell === "powershell") return `& ${args.map(quotePosh).join(" ")}`;
     if (shell === "posix") return args.map(quotePosix).join(" ");
     if (args.some((arg) => /[%!"\r\n]/.test(arg))) continue;
