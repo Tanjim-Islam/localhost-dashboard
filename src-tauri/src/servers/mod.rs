@@ -2,6 +2,8 @@ mod classify;
 mod control;
 mod health;
 mod launch;
+#[cfg(all(test, any(windows, target_os = "macos")))]
+mod launcher_tests;
 mod native;
 #[cfg(any(target_os = "macos", test))]
 mod npm;
@@ -445,7 +447,9 @@ fn scan(app: Option<&AppHandle>, servers: &Servers) -> Result<()> {
         let new = same.is_none() && saved.is_none();
         let row = Row {
             record,
-            identity: id.cloned(),
+            identity: id
+                .cloned()
+                .or_else(|| same.and_then(|r| r.identity.clone())),
             association_key: private_key,
             discovery,
             public,
@@ -549,7 +553,7 @@ fn health_cycle(app: &AppHandle) -> Result<()> {
                 let (value, answer) = health::probe(&t);
                 let Ok(mut c) = s.core.lock() else { break };
                 let Ok(r) = c.row(&t.reference) else { continue };
-                if r.public["url"] != t.url || r.public["ignored"] == true {
+                if r.public["url"] != t.url || c.ignored(&r.record) || r.public["ignored"] == true {
                     continue;
                 }
                 let mut record = r.record.clone();

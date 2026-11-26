@@ -76,9 +76,17 @@ fn health_checks_both_address_families_and_ignores_response_bodies() {
         let port = socket.local_addr().unwrap().port();
         let worker = thread::spawn(move || {
             let (mut conn, _) = socket.accept().unwrap();
-            let mut request = [0u8; 256];
-            let n = conn.read(&mut request).unwrap();
-            assert!(request[..n].starts_with(b"HEAD / "));
+            let mut reader = BufReader::new(&conn);
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.starts_with("HEAD / "));
+            loop {
+                line.clear();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+            }
             write!(
                 conn,
                 "HTTP/1.1 {reply}\r\nContent-Length: 17\r\n\r\nprivate-test-body"
@@ -99,7 +107,14 @@ fn health_checks_both_address_families_and_ignores_response_bodies() {
         worker.join().unwrap();
         assert_eq!(result["endpoint"], kind);
         assert_eq!(result["firstSeen"], 9);
-        assert_eq!(result["status"], "healthy");
+        assert_eq!(
+            result["status"],
+            if result["responseTime"].as_u64().unwrap() < 500 {
+                "healthy"
+            } else {
+                "slow"
+            }
+        );
         assert!(!result.to_string().contains("private-test-body"));
     }
 }
@@ -290,6 +305,11 @@ fn live_selected_stop_restart_start_and_port_conflict() {
             .clone()
     };
     let original = f.child.id();
+    let mut stale_identity = f.pids[0].clone();
+    stale_identity.started += 1;
+    // Same PID and executable with a different creation time must never receive a signal.
+    assert!(native::stop(&stale_identity).is_err());
+    assert!(native::identity(original).as_ref() == Some(&f.pids[0]));
     for _ in 0..12 {
         scan(None, &servers).unwrap();
         if servers
@@ -397,4 +417,66 @@ fn live_selected_stop_restart_start_and_port_conflict() {
     assert!(!persisted.contains("LOCAL_DASHBOARD_LIVE_TEST_VALUE"));
     assert!(persisted.contains("listener-disappeared"));
     assert!(persisted.contains("restarted"));
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_terminal_uses_literal_project_folder_and_system_processes_stay_protected() {
+    struct CloseFixture(Identity);
+    impl Drop for CloseFixture {
+        fn drop(&mut self) {
+            if native::identity(self.0.pid).as_ref() == Some(&self.0) {
+                let _ = native::stop(&self.0);
+            }
+        }
+    }
+    let root = tempdir().unwrap();
+    let folder = root.path().join("project & ($literal) বাংলা");
+    fs::create_dir(&folder).unwrap();
+    let terminal = CloseFixture(windows::open_terminal(&folder.canonicalize().unwrap()).unwrap());
+    assert_eq!(classify::basename(&terminal.0.exe), "cmd");
+    let mut table = Table::default();
+    table.refresh();
+    assert!(launch::protected(&table, &terminal.0, &HashMap::new()));
+    let ctx = table.context(&terminal.0).unwrap();
+    assert_eq!(project::path_key(&ctx.cwd), project::path_key(&folder));
+    assert_eq!(&ctx.argv[1..], &["/d", "/k"].map(OsString::from));
+    let pid = terminal.0.pid;
+    drop(terminal);
+    assert!(native::identity(pid).is_none());
+}
+
+#[cfg(windows)]
+#[test]
+fn dashboard_ancestry_and_application_classification_require_positive_evidence() {
+    let mut table = Table::default();
+    table.refresh();
+    let own = native::identity(std::process::id()).unwrap();
+    assert!(launch::protected(&table, &own, &HashMap::new()));
+    if let Some(parent) = table.parent(own.pid).and_then(native::identity) {
+        assert!(launch::protected(&table, &parent, &HashMap::new()));
+    }
+    let browser = Identity {
+        pid: 1_900_000_000,
+        started: 1,
+        unix_ms: 1,
+        exe: "C:/Portable/Chrome/chrome.exe".into(),
+    };
+    let classified = classify::classify(&table, Some(&browser), "chrome.exe", None, &[]);
+    assert_eq!(classified.discovery, "application");
+    assert_eq!(classified.app.unwrap()["name"], "Google Chrome");
+    let node = Identity {
+        exe: "C:/Program Files/nodejs/node.exe".into(),
+        ..browser
+    };
+    let bare = classify::classify(&table, Some(&node), "node.exe", None, &[]);
+    assert_eq!(bare.discovery, "unidentified");
+    let development = classify::classify(
+        &table,
+        Some(&node),
+        "node.exe",
+        None,
+        &["node".into(), "project.cjs".into()],
+    );
+    assert_eq!(development.discovery, "development");
 }

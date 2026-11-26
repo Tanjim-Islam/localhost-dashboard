@@ -164,7 +164,28 @@ pub fn plan(
         return Err("Restart this server through its supervisor.".into());
     }
     let tree = table.descendants(&launch.id)?;
-    if !tree.contains(selected) || tree.iter().any(|i| protected(table, i, allowed)) {
+    // A console host and npm's observed noninteractive system shell retire on
+    // their own when their client exits. They participate in ownership checks
+    // and must disappear, but never receive a forced termination.
+    let passive_helper = |id: &Identity| {
+        if !cfg!(windows) || !system_process(id) || listeners.iter().any(|l| l.pid == id.pid) {
+            return false;
+        }
+        let name = basename(&id.exe);
+        name == "conhost"
+            || (shell(&name)
+                && contexts.iter().any(|ctx| {
+                    ctx.id == *id
+                        && ctx.argv.iter().any(|s| {
+                            s == "-c" || s.to_str().is_some_and(|s| s.eq_ignore_ascii_case("/c"))
+                        })
+                }))
+    };
+    if !tree.contains(selected)
+        || tree
+            .iter()
+            .any(|i| protected(table, i, allowed) && !passive_helper(i))
+    {
         return Err("The launcher shares a protected process tree.".into());
     }
     let ids: HashSet<_> = tree.iter().map(|i| i.pid).collect();
@@ -280,7 +301,7 @@ pub fn stop_tree(plan: &Plan) -> Result<()> {
         thread::sleep(Duration::from_millis(150))
     }
     for id in &known {
-        if native::identity(id.pid).as_ref() == Some(id) {
+        if !system_process(id) && native::identity(id.pid).as_ref() == Some(id) {
             native::stop(id)?;
         }
     }

@@ -1,6 +1,8 @@
 use super::*;
 use serde::de::DeserializeOwned;
-use std::{collections::BTreeMap, process::Command};
+use std::collections::BTreeMap;
+#[cfg(not(windows))]
+use std::process::Command;
 use tauri_plugin_opener::OpenerExt;
 
 fn parse<T: DeserializeOwned>(value: Value) -> Result<T> {
@@ -258,6 +260,7 @@ fn stop(s: &Servers, scope: &Scope, app: Option<&AppHandle>) -> Result<Value> {
                     core.retire(&refs);
                     save(&s.dir, &mut core)?;
                     if let Some(app) = app {
+                        notify_stopped(app, &affected);
                         publish(app, &core)
                     }
                     return Ok(());
@@ -410,6 +413,9 @@ fn restart(s: &Servers, r: Reference, app: Option<&AppHandle>) -> Result<Value> 
                 )?;
             }
             launch::stop_tree(&plan)?;
+            if let Some(app) = app {
+                notify_stopped(app, &affected);
+            }
             c.retire(
                 &affected
                     .iter()
@@ -444,6 +450,12 @@ fn restart(s: &Servers, r: Reference, app: Option<&AppHandle>) -> Result<Value> 
     emit(if ok { "ready" } else { "failed" }, &message);
     scan(app, s)?;
     Ok(json!({"ok":ok,"port":port,"message":message}))
+}
+fn notify_stopped(app: &AppHandle, rows: &[Row]) {
+    let enabled = crate::settings::snapshot(app)["notifyOnStop"] == true;
+    for row in rows {
+        notify(app, enabled, "Listener disappeared", row)
+    }
 }
 pub(super) fn operate(
     app: Option<&AppHandle>,
@@ -533,24 +545,7 @@ pub(super) fn open(app: &AppHandle, s: &Servers, method: &str, arg: Value) -> Re
 fn terminal(path: &Path) -> Result<()> {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        let root = std::env::var_os("SystemRoot")
-            .map(PathBuf::from)
-            .ok_or("Windows directory not found.")?;
-        let mut process = Command::new(root.join("System32/cmd.exe"))
-            .args(["/d", "/k"])
-            .current_dir(path)
-            .creation_flags(windows_sys::Win32::System::Threading::CREATE_NEW_CONSOLE)
-            .spawn()
-            .map_err(|_| "Could not open terminal.")?;
-        thread::sleep(Duration::from_millis(350));
-        if process
-            .try_wait()
-            .map_err(|_| "Could not verify terminal.")?
-            .is_some()
-        {
-            return Err("Terminal exited before opening.".into());
-        }
+        super::windows::open_terminal(path)?;
     }
     #[cfg(target_os = "macos")]
     {

@@ -27,11 +27,11 @@ pub fn probe(t: &Target) -> (Value, Option<bool>) {
     let io = || -> std::io::Result<(u16, &'static str)> {
         let mut stream = TcpStream::connect_timeout(&addr, budget)?;
         stream.set_write_timeout(Some(budget))?;
-        write!(
-            stream,
+        let request = format!(
             "HEAD / HTTP/1.1\r\nHost: {host}:{}\r\nConnection: close\r\n\r\n",
             t.port
-        )?;
+        );
+        stream.write_all(request.as_bytes())?;
         let mut header = Vec::new();
         let mut buf = [0u8; 2048];
         while header.len() < 32 * 1024 {

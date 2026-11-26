@@ -7,6 +7,56 @@ use windows_sys::Win32::{
     System::{Services::*, Threading::*},
 };
 
+pub fn open_terminal(path: &std::path::Path) -> Result<Identity> {
+    use std::os::windows::ffi::OsStrExt;
+    let directory = super::project::display(path);
+    if !path.is_dir() || directory.as_bytes().get(1) != Some(&b':') || !path.is_absolute() {
+        return Err("Select a local project folder.".into());
+    }
+    let root = std::env::var_os("SystemRoot").ok_or("Windows directory not found.")?;
+    let binary = std::path::PathBuf::from(root).join("System32/cmd.exe");
+    let exe: Vec<u16> = binary.as_os_str().encode_wide().chain([0]).collect();
+    let folder: Vec<u16> = directory.encode_utf16().chain([0]).collect();
+    let mut command: Vec<u16> = "cmd.exe /d /k".encode_utf16().chain([0]).collect();
+    let startup = STARTUPINFOW {
+        cb: mem::size_of::<STARTUPINFOW>() as u32,
+        dwFlags: STARTF_USESHOWWINDOW,
+        wShowWindow: 1,
+        ..Default::default()
+    };
+    let mut child = PROCESS_INFORMATION::default();
+    // No inherited pipes or STARTF_USESTDHANDLES. The new console supplies
+    // its own interactive input/output, including when Tauri is a GUI process.
+    if unsafe {
+        CreateProcessW(
+            exe.as_ptr(),
+            command.as_mut_ptr(),
+            ptr::null(),
+            ptr::null(),
+            0,
+            CREATE_NEW_CONSOLE,
+            ptr::null(),
+            folder.as_ptr(),
+            &startup,
+            &mut child,
+        )
+    } == 0
+    {
+        return Err("Could not open terminal.".into());
+    }
+    let handle = ProcessHandle(child.hProcess);
+    unsafe {
+        CloseHandle(child.hThread);
+    }
+    if unsafe { WaitForSingleObject(handle.0, 350) } != windows_sys::Win32::Foundation::WAIT_TIMEOUT
+    {
+        return Err("Terminal exited before opening.".into());
+    }
+    handle
+        .identity(child.dwProcessId)
+        .ok_or_else(|| "Could not verify the new terminal.".into())
+}
+
 fn listener_table<T: Copy>(family: u16, decode: impl Fn(T) -> (u32, u32)) -> Result<Vec<Listener>> {
     let mut bytes = 0_u32;
     let mut table = Vec::<u32>::new();
