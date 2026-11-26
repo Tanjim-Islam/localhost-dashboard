@@ -13,7 +13,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
@@ -37,6 +36,7 @@ tokio = { version = "1", features = ["sync", "time", "macros"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+tauri-plugin-autostart = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"

@@ -12,6 +12,8 @@ mod updater;
 #[cfg(test)]
 mod updater_checks;
 mod window;
+#[cfg(windows)]
+mod windows_login;
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
@@ -59,11 +61,11 @@ async fn dashboard(
             "clisTestMode":storage::isolated()
         })),
         "getSettings" => Ok(settings::snapshot(&app)),
-        "getRendererPreferences" => storage::read_json(
-            &app.state::<settings::Settings>().dir,
-            "renderer-preferences.json",
-            json!({}),
-        ),
+        "getRendererPreferences" => {
+            tauri::async_runtime::spawn_blocking(move || storage::renderer_preferences(&app))
+                .await
+                .map_err(|_| "Cannot load dashboard display preferences.")?
+        }
         "updateSettings" => settings::update(&app, Some(arg)),
         "resetSettings" => settings::update(&app, None),
         "toggleSettings" => {
@@ -140,13 +142,15 @@ fn main() {
             window::show(app)
         }));
     }
+    #[cfg(not(windows))]
     let login = tauri_plugin_autostart::Builder::new()
         .app_name("Localhost Dashboard")
         .arg("--hidden");
     #[cfg(target_os = "macos")]
     let login = login.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
+    #[cfg(not(windows))]
+    let builder = builder.plugin(login.build());
     builder
-        .plugin(login.build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())

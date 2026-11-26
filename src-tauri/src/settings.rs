@@ -5,6 +5,7 @@ use std::{
     sync::Mutex,
 };
 use tauri::{AppHandle, Emitter, Manager};
+#[cfg(not(windows))]
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -116,26 +117,31 @@ fn unregister(app: &AppHandle, name: &str) {
         }
     }
 }
-fn login(app: &AppHandle, enabled: bool) -> Result<(), String> {
+fn login(_app: &AppHandle, enabled: bool, _explicit: bool) -> Result<(), String> {
     if cfg!(debug_assertions) || isolated() {
         return Ok(());
     }
-    let manager = app.autolaunch();
-    if enabled {
-        manager.enable()
-    } else if manager.is_enabled().map_err(|e| e.to_string())? {
-        manager.disable()
-    } else {
-        Ok(())
-    }
-    .map_err(|_| "Could not update the login item.".into())
+    #[cfg(windows)]
+    let result = crate::windows_login::sync(enabled, _explicit);
+    #[cfg(not(windows))]
+    let result = {
+        let manager = _app.autolaunch();
+        if enabled {
+            manager.enable()
+        } else if manager.is_enabled().map_err(|e| e.to_string())? {
+            manager.disable()
+        } else {
+            Ok(())
+        }
+    };
+    result.map_err(|_| "Could not update the login item.".into())
 }
 pub fn activate(app: &AppHandle) {
     let prefs = snapshot(app);
     if let Err(e) = register(app, prefs["globalHotkey"].as_str().unwrap_or_default()) {
         eprintln!("{e}");
     }
-    if let Err(e) = login(app, prefs["startAtLogin"] == true) {
+    if let Err(e) = login(app, prefs["startAtLogin"] == true, false) {
         eprintln!("{e}");
     }
 }
@@ -158,7 +164,7 @@ pub fn update(app: &AppHandle, patch: Option<Value>) -> Result<Value, String> {
     let login_changed = next["startAtLogin"] != old["startAtLogin"];
     let save = (|| {
         if login_changed {
-            login(app, next["startAtLogin"] == true)?;
+            login(app, next["startAtLogin"] == true, true)?;
         }
         write_json(&state.dir, "settings.json", &next)
     })();
@@ -167,7 +173,7 @@ pub fn update(app: &AppHandle, patch: Option<Value>) -> Result<Value, String> {
             unregister(app, after);
         }
         if login_changed {
-            let _ = login(app, old["startAtLogin"] == true);
+            let _ = login(app, old["startAtLogin"] == true, false);
         }
         return Err(err);
     }

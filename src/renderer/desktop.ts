@@ -133,13 +133,21 @@ document.addEventListener("keydown", (event) => {
 
 async function start() {
   if (!localStorage.getItem("dashboard:nativePreferencesImported")) {
-    const legacy = await request<Record<string, string>>(
-      "getRendererPreferences",
-    );
-    for (const [key, value] of Object.entries(legacy)) {
-      if (!localStorage.getItem(key)) localStorage.setItem(key, value);
+    try {
+      const legacy = await request<Record<string, string>>(
+        "getRendererPreferences",
+      );
+      for (const [key, value] of Object.entries(legacy)) {
+        if (localStorage.getItem(key) === null)
+          localStorage.setItem(key, value);
+      }
+      localStorage.setItem("dashboard:nativePreferencesImported", "1");
+    } catch {
+      // Old Chromium data may be locked or damaged. Retry on the next launch.
+      console.warn(
+        "Could not import the previous dashboard display preferences.",
+      );
     }
-    localStorage.setItem("dashboard:nativePreferencesImported", "1");
   }
   applyStoredThemePreferences();
   await import("./main");

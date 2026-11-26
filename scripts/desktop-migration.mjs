@@ -125,4 +125,38 @@ export async function checkMigration({
     after.projects.find((p) => p.id === project.id).notes.includes(note.text),
   );
   await closeApp();
+
+  // An unreadable optional Chromium database must not prevent a normal launch.
+  // Replacing it with a readable profile should retry display preferences only.
+  const damaged = path.join(root, "damaged-preferences");
+  const old = path.join(damaged, "electron-app-data", "Electron");
+  const db = path.join(old, "Local Storage", "leveldb");
+  await fs.mkdir(db, { recursive: true });
+  await fs.writeFile(path.join(db, "CURRENT"), "MANIFEST-000001\n");
+  await fs.writeFile(
+    path.join(old, "settings.json"),
+    JSON.stringify(legacy["settings.json"]),
+  );
+  await launch(damaged);
+  assert.equal((await api("getSettings")).scanIntervalMs, 3456);
+  await api("updateSettings", { scanIntervalMs: 4321 });
+  await closeApp();
+  await fs.unlink(path.join(db, "CURRENT"));
+  if (baseline)
+    await fs.cp(
+      path.join(baseline, "electron-app-data", "Electron", "Local Storage"),
+      path.dirname(db),
+      { recursive: true },
+    );
+  await launch(damaged);
+  assert.equal((await api("getSettings")).scanIntervalMs, 4321);
+  const recovered = JSON.parse(
+    await fs.readFile(
+      path.join(damaged, "tauri-app-data", "renderer-preferences.json"),
+      "utf8",
+    ),
+  );
+  if (baseline) assert.equal(recovered["dashboard:activeTab"], "servers");
+  else assert.deepEqual(recovered, {});
+  await closeApp();
 }
