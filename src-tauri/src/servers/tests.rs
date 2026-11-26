@@ -317,7 +317,10 @@ fn fixture_pid(f: &mut Owned, port: u16) -> u32 {
         .unwrap();
     let id = native::identity(pid).unwrap();
     let ctx = Table::default().context(&id).unwrap();
-    assert_eq!(project::path_key(&ctx.cwd), project::path_key(&f.dir));
+    assert_eq!(
+        ctx.cwd.canonicalize().unwrap(),
+        f.dir.canonicalize().unwrap()
+    );
     f.pids.push(id);
     pid
 }

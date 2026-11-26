@@ -408,10 +408,26 @@ pub fn launch<G>(recipe: &Recipe, authorize: impl FnOnce() -> Result<G>) -> Resu
     result
 }
 fn wait_ready(recipe: &Recipe, child: &mut Child) -> Result<Vec<Identity>> {
-    let root = native::identity(child.id())
-        .filter(|i| path_key(&i.exe) == path_key(&recipe.launch.id.exe))
-        .ok_or("The launched process identity could not be verified.")?;
     let deadline = Instant::now() + Duration::from_secs(45);
+    let root = loop {
+        if child
+            .try_wait()
+            .map_err(|_| "Cannot inspect the launched process.")?
+            .is_some()
+        {
+            return Err("The project exited before reopening its port.".into());
+        }
+        if let Some(id) = native::identity(child.id()) {
+            if path_key(&id.exe) != path_key(&recipe.launch.id.exe) {
+                return Err("The launched process executable changed.".into());
+            }
+            break id;
+        }
+        if Instant::now() >= deadline {
+            return Err("The launched process identity could not be verified.".into());
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
     let mut stable = None;
     let mut known = vec![root.clone()];
     loop {

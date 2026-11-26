@@ -158,6 +158,9 @@ impl Drop for Fixture {
             }
         }
         if let Some(c) = self.child.as_mut() {
+            // This owned child may have started before libproc published its
+            // identity. A failed setup must never leave it running or hang CI.
+            let _ = c.kill();
             let _ = c.wait();
         }
     }
