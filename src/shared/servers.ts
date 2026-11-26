@@ -202,3 +202,12 @@ export function stopScope(value: unknown): StopScope {
 export function startScope(value: unknown): StartScope {
   return stopScope(value);
 }
+
+export type RestartResult = { ok: boolean; port: number; message: string };
+export type RestartPhase = "preparing" | "stopping" | "starting" | "ready" | "failed";
+export type RestartProgress = {
+  key: string;
+  port: number;
+  phase: RestartPhase;
+  message: string;
+};

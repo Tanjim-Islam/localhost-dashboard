@@ -4,7 +4,7 @@ import type {
   CliInstallation,
   CliUninstallPreview,
   CliUninstallProgress,
-} from "../../../main/clis/types";
+} from "../../../shared/clis";
 import { CLI_SOURCE_LABELS } from "../../cli-view-model";
 
 export function CliUninstallDialog({

@@ -7,7 +7,7 @@ import type {
   CliInventorySnapshot,
   CliPackageSource,
   CliProduct,
-} from "../main/clis/types";
+} from "../shared/clis";
 
 export type CliFilters = {
   query: string;

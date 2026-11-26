@@ -10,7 +10,7 @@ import type {
   StopScope,
 } from "../../shared/servers";
 import type { HealthStatus } from "../../types/preload";
-import type { RestartProgress } from "../../main/server-restart/types";
+import type { RestartProgress } from "../../shared/servers";
 import Modal from "./Modal";
 import ProjectEditor from "./servers/ProjectEditor";
 import ActivityDialog from "./servers/ActivityDialog";

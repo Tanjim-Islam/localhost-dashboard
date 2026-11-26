@@ -9,24 +9,13 @@ import {
   getVisibleCliInstallations,
   summarizeCliInventory,
 } from "../src/renderer/cli-view-model";
-import { FixtureCliProvider } from "../src/main/clis/fixture";
-import { CliCancellationToken } from "../src/main/clis/session";
+import type { CliInventorySnapshot } from "../src/shared/clis";
+import baseline from "./fixtures/cli-inventory.json";
 import { InstallationPanel } from "../src/renderer/components/clis/CliProductRow";
 import type {} from "../src/types/preload";
 
 test("renderer view model summarizes and searches products, commands, package IDs, and paths", async () => {
-  const provider = new FixtureCliProvider(
-    path.join(process.cwd(), ".tmp-tests", "clis-renderer-fixture"),
-    "win32",
-    "x64",
-    () => 1_750_000_000_000,
-  );
-  const inventory = await provider.scan({
-    previous: null,
-    cancellation: new CliCancellationToken(),
-    scanSessionId: "scan-renderer",
-    onProgress: () => undefined,
-  });
+  const inventory = structuredClone(baseline) as CliInventorySnapshot;
   const summary = summarizeCliInventory(inventory);
   assert.equal(summary.installed, 5);
   assert.equal(summary.duplicates, 1);
@@ -69,18 +58,7 @@ test("renderer view model summarizes and searches products, commands, package ID
 });
 
 test("renderer keeps embedded tools out of installed state and includes them in all state", async () => {
-  const provider = new FixtureCliProvider(
-    path.join(process.cwd(), ".tmp-tests", "clis-renderer-origin-fixture"),
-    "win32",
-    "x64",
-    () => 1_750_000_000_000,
-  );
-  const inventory = await provider.scan({
-    previous: null,
-    cancellation: new CliCancellationToken(),
-    scanSessionId: "scan-renderer-origin",
-    onProgress: () => undefined,
-  });
+  const inventory = structuredClone(baseline) as CliInventorySnapshot;
   const product = inventory.products.find(
     (candidate) => candidate.currentInstallationIds.length === 1,
   );
@@ -143,18 +121,7 @@ test("renderer keeps embedded tools out of installed state and includes them in 
 });
 
 test("installation cards show source and health without repeated cache or unknown badges", async () => {
-  const provider = new FixtureCliProvider(
-    path.join(process.cwd(), ".tmp-tests", "clis-renderer-labels-fixture"),
-    "win32",
-    "x64",
-    () => 1_750_000_000_000,
-  );
-  const inventory = await provider.scan({
-    previous: null,
-    cancellation: new CliCancellationToken(),
-    scanSessionId: "scan-labels",
-    onProgress: () => undefined,
-  });
+  const inventory = structuredClone(baseline) as CliInventorySnapshot;
   const installation = inventory.installations.find(
     (item) => item.packageIdentity?.source === "npm",
   );
@@ -213,8 +180,8 @@ test("installation cards show source and health without repeated cache or unknow
 test("tab, preload, and modal contracts expose no raw destructive input", async () => {
   const [app, preload, types, tab, row, dialog] = await Promise.all([
     readFile(path.join(process.cwd(), "src/renderer/App.tsx"), "utf8"),
-    readFile(path.join(process.cwd(), "src/preload/index.ts"), "utf8"),
-    readFile(path.join(process.cwd(), "src/main/clis/types.ts"), "utf8"),
+    readFile(path.join(process.cwd(), "src/renderer/desktop.ts"), "utf8"),
+    readFile(path.join(process.cwd(), "src/shared/clis.ts"), "utf8"),
     readFile(
       path.join(process.cwd(), "src/renderer/components/ClisTab.tsx"),
       "utf8",
@@ -236,7 +203,7 @@ test("tab, preload, and modal contracts expose no raw destructive input", async 
   ]);
   assert.match(app, /saved === "clis"/);
   assert.match(app, /showRefresh=\{activeTab !== "clis"\}/);
-  assert.match(preload, /validateCliUninstallRequest/);
+  assert.match(preload, /uninstallCliInstallation: value => request\("uninstallCliInstallation", value\)/);
   assert.match(types, /confirmation: "uninstall-exact-cli-installation"/);
   assert.doesNotMatch(
     types.slice(

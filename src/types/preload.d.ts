@@ -35,19 +35,19 @@ export type PlatformFeatures = {
 };
 
 export type CliInventorySnapshot =
-  import("../main/clis/types").CliInventorySnapshot;
-export type CliScanSession = import("../main/clis/types").CliScanSession;
-export type CliScanProgress = import("../main/clis/types").CliScanProgress;
+  import("../shared/clis").CliInventorySnapshot;
+export type CliScanSession = import("../shared/clis").CliScanSession;
+export type CliScanProgress = import("../shared/clis").CliScanProgress;
 export type CliInstallationRef =
-  import("../main/clis/types").CliInstallationRef;
+  import("../shared/clis").CliInstallationRef;
 export type CliUninstallPreview =
-  import("../main/clis/types").CliUninstallPreview;
+  import("../shared/clis").CliUninstallPreview;
 export type CliUninstallRequest =
-  import("../main/clis/types").CliUninstallRequest;
+  import("../shared/clis").CliUninstallRequest;
 export type CliUninstallProgress =
-  import("../main/clis/types").CliUninstallProgress;
+  import("../shared/clis").CliUninstallProgress;
 export type CliUninstallResult =
-  import("../main/clis/types").CliUninstallResult;
+  import("../shared/clis").CliUninstallResult;
 
 export type EnvironmentVariableScope = "user" | "machine";
 
@@ -159,9 +159,9 @@ export interface Api {
 
   // actions
   openUrl(url: string): void;
-  restartServer(ref: { key: string; firstSeen: number }): Promise<import("../main/server-restart/types").RestartResult>;
-  getServerRestartState(): Promise<import("../main/server-restart/types").RestartProgress | null>;
-  onServerRestartProgress(cb: (state: import("../main/server-restart/types").RestartProgress) => void): () => void;
+  restartServer(ref: { key: string; firstSeen: number }): Promise<import("../shared/servers").RestartResult>;
+  getServerRestartState(): Promise<import("../shared/servers").RestartProgress | null>;
+  onServerRestartProgress(cb: (state: import("../shared/servers").RestartProgress) => void): () => void;
   copyText(text: string): void;
   openInVSCode(payload: any): Promise<void>;
   openTerminal(path: string): Promise<void>;

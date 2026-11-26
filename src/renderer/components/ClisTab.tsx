@@ -18,7 +18,7 @@ import type {
   CliScanSession,
   CliUninstallPreview,
   CliUninstallProgress,
-} from "../../main/clis/types";
+} from "../../shared/clis";
 import {
   CLI_CATEGORY_LABELS,
   CLI_SOURCE_LABELS,

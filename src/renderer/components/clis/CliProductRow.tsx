@@ -19,7 +19,7 @@ import type {
   CliProduct,
   CliProductStatus,
   CliRuntimeHealth,
-} from "../../../main/clis/types";
+} from "../../../shared/clis";
 import {
   CLI_CATEGORY_LABELS,
   formatCliAge,
@@ -696,9 +696,9 @@ function pathPosition(
   return "Not on the current app PATH";
 }
 
-type CliCommand = import("../../../main/clis/types").CliCommand;
+type CliCommand = import("../../../shared/clis").CliCommand;
 type CliExecutableEndpoint =
-  import("../../../main/clis/types").CliExecutableEndpoint;
+  import("../../../shared/clis").CliExecutableEndpoint;
 
 const ACTIONABLE_ISSUES = new Set<CliIssueCode>([
   "broken-shim",

@@ -2,7 +2,7 @@ import { AnimatedDetails } from "../AnimatedPresence";
 import type {
   CliChanges as Changes,
   CliChangeKind,
-} from "../../../main/clis/changes";
+} from "../../../shared/clis";
 
 const labels: Record<CliChangeKind, string> = {
   added: "Added",

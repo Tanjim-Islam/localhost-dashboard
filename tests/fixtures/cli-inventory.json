@@ -1,0 +1,600 @@
+{
+  "schemaVersion": 2,
+  "revision": "revision-4f3cc4b1-a3c9-47e2-b54b-0bffc11209c3",
+  "platform": "win32",
+  "architecture": "x64",
+  "generatedAt": 1750000000000,
+  "lastSuccessfulScanAt": 1749999700000,
+  "completeness": "partial",
+  "cached": false,
+  "products": [
+    {
+      "id": "dotnet",
+      "displayName": ".NET",
+      "category": "runtime",
+      "aliases": [],
+      "commandNames": [
+        "dotnet"
+      ],
+      "supportedPlatforms": [
+        "win32",
+        "darwin"
+      ],
+      "discoveryConfidence": "catalogued",
+      "installationIds": [
+        "cli-f806519a49a84fc636ce130a"
+      ],
+      "currentInstallationIds": [
+        "cli-f806519a49a84fc636ce130a"
+      ],
+      "removedInstallationIds": [],
+      "embeddedInstallationIds": [],
+      "candidateInstallationIds": [],
+      "health": "warning",
+      "verificationStatus": "ownership-unknown",
+      "issueCodes": [
+        "incomplete-installation"
+      ]
+    },
+    {
+      "id": "bun",
+      "displayName": "Bun",
+      "category": "runtime",
+      "aliases": [],
+      "commandNames": [
+        "bun"
+      ],
+      "supportedPlatforms": [
+        "win32",
+        "darwin"
+      ],
+      "discoveryConfidence": "catalogued",
+      "installationIds": [
+        "cli-608ac401b4cfd56737089a3a",
+        "cli-a054ffab523f7e58dbfd7519"
+      ],
+      "currentInstallationIds": [
+        "cli-608ac401b4cfd56737089a3a",
+        "cli-a054ffab523f7e58dbfd7519"
+      ],
+      "removedInstallationIds": [],
+      "embeddedInstallationIds": [],
+      "candidateInstallationIds": [],
+      "health": "healthy",
+      "verificationStatus": "ownership-unknown",
+      "issueCodes": [
+        "path-conflict",
+        "shadowed"
+      ]
+    },
+    {
+      "id": "codex",
+      "displayName": "OpenAI Codex CLI",
+      "category": "ai-coding",
+      "aliases": [],
+      "commandNames": [
+        "codex"
+      ],
+      "supportedPlatforms": [
+        "win32",
+        "darwin"
+      ],
+      "discoveryConfidence": "catalogued",
+      "installationIds": [
+        "cli-3b8a70041310c89e752d637c"
+      ],
+      "currentInstallationIds": [
+        "cli-3b8a70041310c89e752d637c"
+      ],
+      "removedInstallationIds": [],
+      "embeddedInstallationIds": [],
+      "candidateInstallationIds": [],
+      "health": "healthy",
+      "verificationStatus": "verified",
+      "issueCodes": []
+    },
+    {
+      "id": "opencode",
+      "displayName": "OpenCode",
+      "category": "ai-coding",
+      "aliases": [],
+      "commandNames": [
+        "opencode"
+      ],
+      "supportedPlatforms": [
+        "win32",
+        "darwin"
+      ],
+      "discoveryConfidence": "catalogued",
+      "installationIds": [
+        "cli-3e6c9565f83620a60c6b1585"
+      ],
+      "currentInstallationIds": [
+        "cli-3e6c9565f83620a60c6b1585"
+      ],
+      "removedInstallationIds": [],
+      "embeddedInstallationIds": [],
+      "candidateInstallationIds": [],
+      "health": "healthy",
+      "verificationStatus": "verified",
+      "issueCodes": []
+    },
+    {
+      "id": "python",
+      "displayName": "Python",
+      "category": "runtime",
+      "aliases": [],
+      "commandNames": [
+        "python"
+      ],
+      "supportedPlatforms": [
+        "win32",
+        "darwin"
+      ],
+      "discoveryConfidence": "catalogued",
+      "installationIds": [
+        "cli-10e729875aa3d1153b7ee88f"
+      ],
+      "currentInstallationIds": [
+        "cli-10e729875aa3d1153b7ee88f"
+      ],
+      "removedInstallationIds": [],
+      "embeddedInstallationIds": [],
+      "candidateInstallationIds": [],
+      "health": "broken",
+      "verificationStatus": "ownership-unknown",
+      "issueCodes": [
+        "broken-shim",
+        "missing-target"
+      ]
+    }
+  ],
+  "installations": [
+    {
+      "id": "cli-3b8a70041310c89e752d637c",
+      "productId": "codex",
+      "platform": "win32",
+      "architecture": "x64",
+      "scope": "user",
+      "origin": "package-manager",
+      "version": "0.62.0",
+      "versionSource": "package-metadata",
+      "verificationStatus": "verified",
+      "packageIdentity": {
+        "source": "npm",
+        "packageId": "@openai/codex",
+        "packageVersion": "0.62.0",
+        "scope": "user",
+        "managerRoot": "C:\\fixtures\\local-dashboard\\npm",
+        "managerExecutablePath": "C:\\fixtures\\local-dashboard\\npm\\node.exe",
+        "managerCommandPath": "C:\\fixtures\\local-dashboard\\npm\\node_modules\\npm\\bin\\npm-cli.js",
+        "installRoot": "C:\\fixtures\\local-dashboard\\npm\\node_modules\\@openai\\codex",
+        "ownershipConfidence": "exact",
+        "uninstallEvidence": "manager-owned"
+      },
+      "endpointIds": [
+        "endpoint-43c428bc1eaebc9c34d3be5b"
+      ],
+      "commandIds": [
+        "command-b3dbf0a7610096462f76b70c"
+      ],
+      "fingerprint": "install-fp-46f7920a59ef7d4e45f054f5",
+      "presence": "present",
+      "health": "healthy",
+      "issueCodes": [],
+      "firstSeenAt": 1749913600000,
+      "lastSeenAt": 1750000000000,
+      "lastVerifiedAt": 1750000000000,
+      "lastSuccessfulVerificationAt": 1750000000000,
+      "uninstallCapability": {
+        "status": "supported",
+        "source": "npm",
+        "packageId": "@openai/codex",
+        "reasonCode": "exact-manager-owned",
+        "reason": "Exact npm package ownership is available.",
+        "warnings": [],
+        "requiresElevation": false,
+        "providedCommands": [
+          "codex"
+        ]
+      },
+      "discoveryKind": "catalogue"
+    },
+    {
+      "id": "cli-3e6c9565f83620a60c6b1585",
+      "productId": "opencode",
+      "platform": "win32",
+      "architecture": "x64",
+      "scope": "user",
+      "origin": "package-manager",
+      "version": "1.2.4",
+      "versionSource": "package-metadata",
+      "verificationStatus": "verified",
+      "packageIdentity": {
+        "source": "npm",
+        "packageId": "opencode-ai",
+        "packageVersion": "1.2.4",
+        "scope": "user",
+        "managerRoot": "C:\\fixtures\\local-dashboard\\npm",
+        "managerExecutablePath": "C:\\fixtures\\local-dashboard\\npm\\node.exe",
+        "managerCommandPath": "C:\\fixtures\\local-dashboard\\npm\\node_modules\\npm\\bin\\npm-cli.js",
+        "installRoot": "C:\\fixtures\\local-dashboard\\npm\\node_modules\\opencode-ai",
+        "ownershipConfidence": "exact",
+        "uninstallEvidence": "manager-owned"
+      },
+      "endpointIds": [
+        "endpoint-9d83ef45aee0dad83163b5f1"
+      ],
+      "commandIds": [
+        "command-ced7c23a42f3fbe1981acbfb"
+      ],
+      "fingerprint": "install-fp-864c0ac5211db2ab24e8fbdd",
+      "presence": "present",
+      "health": "healthy",
+      "issueCodes": [],
+      "firstSeenAt": 1749913600000,
+      "lastSeenAt": 1750000000000,
+      "lastVerifiedAt": 1750000000000,
+      "lastSuccessfulVerificationAt": 1750000000000,
+      "uninstallCapability": {
+        "status": "supported",
+        "source": "npm",
+        "packageId": "opencode-ai",
+        "reasonCode": "exact-manager-owned",
+        "reason": "Exact npm package ownership is available.",
+        "warnings": [],
+        "requiresElevation": false,
+        "providedCommands": [
+          "opencode"
+        ]
+      },
+      "discoveryKind": "catalogue"
+    },
+    {
+      "id": "cli-608ac401b4cfd56737089a3a",
+      "productId": "bun",
+      "platform": "win32",
+      "architecture": "x64",
+      "scope": "unknown",
+      "origin": "user",
+      "version": "1.1.8",
+      "versionSource": "version-probe",
+      "verificationStatus": "ownership-unknown",
+      "endpointIds": [
+        "endpoint-6da79b11506c458c19791784"
+      ],
+      "commandIds": [
+        "command-4e7921d78c4c13b4afe9b4a7"
+      ],
+      "fingerprint": "install-fp-21bed74cfccfa61b3be00fc8",
+      "presence": "present",
+      "health": "healthy",
+      "issueCodes": [
+        "path-conflict"
+      ],
+      "firstSeenAt": 1749913600000,
+      "lastSeenAt": 1750000000000,
+      "lastVerifiedAt": 1750000000000,
+      "lastSuccessfulVerificationAt": 1750000000000,
+      "uninstallCapability": {
+        "status": "blocked",
+        "source": "standalone",
+        "reasonCode": "standalone-binary",
+        "reason": "Standalone binaries do not have a proven uninstall owner.",
+        "warnings": [],
+        "requiresElevation": false,
+        "providedCommands": [
+          "bun"
+        ]
+      },
+      "discoveryKind": "catalogue"
+    },
+    {
+      "id": "cli-a054ffab523f7e58dbfd7519",
+      "productId": "bun",
+      "platform": "win32",
+      "architecture": "x64",
+      "scope": "unknown",
+      "origin": "user",
+      "version": "1.2.20",
+      "versionSource": "version-probe",
+      "verificationStatus": "ownership-unknown",
+      "endpointIds": [
+        "endpoint-7abe8c5cd29973485d66e556"
+      ],
+      "commandIds": [
+        "command-fcb5dac7f0c46c3f80d670e2"
+      ],
+      "fingerprint": "install-fp-cb2ee3ab1d8c5fa7005b0ed4",
+      "presence": "present",
+      "health": "healthy",
+      "issueCodes": [
+        "shadowed",
+        "path-conflict"
+      ],
+      "firstSeenAt": 1749913600000,
+      "lastSeenAt": 1750000000000,
+      "lastVerifiedAt": 1750000000000,
+      "lastSuccessfulVerificationAt": 1750000000000,
+      "uninstallCapability": {
+        "status": "blocked",
+        "source": "standalone",
+        "reasonCode": "standalone-binary",
+        "reason": "Standalone binaries do not have a proven uninstall owner.",
+        "warnings": [],
+        "requiresElevation": false,
+        "providedCommands": [
+          "bun"
+        ]
+      },
+      "discoveryKind": "catalogue"
+    },
+    {
+      "id": "cli-10e729875aa3d1153b7ee88f",
+      "productId": "python",
+      "platform": "win32",
+      "architecture": "x64",
+      "scope": "unknown",
+      "origin": "user",
+      "version": "3.13.5",
+      "versionSource": "version-probe",
+      "verificationStatus": "ownership-unknown",
+      "endpointIds": [
+        "endpoint-b484e46792dd5bf0e189e03c"
+      ],
+      "commandIds": [
+        "command-11dea169edf0efdbcb0da45b"
+      ],
+      "fingerprint": "install-fp-ef06f6f3e1898e3e55254ac8",
+      "presence": "present",
+      "health": "broken",
+      "issueCodes": [
+        "broken-shim",
+        "missing-target"
+      ],
+      "firstSeenAt": 1749913600000,
+      "lastSeenAt": 1750000000000,
+      "lastVerifiedAt": 1750000000000,
+      "lastSuccessfulVerificationAt": 1750000000000,
+      "uninstallCapability": {
+        "status": "blocked",
+        "source": "standalone",
+        "reasonCode": "standalone-binary",
+        "reason": "Standalone binaries do not have a proven uninstall owner.",
+        "warnings": [],
+        "requiresElevation": false,
+        "providedCommands": [
+          "python"
+        ]
+      },
+      "discoveryKind": "catalogue"
+    },
+    {
+      "id": "cli-f806519a49a84fc636ce130a",
+      "productId": "dotnet",
+      "platform": "win32",
+      "architecture": "x64",
+      "scope": "unknown",
+      "origin": "user",
+      "version": "9.0.7",
+      "versionSource": "version-probe",
+      "verificationStatus": "ownership-unknown",
+      "endpointIds": [
+        "endpoint-c34270ce20f3ffd2301db3c9"
+      ],
+      "commandIds": [
+        "command-d3c1f1cb2dcc09d94c11b8ed"
+      ],
+      "fingerprint": "install-fp-5af57a894a27133e4d904352",
+      "presence": "present",
+      "health": "incomplete",
+      "issueCodes": [
+        "incomplete-installation"
+      ],
+      "firstSeenAt": 1749913600000,
+      "lastSeenAt": 1750000000000,
+      "lastVerifiedAt": 1750000000000,
+      "lastSuccessfulVerificationAt": 1750000000000,
+      "uninstallCapability": {
+        "status": "blocked",
+        "source": "standalone",
+        "reasonCode": "standalone-binary",
+        "reason": "Standalone binaries do not have a proven uninstall owner.",
+        "warnings": [],
+        "requiresElevation": false,
+        "providedCommands": [
+          "dotnet"
+        ]
+      },
+      "discoveryKind": "catalogue"
+    }
+  ],
+  "commands": [
+    {
+      "id": "command-b3dbf0a7610096462f76b70c",
+      "productId": "codex",
+      "installationId": "cli-3b8a70041310c89e752d637c",
+      "name": "codex",
+      "endpointIds": [
+        "endpoint-43c428bc1eaebc9c34d3be5b"
+      ],
+      "activeEndpointId": "endpoint-43c428bc1eaebc9c34d3be5b",
+      "pathRole": "active"
+    },
+    {
+      "id": "command-ced7c23a42f3fbe1981acbfb",
+      "productId": "opencode",
+      "installationId": "cli-3e6c9565f83620a60c6b1585",
+      "name": "opencode",
+      "endpointIds": [
+        "endpoint-9d83ef45aee0dad83163b5f1"
+      ],
+      "activeEndpointId": "endpoint-9d83ef45aee0dad83163b5f1",
+      "pathRole": "active"
+    },
+    {
+      "id": "command-4e7921d78c4c13b4afe9b4a7",
+      "productId": "bun",
+      "installationId": "cli-608ac401b4cfd56737089a3a",
+      "name": "bun",
+      "endpointIds": [
+        "endpoint-6da79b11506c458c19791784"
+      ],
+      "activeEndpointId": "endpoint-6da79b11506c458c19791784",
+      "pathRole": "active"
+    },
+    {
+      "id": "command-fcb5dac7f0c46c3f80d670e2",
+      "productId": "bun",
+      "installationId": "cli-a054ffab523f7e58dbfd7519",
+      "name": "bun",
+      "endpointIds": [
+        "endpoint-7abe8c5cd29973485d66e556"
+      ],
+      "pathRole": "shadowed"
+    },
+    {
+      "id": "command-11dea169edf0efdbcb0da45b",
+      "productId": "python",
+      "installationId": "cli-10e729875aa3d1153b7ee88f",
+      "name": "python",
+      "endpointIds": [
+        "endpoint-b484e46792dd5bf0e189e03c"
+      ],
+      "activeEndpointId": "endpoint-b484e46792dd5bf0e189e03c",
+      "pathRole": "active"
+    },
+    {
+      "id": "command-d3c1f1cb2dcc09d94c11b8ed",
+      "productId": "dotnet",
+      "installationId": "cli-f806519a49a84fc636ce130a",
+      "name": "dotnet",
+      "endpointIds": [
+        "endpoint-c34270ce20f3ffd2301db3c9"
+      ],
+      "activeEndpointId": "endpoint-c34270ce20f3ffd2301db3c9",
+      "pathRole": "active"
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "endpoint-43c428bc1eaebc9c34d3be5b",
+      "commandName": "codex",
+      "kind": "native",
+      "path": "C:\\fixtures\\local-dashboard\\path-a\\codex.cmd",
+      "canonicalPath": "C:\\fixtures\\local-dashboard\\path-a\\codex.cmd",
+      "pathIndex": 0,
+      "accessible": true,
+      "executable": true,
+      "targetExists": true,
+      "fileSize": 32,
+      "modifiedAt": 1720000000000,
+      "fileIdentity": "fixture-codex-0",
+      "fingerprint": "fp-202fbb8c92e3616cf0c1a629"
+    },
+    {
+      "id": "endpoint-9d83ef45aee0dad83163b5f1",
+      "commandName": "opencode",
+      "kind": "native",
+      "path": "C:\\fixtures\\local-dashboard\\path-a\\opencode.cmd",
+      "canonicalPath": "C:\\fixtures\\local-dashboard\\path-a\\opencode.cmd",
+      "pathIndex": 0,
+      "accessible": true,
+      "executable": true,
+      "targetExists": true,
+      "fileSize": 32,
+      "modifiedAt": 1720000000000,
+      "fileIdentity": "fixture-opencode-0",
+      "fingerprint": "fp-38e28e5c8de3a514dfba58a5"
+    },
+    {
+      "id": "endpoint-6da79b11506c458c19791784",
+      "commandName": "bun",
+      "kind": "native",
+      "path": "C:\\fixtures\\local-dashboard\\path-a\\bun.exe",
+      "canonicalPath": "C:\\fixtures\\local-dashboard\\path-a\\bun.exe",
+      "pathIndex": 0,
+      "accessible": true,
+      "executable": true,
+      "targetExists": true,
+      "fileSize": 32,
+      "modifiedAt": 1720000000000,
+      "fileIdentity": "fixture-bun-0",
+      "fingerprint": "fp-cb8e0d2e89212d8327035bcc"
+    },
+    {
+      "id": "endpoint-7abe8c5cd29973485d66e556",
+      "commandName": "bun",
+      "kind": "native",
+      "path": "C:\\fixtures\\local-dashboard\\path-b\\bun.exe",
+      "canonicalPath": "C:\\fixtures\\local-dashboard\\path-b\\bun.exe",
+      "pathIndex": 1,
+      "accessible": true,
+      "executable": true,
+      "targetExists": true,
+      "fileSize": 32,
+      "modifiedAt": 1720000000000,
+      "fileIdentity": "fixture-bun-1",
+      "fingerprint": "fp-d8692b348b98abc804e8c37c"
+    },
+    {
+      "id": "endpoint-b484e46792dd5bf0e189e03c",
+      "commandName": "python",
+      "kind": "shim",
+      "path": "C:\\fixtures\\local-dashboard\\path-a\\python.cmd",
+      "canonicalPath": "C:\\fixtures\\local-dashboard\\path-a\\python.cmd",
+      "shimTarget": "C:\\fixtures\\local-dashboard\\missing\\python.exe",
+      "pathIndex": 0,
+      "accessible": true,
+      "executable": true,
+      "targetExists": false,
+      "fileSize": 32,
+      "modifiedAt": 1720000000000,
+      "fileIdentity": "fixture-python-0",
+      "fingerprint": "fp-9719ff8872fcdde7add32cd6"
+    },
+    {
+      "id": "endpoint-c34270ce20f3ffd2301db3c9",
+      "commandName": "dotnet",
+      "kind": "native",
+      "path": "C:\\fixtures\\local-dashboard\\path-a\\dotnet.exe",
+      "canonicalPath": "C:\\fixtures\\local-dashboard\\path-a\\dotnet.exe",
+      "pathIndex": 0,
+      "accessible": true,
+      "executable": true,
+      "targetExists": true,
+      "fileSize": 32,
+      "modifiedAt": 1720000000000,
+      "fileIdentity": "fixture-dotnet-0",
+      "fingerprint": "fp-974811829fe872c3be41d9b1"
+    }
+  ],
+  "sourceResults": [
+    {
+      "sourceId": "fixture-path",
+      "label": "Fixture PATH",
+      "status": "success",
+      "startedAt": 1749999999900,
+      "finishedAt": 1750000000000,
+      "recordCount": 7
+    },
+    {
+      "sourceId": "fixture-npm",
+      "label": "Fixture npm packages",
+      "status": "success",
+      "startedAt": 1749999999900,
+      "finishedAt": 1750000000000,
+      "recordCount": 2
+    },
+    {
+      "sourceId": "fixture-winget",
+      "label": "Fixture Winget packages",
+      "status": "failed",
+      "startedAt": 1749999999900,
+      "finishedAt": 1750000000000,
+      "recordCount": 0,
+      "errorCode": "FIXTURE_SOURCE_FAILURE",
+      "message": "A fixture source failed without invalidating cached rows."
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import type {
   CliExecutableEndpoint,
   CliInstallation,
   CliInventorySnapshot,
-} from "../main/clis/types";
+} from "../shared/clis";
 import { getPrimaryCliCommand } from "./cli-view-model";
 
 export type CliShell = "powershell" | "cmd" | "posix";
