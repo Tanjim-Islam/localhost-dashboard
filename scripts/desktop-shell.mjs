@@ -65,6 +65,15 @@ const invoke = (name, value) =>
   page.evaluate(([method, arg]) => window.api[method](arg), [name, value]);
 const button = (name) => page.getByRole("button", { name, exact: true });
 const pass = (message) => console.log("PASS", message);
+const failures = [];
+async function exercise(name, action) {
+  try {
+    await action();
+  } catch (error) {
+    failures.push(new Error(name, { cause: error }));
+    console.error("FAIL", name, error);
+  }
+}
 
 async function start(args) {
   const sock = net.createServer().listen(0, "127.0.0.1");
@@ -132,6 +141,12 @@ async function osActions() {
   } finally {
     windows("clear-clipboard", marker);
   }
+  if (desktop.startsWith("no-cursor")) {
+    console.log(
+      "SKIP Physical mouse and shortcut delivery. GetCursorPos reports no input desktop.",
+    );
+    return;
+  }
   const spot = await page
     .locator(".title-bar")
     .getByText("Localhost Dashboard", { exact: true })
@@ -188,6 +203,11 @@ execFileSync(
   ],
   { windowsHide: true, stdio: "pipe" },
 );
+const desktop = execFileSync(observer, ["desktop"], {
+  windowsHide: true,
+  encoding: "utf8",
+}).trim();
+console.log("Windows desktop:", desktop);
 try {
   await start([]);
   assert.equal(state().visible, 1);
@@ -209,22 +229,43 @@ try {
   );
   pass("Title-bar buttons and double-click update native window state");
   if (hosted) {
-    await osActions();
-    await checkInstalledAhk({ dir, page, invoke, until, windows, pass });
-    await checkShellOpen({ dir, observer, invoke, until });
+    await exercise("Installed clipboard and desktop input", osActions);
+    windows("restore");
+    await exercise("Installed AutoHotkey controls and notifications", () =>
+      checkInstalledAhk({ dir, page, invoke, until, windows, pass }),
+    );
+    await exercise("Installed Explorer, URL and editor actions", () =>
+      checkShellOpen({ dir, observer, invoke, until }),
+    );
   } else {
     await invoke("updateSettings", { closeToTray: true });
     await button("Close").click();
     await until(() => !state().visible, "close-to-tray hides fixture");
     assert.equal(app.exitCode, null);
-    windows("tray-callback");
-    await until(
-      () => state().visible,
-      "native tray callback restored the hidden window",
-    );
-    pass(
-      "Close-to-tray keeps the process alive and the native tray click callback restores it",
-    );
+    pass("Close-to-tray hid the native window and kept its process alive");
+    await exercise("Native notification-area restoration", async () => {
+      const delivered = await until(() => {
+        const result = windows("tray-callback");
+        return result === "sent" || result.startsWith("unavailable:")
+          ? result
+          : false;
+      }, "Windows notification-area rectangle for the registered fixture tray icon");
+      if (delivered !== "sent") {
+        assert.equal(
+          process.env.RUNNER_ENVIRONMENT,
+          "github-hosted",
+          delivered,
+        );
+        console.log("SKIP Notification-area callback.", delivered);
+        return;
+      }
+      await until(
+        () => state().visible,
+        "native tray callback restored the hidden window",
+      );
+      pass("Native tray click callback restored the hidden dashboard");
+    });
+    windows("restore");
   }
   await invoke("updateSettings", {
     startAtLogin: true,
@@ -262,6 +303,8 @@ try {
     "Hidden login startup and visible startup preference on actual native launches",
   );
   await close();
+  if (failures.length)
+    throw new AggregateError(failures, "Windows shell checks failed");
 } finally {
   if (hosted && page && app?.exitCode === null) {
     try {

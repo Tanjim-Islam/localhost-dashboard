@@ -11,6 +11,9 @@ internal static class DashboardShellCheck {
     delegate bool WindowProc(IntPtr handle, IntPtr unused);
     [StructLayout(LayoutKind.Sequential)] struct Rect { public int left,top,right,bottom; }
     [StructLayout(LayoutKind.Sequential)] struct Point { public int x,y; }
+    [StructLayout(LayoutKind.Sequential)] struct TrayIdentifier {
+        public uint size; public IntPtr window; public uint id; public Guid guid;
+    }
     [DllImport("user32")] static extern bool EnumWindows(WindowProc callback,IntPtr unused);
     [DllImport("user32",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h,StringBuilder text,int count);
     [DllImport("user32",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h,StringBuilder text,int count);
@@ -24,6 +27,8 @@ internal static class DashboardShellCheck {
     [DllImport("user32")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32")] static extern bool SetProcessDPIAware();
     [DllImport("user32")] static extern bool GetCursorPos(out Point p);
+    [DllImport("user32",CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string cls,string title);
+    [DllImport("shell32")] static extern int Shell_NotifyIconGetRect(ref TrayIdentifier item,out Rect rect);
     [DllImport("user32")] static extern bool SetCursorPos(int x,int y);
     [DllImport("user32")] static extern bool ClientToScreen(IntPtr h, ref Point p);
     [DllImport("user32")] static extern IntPtr GetAncestor(IntPtr h,uint flags);
@@ -48,10 +53,25 @@ internal static class DashboardShellCheck {
         return target;
     }
 
+    static bool HasTaskbar() { return FindWindow("Shell_TrayWnd",null)!=IntPtr.Zero; }
+
+    static void PrepareDesktop() {
+        Point p;
+        if(Hosted && !HasTaskbar()) {
+            var start=new ProcessStartInfo(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"explorer.exe"));
+            start.UseShellExecute=false; start.WindowStyle=ProcessWindowStyle.Hidden;
+            using(var explorer=Process.Start(start)) {
+                for(int i=0;i<50 && !HasTaskbar();i++) Thread.Sleep(200);
+            }
+        }
+        Console.WriteLine("{0} {1}",GetCursorPos(out p) ? "cursor" : "no-cursor",HasTaskbar() ? "taskbar" : "no-taskbar");
+    }
+
     [STAThread]
     static int Main(string[] args) {
         try {
             SetProcessDPIAware();
+            if(args[0]=="desktop") { PrepareDesktop(); return 0; }
             if(args[0]=="record-uri") {
                 var receipt=System.IO.Path.GetFullPath(args[1]);
                 var directory=System.IO.Path.GetDirectoryName(receipt);
@@ -77,16 +97,31 @@ internal static class DashboardShellCheck {
             if(action=="tray-callback") {
                 // Deliver the same notification sent by Explorer on a left-button release.
                 // The helper targets only the tray-icon 0.25 window of the fixture process.
-                bool sent=false; uint fixture=uint.Parse(args[0]);
+                Point cursor;
+                if(!HasTaskbar() || !GetCursorPos(out cursor)) {
+                    Console.WriteLine("unavailable: taskbar="+HasTaskbar()+" cursor="+GetCursorPos(out cursor));
+                    return 0;
+                }
+                bool found=false, sent=false; uint fixture=uint.Parse(args[0]);
                 EnumWindows((handle,data)=>{
                     uint id; GetWindowThreadProcessId(handle,out id);
                     if(id!=fixture) return true;
                     var cls=new StringBuilder(64); GetClassName(handle,cls,cls.Capacity);
                     if(cls.ToString()!="tray_icon_app") return true;
-                    sent=PostMessage(handle,6002,IntPtr.Zero,new IntPtr(0x202));
+                    found=true;
+                    var item=new TrayIdentifier{size=(uint)Marshal.SizeOf(typeof(TrayIdentifier)),window=handle};
+                    Rect rect;
+                    for(uint iconId=1;iconId<8;iconId++){
+                        item.id=iconId;
+                        if(Shell_NotifyIconGetRect(ref item,out rect)==0) {
+                            sent=PostMessage(handle,6002,new IntPtr(iconId),new IntPtr(0x202));
+                            break;
+                        }
+                    }
                     return false;
                 },IntPtr.Zero);
-                if(!sent) throw new Exception("Fixture tray window not found.");
+                if(!found) throw new Exception("Fixture tray window not found.");
+                Console.WriteLine(sent ? "sent" : "Windows has not exposed a rectangle for the fixture tray icon");
                 return 0;
             }
             if(!Hosted) throw new Exception("Desktop-wide input requires a disposable Windows runner.");
