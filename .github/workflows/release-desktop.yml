@@ -2,168 +2,198 @@ name: Release desktop apps
 
 on:
   push:
-    tags:
-      - "v[0-9]*.[0-9]*.[0-9]*"
+    tags: ["v[0-9]*.[0-9]*.[0-9]*"]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: desktop-release
   cancel-in-progress: false
 
+env:
+  TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+
 jobs:
   validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release-date: ${{ steps.date.outputs.value }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify tag, version, and branch
-        run: |
-          test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
-          git fetch origin master
-          git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/master
-      - name: Create or reuse a draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          notes_file="docs/releases/$GITHUB_REF_NAME.md"
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
-            if [ -s "$notes_file" ]; then
-              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$notes_file"
-            fi
-          else
-            notes=(--generate-notes)
-            if [ -s "$notes_file" ]; then notes=(--notes-file "$notes_file"); fi
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-              --verify-tag --draft --title "Localhost Dashboard $GITHUB_REF_NAME" "${notes[@]}"
-          fi
-
-  mac:
-    needs: validate
-    runs-on: macos-15
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "24.15.0"
-          cache: npm
+          node-version: 24
+      - id: date
+        run: echo "value=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
       - run: npm ci
-      - run: npm run test:startup
-      - run: npx tsc --noEmit
-      - name: Build universal Mac app
-        run: npm run package:mac -- --config.directories.output=release-mac
-      - name: Verify Mac app and create signed Sparkle feed
+      - name: Check manifests, feeds, tag ancestry and notes
         env:
-          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
-        shell: bash
+          RELEASE_DATE: ${{ steps.date.outputs.value }}
         run: |
-          test -n "$SPARKLE_ED_PRIVATE_KEY"
-          app='release-mac/mac-universal/Localhost Dashboard.app'
-          zip="Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.zip"
-          dmg="Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.dmg"
-          codesign --verify --deep --strict "$app"
-          lipo "$app/Contents/Resources/app.asar.unpacked/node_modules/electron-sparkle-updater/native/build/Release/sparkle_bridge.node" -verify_arch arm64
-          lipo "$app/Contents/Resources/app.asar.unpacked/node_modules/electron-sparkle-updater/native/build/Release/sparkle_bridge.node" -verify_arch x86_64
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "${GITHUB_REF_NAME#v}"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$app/Contents/Info.plist")" = 'pLcjY+xshxhfKvhZyQbg8XZZFmrPzOw+lyVUGkd9JcI='
-          test -s "release-mac/$zip"
-          test -s "release-mac/$dmg"
-          hdiutil verify "release-mac/$dmg"
-          mkdir -p release-mac/appcast-input
-          cp "release-mac/$zip" release-mac/appcast-input/
-          key_file="$RUNNER_TEMP/sparkle-ed25519.key"
-          trap 'rm -f "$key_file"' EXIT
-          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$key_file"
-          chmod 600 "$key_file"
-          ./node_modules/.bin/electron-sparkle-updater generate-appcast release-mac/appcast-input \
-            --ed-key-file "$key_file" \
-            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/"
-          xmllint --noout release-mac/appcast-input/appcast.xml
-          grep -Fq "releases/download/$GITHUB_REF_NAME/$zip" release-mac/appcast-input/appcast.xml
-          grep -Fq 'sparkle:edSignature=' release-mac/appcast-input/appcast.xml
-          cp release-mac/appcast-input/appcast.xml release-mac/appcast.xml
-      - name: Stage Mac files on draft release
+          git fetch origin master
+          git merge-base --is-ancestor HEAD origin/master
+          node scripts/release.mjs validate
+          node --test scripts/release.test.mjs
+      - name: Create or reuse the unpublished draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber \
-            "release-mac/Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.dmg" \
-            "release-mac/Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.zip" \
-            release-mac/appcast.xml
+          notes="docs/releases/$GITHUB_REF_NAME.md"
+          current=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          [[ "$current" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$current" != "$GITHUB_REF_NAME"
+          test "$(printf '%s\n' "$current" "$GITHUB_REF_NAME" | sort -V | tail -1)" = "$GITHUB_REF_NAME"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+            gh release edit "$GITHUB_REF_NAME" --notes-file "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
+              --title "Localhost Dashboard $GITHUB_REF_NAME" --notes-file "$notes"
+          fi
 
   windows:
     needs: validate
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 100
+    env:
+      RELEASE_DATE: ${{ needs.validate.outputs.release-date }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "24.15.0"
+          node-version: 24
           cache: npm
+      - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
-      - run: npm run test:startup
-      - run: npx tsc --noEmit
-      - run: npm run build
-      - name: Build Windows installers
-        run: npx electron-builder --win --x64 --publish never --config.directories.output=release-win
-      - name: Normalize filenames and verify updater metadata
-        shell: pwsh
-        run: |
-          Get-ChildItem -LiteralPath release-win -File |
-            Where-Object { $_.Name -like 'Localhost Dashboard*' } |
-            ForEach-Object { Rename-Item -LiteralPath $_.FullName -NewName ($_.Name -replace ' ', '-') }
-          $version = (Get-Content package.json | ConvertFrom-Json).version
-          foreach ($name in @("Localhost-Dashboard-Setup-$version.exe", "Localhost-Dashboard-$version.exe", "Localhost-Dashboard-Setup-$version.exe.blockmap", 'latest.yml')) {
-            if (-not (Test-Path -LiteralPath "release-win/$name")) { throw "Missing Windows asset: $name" }
-          }
-          $feed = Get-Content release-win/latest.yml -Raw
-          if (-not $feed.Contains("version: $version") -or -not $feed.Contains("Localhost-Dashboard-Setup-$version.exe")) { throw 'Windows update metadata does not match the installer' }
-      - name: Stage Windows files on draft release
-        shell: pwsh
+      - run: npx --no-install tsc --noEmit
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+      - name: Package and sign the x64 NSIS updater
         env:
-          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $version = (Get-Content package.json | ConvertFrom-Json).version
-          $files = @(
-            Get-Item "release-win/Localhost-Dashboard-Setup-$version.exe"
-            Get-Item "release-win/Localhost-Dashboard-$version.exe"
-            Get-Item "release-win/Localhost-Dashboard-Setup-$version.exe.blockmap"
-            Get-Item 'release-win/latest.yml'
-          )
-          & gh release upload $env:GITHUB_REF_NAME @($files.FullName) --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!$env:TAURI_SIGNING_PRIVATE_KEY) { throw "Missing Tauri signing key" }
+          node scripts/release.mjs config "$env:RUNNER_TEMP/release.json"
+          npx --no-install tauri build --bundles nsis --config "$env:RUNNER_TEMP/release.json" -- --locked
+      - name: Stage installer, portable executable and legacy metadata
+        run: |
+          node scripts/release.mjs stage windows src-tauri/target/release stage-win
+          $archive = Join-Path $env:RUNNER_TEMP 'app-builder-bin.tgz'
+          Invoke-WebRequest https://registry.npmjs.org/app-builder-bin/-/app-builder-bin-5.0.0-alpha.12.tgz -OutFile $archive
+          $digest = [Convert]::ToBase64String([Security.Cryptography.SHA512]::HashData([IO.File]::ReadAllBytes($archive)))
+          if ($digest -ne 'j87o0j6LqPL3QRr8yid6c+Tt5gC7xNfYo6uQIQkorAC6MpeayVMZrEDzKmJJ/Hlv7EnOQpaRm53k6ktDYZyB6w==') { throw "Blockmap tool integrity mismatch" }
+          tar.exe -xzf $archive -C $env:RUNNER_TEMP package/win/x64/app-builder.exe
+          $installer = (Get-ChildItem stage-win/Localhost-Dashboard-Setup-*.exe).FullName
+          & "$env:RUNNER_TEMP/package/win/x64/app-builder.exe" blockmap --input $installer --output "$installer.blockmap"
+      - name: Upgrade from the last Electron release on the disposable runner
+        run: ./scripts/check-windows-upgrade.ps1 -Stage stage-win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: stage-win/
+          if-no-files-found: error
+
+  mac:
+    needs: validate
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      RELEASE_DATE: ${{ needs.validate.outputs.release-date }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - run: npm ci
+      - run: npx --no-install tsc --noEmit
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+      - name: Build and sign the universal macOS packages
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          node scripts/release.mjs config "$RUNNER_TEMP/release.json"
+          npx --no-install tauri build --target universal-apple-darwin --bundles app,dmg --config "$RUNNER_TEMP/release.json" -- --locked
+      - name: Verify the universal packages and sign the Sparkle transition
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          test -n "$SPARKLE_ED_PRIVATE_KEY"
+          version="${GITHUB_REF_NAME#v}"
+          root=src-tauri/target/universal-apple-darwin/release
+          node scripts/release.mjs stage mac "$root" stage-mac
+          app="$root/bundle/macos/Localhost Dashboard.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = com.localdashboard.app
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$version"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$version"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$app/Contents/Info.plist")" = 'pLcjY+xshxhfKvhZyQbg8XZZFmrPzOw+lyVUGkd9JcI='
+          binary=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
+          lipo "$app/Contents/MacOS/$binary" -verify_arch arm64 x86_64
+          codesign --verify --deep --strict "$app"
+          hdiutil verify "stage-mac/Localhost-Dashboard-$version-universal.dmg"
+          mkdir "$RUNNER_TEMP/unpacked-update"
+          tar -xzf "stage-mac/Localhost-Dashboard-$version-universal.app.tar.gz" -C "$RUNNER_TEMP/unpacked-update"
+          codesign --verify --deep --strict "$RUNNER_TEMP/unpacked-update/Localhost Dashboard.app"
+          zip="stage-mac/Localhost-Dashboard-$version-universal.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+          unzip -tq "$zip"
+          curl -fsSL https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-2.10.1.tar.xz -o "$RUNNER_TEMP/sparkle.tar.xz"
+          echo "1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27  $RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 --check
+          mkdir "$RUNNER_TEMP/sparkle"
+          tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$RUNNER_TEMP/sparkle/bin/sign_update" --ed-key-file - "$zip" > "$RUNNER_TEMP/sparkle-signature.txt"
+          node scripts/release.mjs sparkle stage-mac "$RUNNER_TEMP/sparkle-signature.txt"
+          xmllint --noout stage-mac/appcast.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-release
+          path: stage-mac/
+          if-no-files-found: error
 
   publish:
-    needs: [mac, windows]
+    needs: [validate, windows, mac]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_DATE: ${{ needs.validate.outputs.release-date }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Verify and publish both platforms together
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-release"
+          path: stage
+          merge-multiple: true
+      - name: Verify both platforms, upload to draft, download and verify before publishing
         run: |
-          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
-          version="${GITHUB_REF_NAME#v}"
-          assets=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.size > 0) | .name')
-          for name in "Localhost-Dashboard-$version-universal.dmg" \
-            "Localhost-Dashboard-$version-universal.zip" \
-            "Localhost-Dashboard-Setup-$version.exe" \
-            "Localhost-Dashboard-$version.exe" \
-            "Localhost-Dashboard-Setup-$version.exe.blockmap" \
-            appcast.xml latest.yml; do
-            grep -Fxq "$name" <<< "$assets" || { echo "Missing release asset: $name" >&2; exit 1; }
-          done
-          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
-      - name: Check public update feeds
+          node scripts/release.mjs feed stage
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+          gh release upload "$GITHUB_REF_NAME" stage/* --clobber
+          gh release download "$GITHUB_REF_NAME" --dir checked
+          diff -qr stage checked
+          node scripts/release.mjs verify checked
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+      - name: Verify live update discovery
         run: |
-          for attempt in 1 2 3 4 5; do
-            if curl --fail --location --silent --show-error \
-              "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/appcast.xml" -o appcast.xml \
-              && grep -Fq "Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.zip" appcast.xml; then break; fi
-            sleep 10
+          for feed in latest.json latest.yml appcast.xml; do
+            for attempt in 1 2 3 4 5; do
+              if curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/$feed" -o public-feed && cmp -s "checked/$feed" public-feed; then break; fi
+              sleep 10
+            done
+            cmp "checked/$feed" public-feed
           done
-          grep -Fq "Localhost-Dashboard-${GITHUB_REF_NAME#v}-universal.zip" appcast.xml

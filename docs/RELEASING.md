@@ -1,36 +1,41 @@
 # Desktop releases
 
-Mac and Windows use one source branch, `master`, one version, and one GitHub release. Windows reads `latest.yml` through `electron-updater`. Mac reads `appcast.xml` through Sparkle. The Mac ZIP in the appcast is signed with this app's Sparkle Ed25519 key. The app bundle itself uses free ad hoc signing.
+Windows x64 and universal macOS share one version, one tag on `master` and one GitHub release. The Rust app reads `latest.json`. Windows installs a signed NSIS update. Both Mac architectures install the same signed application archive.
 
-## First Sparkle release
+## Signing configuration
 
-Version 1.8.1 is the first Mac build with Sparkle. People using a Mac build from 1.8.0 or earlier must install the 1.8.1 DMG once. Later releases can update in the app. The ad hoc signature does not remove macOS Gatekeeper warnings during the first install.
+Set the repository Actions variable `TAURI_UPDATER_PUBLIC_KEY` to the full base64 public key produced by the Tauri signer. Set the corresponding repository secret `TAURI_SIGNING_PRIVATE_KEY` and, for a password-protected key, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Keep a private backup outside this repository. An installed Tauri application trusts the verifier embedded at build time. Changing that verifier requires an update that existing clients can authenticate.
 
-## Publish a new version
+The existing `SPARKLE_ED_PRIVATE_KEY` secret signs the ZIP for installed Electron Mac clients. Its verifier remains in `src-tauri/Info.plist`. Tauri and Sparkle use independent keys. The release workflow supplies Tauri signing as a release-only override. Local development and packaging need no signing secrets. The Mac application uses ad hoc Apple code signing. First-time installation can still show Gatekeeper prompts.
 
-1. Update `package.json` and `package-lock.json` together, for example `npm version patch --no-git-tag-version`.
-2. Write changes-only release notes in `docs/releases/v<version>.md`. The workflow uses that file as the draft release body.
-3. Commit and push the change to `master`.
-4. Tag that exact commit with `v<version>` and push the tag.
+## Publish a version
 
-The `Release desktop apps` workflow builds a universal Mac DMG and ZIP and both Windows EXEs. It signs the Mac update ZIP, creates `appcast.xml`, and stages all files on a draft GitHub release. It publishes the release only after both platform builds and asset checks pass. If a build fails, the draft remains unpublished. Rerun the failed workflow after fixing the problem. Do not publish an incomplete draft by hand.
+1. Increment the version in `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`. Refresh `src-tauri/Cargo.lock` and verify the local-dashboard package entry. The first Tauri release must be newer than the last published Electron version. Use a new patch version for a Mac-only correction too. Tauri compares semantic versions.
+2. Write changes-only notes in `docs/releases/vVERSION.md`, replacing VERSION with the release version. Run the project checks and the release feed test, then integrate the release commit into `master`.
+3. Tag the exact verified commit as `vVERSION` and push the tag. The workflow validates the manifests, lockfiles, notes and ancestry, then creates or reuses a draft.
+4. The Windows runner builds the installer and portable executable. On a disposable runner, the upgrade test installs the checksum-pinned 1.13.0 package, upgrades it with the new installer and checks that the new executable starts and imports the previous settings. The Mac runner builds for arm64 and x86_64, checks the code signature and bundled architectures, verifies the DMG and extracted updater archive, and signs a ZIP for Sparkle.
+5. The publishing job waits for both builds. It verifies the two Tauri signatures and their signed version, the Sparkle signature and the Windows SHA-512 metadata. It uploads all files to the draft, downloads them again and compares their contents before publishing. It then fetches the three public feeds and compares them with the verified files. A prepublication failure leaves the draft unpublished. Rerun the failed job after addressing the cause.
 
-The public Mac feed is `https://github.com/Tanjim-Islam/localhost-dashboard/releases/latest/download/appcast.xml`. Windows continues to use `latest.yml` from the same latest release. The Mac appcast uses a versioned GitHub URL for each ZIP, so older update entries stay available.
+## Updating existing installations
 
-## Refresh Mac packages at the published Windows version
+| Installed build | Discovery feed | Download |
+| --- | --- | --- |
+| Tauri, Windows x64 | latest.json | Localhost-Dashboard-Setup-VERSION.exe |
+| Tauri, Apple Silicon or Intel | latest.json | Localhost-Dashboard-VERSION-universal.app.tar.gz |
+| Electron, installed Windows app | latest.yml | The NSIS installer with SHA-512 and blockmap |
+| Electron, Sparkle-enabled Mac app | appcast.xml | Localhost-Dashboard-VERSION-universal.zip with its Ed25519 signature |
+| Mac before 1.8.1, or a manually managed portable installation | Manual download | Universal DMG or portable Windows EXE |
 
-When the displayed Mac version must stay equal to the current Windows release, commit the Mac fixes and matching package versions to `master`, then run `Refresh Mac release` with that version and a new positive revision. Package locally first with the same `--config.mac.bundleVersion=<version>.<revision>` and `--config.mac.artifactName=Localhost-Dashboard-${version}-mac<revision>-universal.${ext}` overrides.
+The [Tauri feed](https://github.com/Tanjim-Islam/localhost-dashboard/releases/latest/download/latest.json), [legacy Windows feed](https://github.com/Tanjim-Islam/localhost-dashboard/releases/latest/download/latest.yml) and [Sparkle feed](https://github.com/Tanjim-Islam/localhost-dashboard/releases/latest/download/appcast.xml) point to assets in versioned releases. The portable Windows EXE uses the installed WebView2 runtime. The installer can provision that runtime on a clean machine.
 
-The workflow verifies the current published release, builds and signs new universal packages, and uploads them before replacing `appcast.xml`. Sparkle compares the newer internal build number while the app continues to display the Windows version. Existing Windows assets and previous Mac ZIP URLs remain intact. Release notes come from `docs/releases/v<version>.md` and contain changes only. The original release tag stays in place; the workflow records the `master` commit used for the Mac refresh.
+The installer recognizes the standard per-user Windows installation under `%LOCALAPPDATA%\Programs\local-dashboard` by its registry key, executable and app.asar. It calls the shipped uninstaller in upgrade mode and leaves profile data for first-launch migration. Retire a custom or machine-wide installation manually after checking the new app. Keep the old profile until the new app shows the expected settings and projects.
 
-The workflow retries a failed feed upload and restores the previous signed feed if replacement fails. If a package upload stopped partway through, use a new revision on the next run; revision filenames are immutable and are never overwritten.
+## Verify before a public rollout
 
-## Signing key
+Run the release test with npm dependencies installed.
 
-`SPARKLE_ED_PRIVATE_KEY` is stored as a GitHub Actions repository secret. Its local backup is `~/Library/Application Support/LocalhostDashboardRelease/sparkle-ed25519.private`, with owner-only file permissions. Keep that backup safe. Never commit or paste the private key into an issue or release. Its public key is in `package.json` as `SUPublicEDKey`.
+~~~sh
+node --test scripts/release.test.mjs
+~~~
 
-No Apple Team ID or paid Developer ID certificate is used. Sparkle validates the signed update ZIP with the Ed25519 key. The build workflow verifies the app's ad hoc code signature, both bridge architectures, the DMG, and the generated appcast before publishing.
-
-## Verify an update
-
-For the first release, install the 1.8.1 DMG on a Mac and check that the app opens. For the next release, use that installed app to check, download, and install the update. Verify the new version in the running app. A successful build and valid appcast alone do not prove that a real installation updated.
+The fixture creates temporary Ed25519 keys, signs files with the real Tauri CLI, verifies the Mac and Windows entries, and checks that altered files fail validation. To verify a release candidate end to end, exercise an upgrade on a disposable Windows profile and on a Mac with the prior version installed. Check the version inside the launched app and verify settings, projects and recent scripts. On macOS, exercise both the Sparkle transition and a subsequent Tauri-to-Tauri update.

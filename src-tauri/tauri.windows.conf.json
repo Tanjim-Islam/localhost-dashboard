@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/previous-install.nsh"
+      }
+    }
+  }
+}
