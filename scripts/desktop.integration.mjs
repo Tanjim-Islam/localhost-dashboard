@@ -207,6 +207,14 @@ try {
   await button("Edit " + key).waitFor();
   const search = page.getByRole("textbox", { name: "Search dashboard" });
   await search.fill(key);
+  assert.equal(await page.getByText(value, { exact: true }).count(), 0);
+  await button("Reveal value").click();
+  await page.getByText(value, { exact: true }).waitFor();
+  await page.getByText(value, { exact: true }).waitFor({
+    state: "hidden",
+    timeout: 18000,
+  });
+  await button("Reveal value").waitFor();
   await button("Reveal value").click();
   await page.getByText(value, { exact: true }).waitFor();
   await button("Hide value").click();
@@ -233,7 +241,7 @@ try {
   );
   await search.fill("");
   pass(
-    "ENV key native registry create, reveal, hide, rename, confirmation, cancellation and delete",
+    "ENV key native registry create, reveal, automatic remasking, hide, rename, confirmation, cancellation and delete",
   );
 
   await button(/^CLIs/).click();
