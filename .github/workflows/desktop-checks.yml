@@ -37,7 +37,13 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run build:renderer
       - run: npm test
-      - run: npm run build:debug
+      - if: runner.os != 'macOS'
+        run: npm run build:debug
+      - name: Launch and quit the macOS application bundle
+        if: runner.os == 'macOS'
+        run: |
+          npx --no-install tauri build --debug --bundles app -- --locked
+          xcrun swift scripts/check-macos-launch.swift "src-tauri/target/debug/bundle/macos/Localhost Dashboard.app"
       - if: runner.os == 'Windows'
         run: node scripts/desktop.integration.mjs
       - if: runner.os == 'Windows'

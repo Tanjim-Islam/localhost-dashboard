@@ -8,6 +8,34 @@ use std::{
 };
 use tempfile::tempdir;
 
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_proc_discovers_owned_ipv4_and_ipv6_listeners_and_creation_time() {
+    let pid = std::process::id();
+    let v4 = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let v6 = TcpListener::bind(("::1", 0)).unwrap();
+    let expected = [
+        (v4.local_addr().unwrap().port(), false),
+        (v6.local_addr().unwrap().port(), true),
+    ];
+    let listeners = native::listeners().unwrap();
+    for (port, ipv6) in expected {
+        assert!(listeners.contains(&Listener { pid, port, ipv6 }));
+    }
+    let id = native::identity(pid).unwrap();
+    assert_eq!(id.exe, std::env::current_exe().unwrap());
+    assert!(id.started > 0 && id.unix_ms <= now());
+    let directory = tempdir().unwrap();
+    let servers = Servers::new(directory.path()).unwrap();
+    scan(None, &servers).unwrap();
+    let c = servers.core.lock().unwrap();
+    for (port, _) in expected {
+        let row = &c.live[&format!("{pid}:{port}")];
+        assert_eq!(row.public["canStop"], false);
+        assert!(row.identity.as_ref() == Some(&id));
+    }
+}
+
 #[test]
 fn project_identity_preserves_existing_hashes_and_conflicting_roots_are_unassigned() {
     // Known SHA-256 prefix used by the original TypeScript implementation.
