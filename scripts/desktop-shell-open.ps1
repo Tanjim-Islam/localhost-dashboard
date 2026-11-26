@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory)][ValidateSet('install-handler','remove-handler','selected-file','edited-file','toast-setting','toast-started','toast-stopped')][string]$Action,
+  [Parameter(Mandatory)][ValidateSet('install-handler','remove-handler','selected-file','edited-file','diagnostics','toast-setting','toast-started','toast-stopped')][string]$Action,
   [Parameter(Mandatory)][string]$FixtureDirectory,
   [Parameter(Mandatory)][string]$File
 )
@@ -56,6 +56,15 @@ if ($Action -eq 'install-handler') {
   $shell = New-Object -ComObject Shell.Application
   $explorerFolder = $shell.NameSpace([IO.Path]::GetDirectoryName($target))
   $explorerPath = $explorerFolder.ParseName([IO.Path]::GetFileName($target)).Path
+  if ($Action -eq 'diagnostics') {
+    $codePaths = @("$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe", "$env:ProgramFiles\Microsoft VS Code\Code.exe", "${env:ProgramFiles(x86)}\Microsoft VS Code\Code.exe")
+    $codeInstalled = @($codePaths | Where-Object { Test-Path -LiteralPath $_ }).Count
+    $codeWindows = @([Diagnostics.Process]::GetProcessesByName('Code') | Where-Object MainWindowHandle -ne 0).Count
+    $explorerWindows = @($shell.Windows() | Where-Object { [IO.Path]::GetFileName($_.FullName) -ieq 'explorer.exe' }).Count
+    $targetWindows = @($shell.Windows() | Where-Object { $_.Document.Folder.Self.Path -eq [IO.Path]::GetDirectoryName($explorerPath) }).Count
+    "Hosted fixture editor binaries=$codeInstalled code windows=$codeWindows Explorer windows=$explorerWindows target folders=$targetWindows"
+    return
+  }
   foreach ($window in $shell.Windows()) {
     if ([IO.Path]::GetFileName($window.FullName) -ine 'explorer.exe') { continue }
     if ($window.Document.Folder.Self.Path -ine [IO.Path]::GetDirectoryName($explorerPath)) { continue }

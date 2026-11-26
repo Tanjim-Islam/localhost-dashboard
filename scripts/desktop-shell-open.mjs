@@ -28,7 +28,13 @@ export function inspectShell(dir, action, target) {
   ).trim();
 }
 
-export async function checkShellOpen({ dir, observer, invoke, until }) {
+export async function checkShellOpen({
+  dir,
+  observer,
+  invoke,
+  until,
+  exercise,
+}) {
   assert(
     process.env.GITHUB_ACTIONS === "true" &&
       process.env.RUNNER_ENVIRONMENT === "github-hosted",
@@ -79,46 +85,52 @@ export async function checkShellOpen({ dir, observer, invoke, until }) {
       await fs.realpath(project.directory),
       await fs.realpath(fixture),
     );
-    await invoke("openExplorer", sample);
-    await until(
-      () => shell("selected-file", sample) === "selected",
-      "Explorer selection of the requested fixture file",
-    );
-    console.log("PASS", "Explorer selected the requested file");
-    await invoke("openUrl", service.url);
-    await until(
-      () =>
-        fs.readFile(browserReceipt, "utf8").then(
-          (t) => t === "browser",
-          () => false,
-        ),
-      "system browser GET to observed loopback service",
-    );
-    console.log("PASS", "System browser opened a discovered local service");
-    try {
-      shell("install-handler", observer);
-      await invoke("openInVSCode", { path: project.directory });
-      const value = await until(
+    await exercise("Explorer exact file selection", async () => {
+      await invoke("openExplorer", sample);
+      await until(
+        () => shell("selected-file", sample) === "selected",
+        "Explorer selection of the requested fixture file",
+      );
+      console.log("PASS", "Explorer selected the requested file");
+    });
+    await exercise("Browser receives local service URL", async () => {
+      await invoke("openUrl", service.url);
+      await until(
         () =>
-          fs
-            .readFile(path.join(dir, "received-uri.txt"), "utf8")
-            .catch(() => false),
-        "registered vscode protocol handler",
+          fs.readFile(browserReceipt, "utf8").then(
+            (t) => t === "browser",
+            () => false,
+          ),
+        "system browser GET to observed loopback service",
       );
-      const url = new URL(value);
-      assert.equal(url.protocol, "vscode:");
-      assert.equal(url.host, "file");
-      assert.equal(
-        await fs.realpath(decodeURIComponent(url.pathname.slice(1))),
-        await fs.realpath(fixture),
-      );
-      console.log(
-        "PASS",
-        "Native VS Code action dispatched the exact project through the Windows protocol handler",
-      );
-    } finally {
-      shell("remove-handler", observer);
-    }
+      console.log("PASS", "System browser opened a discovered local service");
+    });
+    await exercise("VS Code receives the project URI", async () => {
+      try {
+        shell("install-handler", observer);
+        await invoke("openInVSCode", { path: project.directory });
+        const value = await until(
+          () =>
+            fs
+              .readFile(path.join(dir, "received-uri.txt"), "utf8")
+              .catch(() => false),
+          "registered vscode protocol handler",
+        );
+        const url = new URL(value);
+        assert.equal(url.protocol, "vscode:");
+        assert.equal(url.host, "file");
+        assert.equal(
+          await fs.realpath(decodeURIComponent(url.pathname.slice(1))),
+          await fs.realpath(fixture),
+        );
+        console.log(
+          "PASS",
+          "Native VS Code action dispatched the exact project through the Windows protocol handler",
+        );
+      } finally {
+        shell("remove-handler", observer);
+      }
+    });
   } finally {
     if (server.exitCode === null) server.kill();
   }

@@ -267,10 +267,10 @@ try {
     await exercise("Installed clipboard and desktop input", osActions);
     windows("restore");
     await exercise("Installed AutoHotkey controls and notifications", () =>
-      checkInstalledAhk({ dir, page, invoke, until, windows, pass }),
+      checkInstalledAhk({ dir, page, invoke, until, windows, pass, exercise }),
     );
     await exercise("Installed Explorer, URL and editor actions", () =>
-      checkShellOpen({ dir, observer, invoke, until }),
+      checkShellOpen({ dir, observer, invoke, until, exercise }),
     );
   } else {
     await invoke("updateSettings", { closeToTray: true });

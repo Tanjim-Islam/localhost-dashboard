@@ -161,6 +161,7 @@ export async function checkInstalledAhk({
   until,
   windows,
   pass,
+  exercise,
 }) {
   assert(
     process.env.GITHUB_ACTIONS === "true" &&
@@ -183,57 +184,78 @@ export async function checkInstalledAhk({
     until,
     pass,
     async onCard({ card, script, copiedPath }) {
-      windows("clipboard-empty");
-      try {
-        await card.getByRole("button", { name: "Copy", exact: true }).click();
-        windows("clipboard-matches", copiedPath);
-      } finally {
-        windows("clear-clipboard", copiedPath);
-      }
-      await card.getByRole("button", { name: "Edit", exact: true }).click();
-      const receiver = await until(
-        () => inspectShell(dir, "edited-file", script),
-        "script in VS Code or the Explorer fallback",
-      );
-      pass(
-        receiver === "editor"
-          ? "AHK Edit opened the fixture in VS Code"
-          : "AHK Edit revealed the fixture in Explorer",
-      );
-      await card.getByRole("button", { name: "Explorer", exact: true }).click();
-      await until(
-        () => inspectShell(dir, "selected-file", script) === "selected",
-        "Explorer selected the fixture script",
-      );
-      pass("AHK card Copy and Explorer selected the exact script path");
-      const status = inspectShell(dir, "toast-setting", script);
-      toastEnabled = status === "Enabled";
-      if (toastEnabled) {
+      await exercise("AutoHotkey card clipboard", async () => {
+        windows("clipboard-empty");
+        try {
+          await card.getByRole("button", { name: "Copy", exact: true }).click();
+          windows("clipboard-matches", copiedPath);
+        } finally {
+          windows("clear-clipboard", copiedPath);
+        }
+        pass("AHK card copied the exact script path");
+      });
+      await exercise("AutoHotkey card edit", async () => {
+        await card.getByRole("button", { name: "Edit", exact: true }).click();
+        let receiver;
+        try {
+          receiver = await until(
+            () => inspectShell(dir, "edited-file", script),
+            "script in VS Code or the Explorer fallback",
+          );
+        } catch (error) {
+          console.error(inspectShell(dir, "diagnostics", script));
+          throw error;
+        }
+        pass(
+          receiver === "editor"
+            ? "AHK Edit opened the fixture in VS Code"
+            : "AHK Edit revealed the fixture in Explorer",
+        );
+      });
+      await exercise("AutoHotkey card Explorer", async () => {
+        await card
+          .getByRole("button", { name: "Explorer", exact: true })
+          .click();
         await until(
-          () => inspectShell(dir, "toast-started", script) === "delivered",
-          "AHK Started toast in Windows notification history",
+          () => inspectShell(dir, "selected-file", script) === "selected",
+          "Explorer selected the fixture script",
         );
-      } else {
-        assert(
-          ["DisabledByGroupPolicy", "DisabledForUser", "NotSupported"].includes(
-            status,
-          ),
-          "Unexpected Windows notification setting: " + status,
-        );
-        console.log(
-          "SKIP Windows toast delivery. The hosted OS reports " + status,
-        );
-      }
+        pass("AHK card Explorer selected the exact script path");
+      });
+      await exercise("Windows AHK start notification", async () => {
+        const status = inspectShell(dir, "toast-setting", script);
+        toastEnabled = status === "Enabled";
+        if (toastEnabled) {
+          await until(
+            () => inspectShell(dir, "toast-started", script) === "delivered",
+            "AHK Started toast in Windows notification history",
+          );
+        } else {
+          assert(
+            [
+              "DisabledByGroupPolicy",
+              "DisabledForUser",
+              "NotSupported",
+            ].includes(status),
+            "Unexpected Windows notification setting: " + status,
+          );
+          console.log(
+            "SKIP Windows toast delivery. The hosted OS reports " + status,
+          );
+        }
+      });
     },
     async onStopped(script) {
       if (toastEnabled) {
-        await until(
-          () => inspectShell(dir, "toast-stopped", script) === "delivered",
-          "AHK Stopped toast in Windows notification history",
-        );
-        pass(
-          "Windows received native AHK Started and Stopped notifications for the fixture",
-        );
+        await exercise("Windows AHK stop notification", async () => {
+          await until(
+            () => inspectShell(dir, "toast-stopped", script) === "delivered",
+            "AHK Stopped toast in Windows notification history",
+          );
+          pass(
+            "Windows received the native AHK Stopped notification for the fixture",
+          );
+        });
       }
     },
   });

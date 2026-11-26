@@ -104,12 +104,13 @@ pub(super) fn edit_ahk(path: &Path) -> Result<(), String> {
         }));
     }
     if let Some(exe) = candidates.iter().find(|p| p.is_absolute() && p.is_file()) {
-        return spawn(exe, &[path.as_os_str()]).map(detach);
+        if let Ok(child) = spawn(exe, &[path.as_os_str()]) {
+            detach(child);
+            return Ok(());
+        }
     }
-    let explorer =
-        PathBuf::from(std::env::var_os("SystemRoot").ok_or("Windows folder unavailable.")?)
-            .join("explorer.exe");
-    spawn(&explorer, &["/select,".as_ref(), path.as_os_str()]).map(detach)
+    tauri_plugin_opener::reveal_item_in_dir(path)
+        .map_err(|_| "Could not reveal the script in Explorer.".into())
 }
 
 #[cfg(target_os = "macos")]
