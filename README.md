@@ -1,8 +1,8 @@
 # Localhost Dashboard
 
-A simple Electron app that shows all my running local dev servers in one place. I got tired of forgetting which ports were running what, so I built this.
+A desktop app built with Rust and Tauri that shows all my running local dev servers in one place. I got tired of forgetting which ports were running what, so I built this.
 
-![Electron](https://img.shields.io/badge/Electron-39-47848F?logo=electron)
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
 
@@ -28,10 +28,12 @@ The app has a custom frameless window with light and dark palettes. Project card
 
 Success and completed actions use green. Errors and destructive actions use red. These status colors are independent of the selected palette, with readable shades for light and dark modes.
 
-## Install
+## Development prerequisites
+
+Use Node.js 24, a current stable Rust toolchain and the [native build tools for Tauri](https://v2.tauri.app/start/prerequisites/). Windows development uses the MSVC C++ toolchain and WebView2. macOS uses Xcode Command Line Tools and WKWebView.
 
 ```bash
-npm install
+npm ci
 ```
 
 ## Development
@@ -52,9 +54,7 @@ npm run start:test-servers
 npm run package
 ```
 
-Outputs:
-
-- Windows: `dist/Localhost Dashboard Setup 1.0.0.exe` (installer) + portable exe
+On Windows, the native executable is `src-tauri/target/release/local-dashboard.exe`. The NSIS installer is under `src-tauri/target/release/bundle/nsis/`. The standalone executable needs WebView2. The installer bootstraps WebView2 when necessary. Use `npm run package:mac` on a Mac with both Rust Apple targets installed for a universal build.
 
 ## Configuration
 
@@ -65,13 +65,13 @@ Click the gear icon to open settings:
 - **Start at login** - Launch on system startup
 - **Close to tray** - Minimize to tray instead of quitting
 
-Settings persist via `electron-store`.
+Rust writes settings and inventories atomically in the platform configuration directory for `com.localdashboard.app`. On first run it imports the existing dashboard stores, including macOS SQLite settings and supported file-origin UI preferences. The previous profile stays available for rollback.
 
 ## Features
 
 ### Projects and Services
 
-Discovery combines systeminformation with Windows netstat or macOS lsof. It automatically observes local TCP listeners on arbitrary ports. Project detection uses native working directories, script paths, manifests, and repository/workspace boundaries. Uncertain services remain unassigned. Recently stopped services, application services, and other listeners are in the **More services** drawer.
+Discovery reads the native Windows TCP tables, macOS lsof output or Linux procfs. It automatically observes local TCP listeners on arbitrary ports. Project detection uses native working directories, script paths, manifests, and repository/workspace boundaries. Uncertain services remain unassigned. Recently stopped services, application services, and other listeners are in the **More services** drawer.
 
 Projects have persistent names, notes, pins, and bookmarks. Use **Change project** in service details to correct an association with a discovered project. Multiple services share one project, including monorepo packages. Cards use two columns, including when only one project is visible. Project identity survives process and port changes; moving a project directory creates a new identity.
 
@@ -100,17 +100,7 @@ Windows attempts Ctrl+C only when the console contains exclusively the selected 
 
 If a project exits or its port does not return within 45 seconds, the dashboard reports that failure. A slow replacement may still be starting; check it before launching another copy.
 
-Restart checks:
-
-```bash
-npm run test:servers
-npm run test:servers:live
-npm run test:servers:stop-live
-```
-
-The live checks create temporary Node, npm, npm workspace, watcher, and Vite projects, including multiple ports, separate projects, shared-launcher refusal, startup failure, special characters, and repeated clicks. Set `DASHBOARD_TEST_PYTHON` to an absolute Python interpreter to include the Python case. All fixture processes and directories are removed afterward. Run the suite on each target OS before claiming native verification.
-
-The macOS build compiles `native/server-process.m` into a universal helper using Apple Command Line Tools. The packaged app includes that helper and needs no compiler at runtime. Windows uses its built-in 64-bit PowerShell helper. The implementation lives in `src/main/server-restart/`; private process contexts never cross preload IPC.
+Run `npm run test:servers` for the native lifecycle tests. The live tests create their own disposable listeners. The implementation lives in `src-tauri/src/servers/`. The Rust process retains the launch context in memory. The renderer receives an opaque observation reference.
 
 ### Project Actions
 
@@ -165,35 +155,19 @@ In-app uninstall is intentionally narrow. npm global packages, pipx applications
 
 Linux keeps its existing tabs and does not expose CLIs. macOS discovery and adapters are covered by fixtures and automated tests, but runtime verification must be performed on a macOS host.
 
-## Tech Stack
+## Project structure
 
-- Electron + electron-vite + electron-builder
-- React 19 + TypeScript
-- Tailwind CSS
-- electron-store for persistence
-- systeminformation + pidusage for process data
+- `src-tauri/src/main.rs` initializes the desktop host and dispatches native commands.
+- `src-tauri/src/servers/` owns TCP discovery, HTTP checks, project identity, history and verified lifecycle actions.
+- `src-tauri/src/clis/` owns CLI inventory, package discovery, verification and uninstall.
+- `src-tauri/src/automation/` owns script discovery and actions, recent scripts, and Windows environment keys.
+- `src-tauri/src/settings.rs`, `storage.rs` and `preferences.rs` own settings, atomic stores and first-run migration.
+- `src/renderer/` contains the React and Tailwind UI. `desktop.ts` connects its typed API to the local Tauri window.
+- `src/shared/` and `src/types/preload.d.ts` define the public renderer contract.
 
-## Project Structure
+## Verification
 
-```
-src/
-├── main/           # Electron main process
-│   ├── index.ts    # Window, tray, IPC handlers
-│   ├── scanner.ts  # Server detection
-│   ├── clis/        # Manual CLI inventory, adapters, store, and uninstall policy
-│   ├── ahk-scanner.ts
-│   ├── health-checker.ts
-│   ├── settings.ts
-│   ├── notes.ts
-│   └── stats.ts
-├── preload/        # IPC bridge
-├── renderer/       # React UI
-│   ├── App.tsx
-│   └── components/
-└── types/          # TypeScript declarations
-```
-
-See [server management architecture and verification](docs/server-management.md) for identities, safety boundaries, persistence schemas, migrations, and tests.
+`npm test` runs the native Rust suite and React contract tests. On Windows, `npm run test:desktop` builds the app and drives the actual WebView2 window with isolated application data. It exercises persistent settings, window behavior, CLI fixtures and transient user registry values. Run `npx tsc --noEmit` and `npm run lint` for frontend checks. See the [server tests](docs/server-management.md) and [release procedure](docs/RELEASING.md).
 
 ## CLIs testing
 
@@ -202,7 +176,7 @@ npm run test:clis
 npm run dev:clis-test
 ```
 
-`test:clis` uses fake runners, temporary PATH directories, passive metadata, and simulated package inventories. It never invokes a real package-manager uninstall. `dev:clis-test` redirects `clis.json` to a temporary fixture root, supplies healthy, multiple-installation, broken, incomplete, and partial-source records, and simulates both uninstall success and failure. Fixture mode is visibly labeled and does not affect the normal Electron profile.
+`test:clis` uses fake runners, temporary PATH directories, passive metadata, and simulated package inventories. It never invokes a real package-manager uninstall. `dev:clis-test` redirects `clis.json` to a temporary fixture root, supplies healthy, multiple-installation, broken, incomplete, and partial-source records, and simulates both uninstall success and failure. Fixture mode is visibly labeled and does not affect the normal dashboard profile.
 
 ## Known Limitations
 

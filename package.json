@@ -1,9 +1,8 @@
 {
   "name": "local-dashboard",
   "version": "1.13.0",
-  "description": "An Electron dashboard that discovers and manages local dev servers.",
+  "description": "A native dashboard for local development servers and utilities.",
   "type": "module",
-  "main": "out/main/index.js",
   "author": "Tanjim Islam",
   "license": "MIT",
   "repository": {
@@ -11,28 +10,25 @@
     "url": "https://github.com/Tanjim-Islam/localhost-dashboard.git"
   },
   "scripts": {
-    "dev": "node scripts/build-server-helper.mjs && node scripts/prepare-macos-dev-app.mjs && electron-vite dev",
-    "build": "node scripts/build-server-helper.mjs && electron-vite build",
-    "build:mac-sparkle-bridge": "node scripts/build-mac-sparkle-bridge.mjs",
-    "package:mac": "npm run build && npm run build:mac-sparkle-bridge && electron-builder --mac --universal --publish never",
-    "package": "node scripts/package-desktop.mjs",
-    "test": "npm run test:clis:compile && node --test .tmp-tests/tests/*.test.js",
-    "test:env-keys": "node --experimental-strip-types scripts/environment-variables.integration.mts",
-    "lint": "eslint --ext .ts,.tsx src",
-    "test:startup": "node --experimental-strip-types --test scripts/startup-visibility.test.mts",
-    "test:servers": "npm run test:clis:compile && node --test .tmp-tests/tests/server-*.test.js",
-    "test:servers:live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-restart.integration.cjs",
-    "test:clis:compile": "node -e \"require('node:fs').rmSync('.tmp-tests', { recursive: true, force: true })\" && tsc -p tsconfig.test.json && node -e \"require('node:fs').writeFileSync('.tmp-tests/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\n')\"",
-    "test:clis": "npm run test:clis:compile && node --test .tmp-tests/tests/clis-*.test.js",
-    "dev:clis-test": "node --experimental-strip-types scripts/start-clis-test-mode.mts",
-    "format:check": "prettier --check .",
-    "format": "prettier -w .",
-    "start:test-servers": "node scripts/dev-servers.js",
-    "test:servers:stop-live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-stop.integration.cjs",
-    "test:servers:ui": "npm run build && npm run test:clis:compile && node scripts/server-ui.integration.cjs",
-    "test:servers:start-live": "node scripts/build-server-helper.mjs && npm run test:clis:compile && node scripts/server-start.integration.cjs",
+    "dev": "tauri dev",
+    "dev:renderer": "vite",
+    "dev:clis-test": "node scripts/start-fixture.mjs",
+    "build": "tauri build --no-bundle",
     "build:renderer": "vite build",
-    "dev:renderer": "vite"
+    "build:debug": "tauri build --debug --no-bundle",
+    "package": "tauri build",
+    "package:mac": "tauri build --target universal-apple-darwin",
+    "test": "npm run test:renderer && npm run test:native",
+    "test:renderer": "node scripts/test-renderer.mjs",
+    "test:native": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
+    "test:servers": "cargo test --locked --manifest-path src-tauri/Cargo.toml servers::",
+    "test:clis": "cargo test --locked --manifest-path src-tauri/Cargo.toml clis::",
+    "test:env-keys": "cargo test --locked --manifest-path src-tauri/Cargo.toml automation::environment:: -- --test-threads=1",
+    "test:startup": "cargo test --locked --manifest-path src-tauri/Cargo.toml settings::",
+    "test:desktop": "npm run build:debug && node scripts/desktop.integration.mjs",
+    "lint": "eslint --ext .ts,.tsx src",
+    "format": "cargo fmt --manifest-path src-tauri/Cargo.toml && prettier -w src/renderer",
+    "start:test-servers": "node scripts/dev-servers.js"
   },
   "keywords": [],
   "devDependencies": {
@@ -45,7 +41,6 @@
     "@tauri-apps/api": "^2.12.5",
     "@tauri-apps/cli": "^2.12.6",
     "@types/node": "^24.10.0",
-    "@types/pidusage": "^2.0.5",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@typescript-eslint/eslint-plugin": "^8.46.3",
@@ -54,9 +49,6 @@
     "autoprefixer": "^10.4.20",
     "classnames": "^2.5.1",
     "dayjs": "^1.11.19",
-    "electron": "^39.1.1",
-    "electron-builder": "^26.0.12",
-    "electron-vite": "^4.0.1",
     "eslint": "^9.39.1",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.21.0",
@@ -67,86 +59,5 @@
     "tailwindcss": "^3.4.14",
     "typescript": "^5.9.3",
     "vite": "^7.2.2"
-  },
-  "dependencies": {
-    "auto-launch": "^5.0.6",
-    "electron-sparkle-updater": "0.5.2",
-    "electron-store": "^11.0.2",
-    "electron-updater": "^6.6.2",
-    "pidusage": "^4.0.1",
-    "systeminformation": "^5.27.11"
-  },
-  "build": {
-    "appId": "com.localdashboard.app",
-    "productName": "Localhost Dashboard",
-    "files": [
-      "dist/index.html",
-      "dist/assets/**",
-      "out/**",
-      "resources/**",
-      "!resources/server-restart/**",
-      "!**/node_modules/electron-sparkle-updater/native/vendor/**",
-      "!**/node_modules/electron-sparkle-updater/native/sparkle-chain.tar.xz",
-      "package.json"
-    ],
-    "asar": true,
-    "asarUnpack": [
-      "**/node_modules/electron-sparkle-updater/native/build/Release/*.node"
-    ],
-    "afterPack": "scripts/after-pack-sparkle.cjs",
-    "extraResources": [
-      {
-        "from": "resources/server-restart",
-        "to": "server-restart"
-      }
-    ],
-    "directories": {
-      "buildResources": "resources"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "Tanjim-Islam",
-      "repo": "localhost-dashboard"
-    },
-    "mac": {
-      "category": "public.app-category.developer-tools",
-      "identity": null,
-      "extraFiles": [
-        {
-          "from": "node_modules/electron-sparkle-updater/native/vendor/Sparkle.framework",
-          "to": "Frameworks/Sparkle.framework"
-        }
-      ],
-      "extendInfo": {
-        "SUFeedURL": "https://github.com/Tanjim-Islam/localhost-dashboard/releases/latest/download/appcast.xml",
-        "SUPublicEDKey": "pLcjY+xshxhfKvhZyQbg8XZZFmrPzOw+lyVUGkd9JcI=",
-        "SUEnableInstallerLauncherService": false,
-        "SUScheduledCheckInterval": 3600
-      },
-      "artifactName": "Localhost-Dashboard-${version}-universal.${ext}",
-      "x64ArchFiles": "Contents/{Resources/server-restart/darwin-process-helper,Frameworks/Sparkle.framework/**,Resources/app.asar.unpacked/node_modules/electron-sparkle-updater/native/build/Release/*.node}",
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "resources/icon.png"
-    },
-    "dmg": {
-      "writeUpdateInfo": false
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
-      "icon": "resources/icon.png"
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "icon": "resources/icon.png"
-    }
   }
 }

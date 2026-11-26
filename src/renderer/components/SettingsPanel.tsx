@@ -391,7 +391,7 @@ export default function SettingsPanel({
             <button
               type="button"
               disabled={!hasChanges}
-              onClick={() => {
+              onClick={async () => {
                 if (!hasChanges) return;
                 const keysForSave = recording
                   ? recordedKeys
@@ -402,7 +402,8 @@ export default function SettingsPanel({
                 }
                 const accel = keysToAccelerator(keysForSave);
                 if (!accel) return;
-                onSave({
+                try {
+                  await onSave({
                   scanIntervalMs,
                   startAtLogin,
                   openInTrayAtLogin,
@@ -410,7 +411,11 @@ export default function SettingsPanel({
                   notifyOnStop,
                   closeToTray,
                   globalHotkey: accel,
-                });
+                  });
+                } catch (error) {
+                  setHotkeyError(error instanceof Error ? error.message : String(error));
+                  return;
+                }
                 setRecording(false);
                 setGlobalHotkey(accel);
                 setHotkeyError(null);

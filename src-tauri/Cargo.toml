@@ -1,0 +1,53 @@
+[package]
+name = "local-dashboard"
+version = "1.13.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Local development server dashboard"
+authors = ["Tanjim Islam"]
+license = "MIT"
+default-run = "local-dashboard"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3"
+url = "2"
+rusty-leveldb = "3"
+regex = "1"
+toml = "0.9"
+sysinfo = "0.37"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_System_Services", "Win32_System_Console", "Win32_Storage_FileSystem"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true
