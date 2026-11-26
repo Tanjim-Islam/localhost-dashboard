@@ -130,6 +130,36 @@ function loginCommand() {
     '$key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run"); if ($key) { $key.GetValue("Localhost Dashboard",""); $key.Dispose() }',
   );
 }
+
+async function checkSingleInstance() {
+  await invoke("updateSettings", { closeToTray: true });
+  await button("Close").click();
+  await until(
+    () => !state().visible,
+    "first installed instance hidden in tray",
+  );
+  const second = spawn(exe, [], { windowsHide: true, stdio: "ignore" });
+  try {
+    await until(
+      () => second.exitCode !== null,
+      "second installed launch exited",
+      15000,
+    );
+    assert.equal(second.exitCode, 0);
+    assert.equal(app.exitCode, null);
+    await until(
+      () => state().visible,
+      "the first installed window was restored",
+    );
+    assert.equal(windows("same-image-dashboard-count"), "1");
+    pass(
+      "Second installed launch restored the original window and exited with a single dashboard",
+    );
+  } finally {
+    if (second.exitCode === null) second.kill();
+  }
+}
+
 async function osActions() {
   assert.equal(loginCommand(), "", "Hosted profile already has a login item.");
   const marker = "dashboard-clipboard-" + randomUUID();
@@ -229,6 +259,11 @@ try {
   );
   pass("Title-bar buttons and double-click update native window state");
   if (hosted) {
+    await exercise(
+      "Installed single-instance restoration",
+      checkSingleInstance,
+    );
+    windows("restore");
     await exercise("Installed clipboard and desktop input", osActions);
     windows("restore");
     await exercise("Installed AutoHotkey controls and notifications", () =>

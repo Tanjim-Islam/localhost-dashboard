@@ -94,6 +94,21 @@ internal static class DashboardShellCheck {
                 return 0;
             }
             if(action=="restore") {ShowWindow(h,9); SetForegroundWindow(h); return 0;}
+            if(action=="same-image-dashboard-count") {
+                if(!Hosted) throw new Exception("Installed instance checks require a disposable runner.");
+                var image=Process.GetProcessById(int.Parse(args[0])).MainModule.FileName;
+                int count=0;
+                EnumWindows((handle,data)=>{
+                    var title=new StringBuilder(256); GetWindowText(handle,title,title.Capacity);
+                    if(title.ToString()!="Localhost Dashboard") return true;
+                    uint owner; GetWindowThreadProcessId(handle,out owner);
+                    using(var process=Process.GetProcessById((int)owner)) {
+                        if(String.Equals(image,process.MainModule.FileName,StringComparison.OrdinalIgnoreCase)) count++;
+                    }
+                    return true;
+                },IntPtr.Zero);
+                Console.WriteLine(count); return 0;
+            }
             if(action=="tray-callback") {
                 // Deliver the same notification sent by Explorer on a left-button release.
                 // The helper targets only the tray-icon 0.25 window of the fixture process.
