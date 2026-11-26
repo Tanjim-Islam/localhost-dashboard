@@ -99,6 +99,27 @@ http.createServer((q,r)=>{r.setHeader("content-length",Buffer.byteLength(body));
         result
     }
     fn extend_descendants(&mut self, table: &Table) {
+        // Framework Python on macOS execs the actual interpreter in place.
+        // Our unreaped child handle still owns that PID. Capture the new
+        // executable only when its environment proves it is this fixture.
+        if let Some(child) = self.child.as_mut() {
+            if matches!(child.try_wait(), Ok(None)) {
+                if let Some(id) = native::identity(child.id()).filter(|id| !self.known.contains(id))
+                {
+                    let fixture_env = table.context(&id).is_some_and(|ctx| {
+                        ctx.env.get(std::ffi::OsStr::new("FIXTURE_PORT"))
+                            == Some(&self.port.to_string().into())
+                            && ctx
+                                .env
+                                .get(std::ffi::OsStr::new("TEST_DASHBOARD_SERVER_KEY"))
+                                == Some(&"test-only & বাংলা".into())
+                    });
+                    if fixture_env && matches!(child.try_wait(), Ok(None)) {
+                        self.known.push(id);
+                    }
+                }
+            }
+        }
         for root in self.known.clone() {
             if native::identity(root.pid).as_ref() != Some(&root) {
                 continue;
