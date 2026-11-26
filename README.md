@@ -153,7 +153,7 @@ Use **Scan folders > Add folder** for portable tools in other locations. These s
 
 In-app uninstall is intentionally narrow. npm global packages, pipx applications, Cargo packages, qualified Scoop applications, and Homebrew formulas can be enabled only when current exact ownership is revalidated. Other sources are blocked or manual-only. The renderer sends only an installation ID, inventory revision, one-use preview token, and fixed confirmation value. The app never offers cache cleanup, leftover removal, configuration deletion, credential deletion, installation, updating, or PATH editing.
 
-Linux keeps its existing tabs and does not expose CLIs. macOS discovery and adapters are covered by fixtures and automated tests, but runtime verification must be performed on a macOS host.
+Linux keeps its existing tabs. Windows and macOS expose CLIs. Native macOS CI runs the adapter fixtures. The read-only comparison against a populated developer workstation was performed on Windows.
 
 ## Project structure
 
@@ -186,4 +186,4 @@ npm run dev:clis-test
 - AHK features only work on Windows
 - ENV key management only works on Windows
 - CLIs are available on Windows and macOS, not Linux
-- macOS CLIs behavior is fixture-tested in this repository but still needs runtime verification on macOS
+- The macOS application bundle and native process controls run in Apple Silicon CI. A live Mac CLI inventory comparison and interactive Intel Mac testing remain outstanding.

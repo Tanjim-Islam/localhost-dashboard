@@ -31,13 +31,13 @@ The benchmark alternated three launches per executable. Each launch used a fresh
 
 | Measurement | Electron 1.13.0 | Rust and Tauri |
 | --- | ---: | ---: |
-| Windows x64 installer | 100,758,236 bytes | 5,597,387 bytes |
-| Total private memory, median | 337.8 MiB | 204.0 MiB |
-| Total working set, median | 487.7 MiB | 393.3 MiB |
-| Window content ready, median | 914 ms | 721 ms |
-| First listeners available, median | 942 ms | 755 ms |
+| Windows x64 installer | 100,758,236 bytes | 5,598,810 bytes |
+| Total private memory, median | 338.7 MiB | 203.0 MiB |
+| Total working set, median | 487.0 MiB | 396.1 MiB |
+| Window content ready, median | 898 ms | 534 ms |
+| First listeners available, median | 925 ms | 575 ms |
 
-Private memory was 39.6% lower in this run. An earlier three-pair run on this machine measured 40.7% lower private memory, with median window readiness at 1,261 ms for Electron and 1,335 ms for Tauri. Startup ordering varied between runs. The small Tauri installer uses the Windows WebView2 runtime. Installing that runtime on a machine that lacks it requires an additional download.
+Private memory was 40.1% lower in this run. Two earlier three-pair comparisons on this machine measured 39.6% and 40.7% lower private memory. Startup ordering varied. In the first comparison, median window readiness was 1,261 ms for Electron and 1,335 ms for Tauri. The small Tauri installer uses the Windows WebView2 runtime. Installing that runtime on a machine that lacks it requires an additional download.
 
 To repeat the comparison on Windows, run `node scripts/benchmark-windows.mjs "<installed Electron executable>" "<Tauri release executable>"`. The script writes the six individual observations to a temporary results file. The sample covers one workload on one machine.
 
