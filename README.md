@@ -82,7 +82,7 @@ Projects have persistent names, notes, pins, and bookmarks. Use **Change project
 - **Stop Selected** uses explicit checkboxes. Search never implicitly selects anything.
 - **Stop This Project** stops verified services associated with that project.
 
-Stop acts immediately with an inline spinner and no confirmation dialog. It also supports verified application services such as Ollama in the drawer. Main and the native helper revalidate process identities, project ownership, and all affected ports before stopping. A changed or unreadable process is refused. Stop targets only those processes, without killing parents or trees. A supervisor may start a replacement process. Verified stops disappear immediately; independent one-second listener checks retire externally stopped services after two successful absent observations, normally within two to three seconds. The former Kill All action and IPC have been removed.
+Stop acts immediately with an inline spinner. It also supports verified application services such as Ollama in the drawer. The Rust backend rechecks process identities, project ownership, and all affected ports before stopping the selected processes. A changed or unreadable identity prevents the action. A supervisor may start a replacement process. Verified stops disappear immediately. Independent one-second listener checks retire externally stopped services after two successful absent observations, normally within two to three seconds.
 
 ### Recently Stopped and Activity
 
@@ -167,7 +167,7 @@ Linux keeps its existing tabs and does not expose CLIs. macOS discovery and adap
 
 ## Verification
 
-`npm test` runs the native Rust suite and React contract tests. On Windows, `npm run test:desktop` builds the app and drives the actual WebView2 window with isolated application data. It exercises persistent settings, window behavior, CLI fixtures and transient user registry values. Run `npx tsc --noEmit` and `npm run lint` for frontend checks. See the [server tests](docs/server-management.md) and [release procedure](docs/RELEASING.md).
+`npm test` runs the native Rust suite and React contract tests. On Windows, `npm run test:desktop` builds the app and drives the actual WebView2 window with isolated application data. It exercises server and script actions, CLI fixtures, settings, registry changes and upgrades of previous profiles. Run `npx tsc --noEmit` and `npm run lint` for frontend checks. The [migration verification record](docs/tauri-verification.md) includes the Windows comparison and reproduction commands. See also the [server tests](docs/server-management.md) and [release procedure](docs/RELEASING.md).
 
 ## CLIs testing
 
