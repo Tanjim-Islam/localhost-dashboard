@@ -1,0 +1,65 @@
+[
+  {
+    "name": "Search dashboard",
+    "color": "rgb(48, 41, 35)",
+    "bg": "rgba(241, 231, 221, 0.8)",
+    "border": "9999px",
+    "font": "\"Inter Variable\", Inter, system-ui, sans-serif",
+    "height": 33,
+    "width": 543.828125
+  },
+  {
+    "name": "Refresh",
+    "color": "rgb(48, 41, 35)",
+    "bg": "rgba(241, 231, 221, 0.9)",
+    "border": "12px",
+    "font": "\"Inter Variable\", Inter, system-ui, sans-serif",
+    "height": 32,
+    "width": 95.03125
+  },
+  {
+    "name": "Settings",
+    "color": "rgb(48, 41, 35)",
+    "bg": "rgba(241, 231, 221, 0.9)",
+    "border": "12px",
+    "font": "\"Inter Variable\", Inter, system-ui, sans-serif",
+    "height": 32,
+    "width": 77.953125
+  },
+  {
+    "name": "Minimize",
+    "color": "rgb(116, 102, 92)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "border": "12px",
+    "font": "\"Inter Variable\", Inter, system-ui, sans-serif",
+    "height": 32,
+    "width": 32
+  },
+  {
+    "name": "Maximize",
+    "color": "rgb(116, 102, 92)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "border": "12px",
+    "font": "\"Inter Variable\", Inter, system-ui, sans-serif",
+    "height": 32,
+    "width": 32
+  },
+  {
+    "name": "Close",
+    "color": "rgb(116, 102, 92)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "border": "12px",
+    "font": "\"Inter Variable\", Inter, system-ui, sans-serif",
+    "height": 32,
+    "width": 32
+  },
+  {
+    "name": "Close settings",
+    "color": "rgb(116, 102, 92)",
+    "bg": "rgb(241, 231, 221)",
+    "border": "12px",
+    "font": "\"Inter Variable\", Inter, system-ui, sans-serif",
+    "height": 32,
+    "width": 32
+  }
+]

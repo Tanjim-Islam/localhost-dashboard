@@ -10,6 +10,8 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import { chromium } from "playwright-core";
+import { checkServerScreen } from "./desktop-servers.mjs";
+import { checkMigration } from "./desktop-migration.mjs";
 
 if (process.platform !== "win32") throw new Error("This WebView2 integration suite requires Windows.");
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "dashboard-webview-"));
@@ -26,7 +28,7 @@ async function until(fn, label, timeout = 45000) {
   while (Date.now() < end) { const result = await fn(); if (result) return result; await delay(120); }
   throw new Error("Timed out waiting for " + label);
 }
-async function launch() {
+async function launch(profile = root) {
   const socket = net.createServer();
   socket.listen(0, "127.0.0.1");
   await once(socket, "listening");
@@ -35,7 +37,7 @@ async function launch() {
   const endpoint = "http://127.0.0.1:" + port;
   app = spawn(exe, [], {
     windowsHide: true,
-    env: { ...process.env, LOCAL_DASHBOARD_CLIS_TEST_ROOT: root,
+    env: { ...process.env, LOCAL_DASHBOARD_CLIS_TEST_ROOT: profile,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--remote-debugging-port=" + port },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -84,10 +86,12 @@ try {
     return {name:el.getAttribute("aria-label")||el.textContent.trim(),color:s.color,bg:s.backgroundColor,border:s.borderRadius,font:s.fontFamily,height:r.height,width:r.width};
   }));
   await fs.writeFile(path.join(root,"styles.json"),JSON.stringify(styles,null,2));
-  if (process.env.DASHBOARD_ELECTRON_BASELINE) {
-    const original=JSON.parse(await fs.readFile(path.join(process.env.DASHBOARD_ELECTRON_BASELINE,"styles.json"),"utf8"));
+  {
+    const original=JSON.parse(await fs.readFile(new URL("../tests/fixtures/electron-windows-controls.json",import.meta.url),"utf8"));
     assert.deepEqual(styles.map(({width,...rest})=>rest), original.map(({width,...rest})=>rest));
-    for(let i=0;i<styles.length;i++) assert(Math.abs(styles[i].width-original[i].width)<2,styles[i].name+" width changed");
+    if(await page.evaluate(()=>window.innerWidth===1100)){
+      for(let i=0;i<styles.length;i++) assert(Math.abs(styles[i].width-original[i].width)<2,styles[i].name+" width changed");
+    }
     pass("Original Electron control colors, fills, radii, font families and geometry");
   }
   await button("Dark").click();
@@ -152,15 +156,21 @@ try {
   await assert.rejects(api("restartServer",{key:"0:0",firstSeen:1}));
   pass("Server, project and port-stat contracts and invalid action rejection");
 
+  const project=await checkServerScreen({root,page,api,until});
+  pass("Project editor, activity, ignored protection, hidden selection, Stop Selected and Start in the drawer");
+  await button(/^CLIs/).click();
   await closeApp();
   await launch();
   assert.equal((await api("getCliInventory")).revision,inventory.revision);
   assert.equal((await api("getSettings")).scanIntervalMs,2200);
+  assert((await api("getProjects")).projects.some(p=>p.id===project.id && p.notes==="WebView2 integration note"));
   assert.equal(await page.evaluate(()=>localStorage.getItem("dashboard:themeMode")),"dark");
   assert.equal(await page.evaluate(()=>localStorage.getItem("dashboard:activeTab")),"clis");
   assert.equal((await api("resetSettings")).scanIntervalMs,5000);
   pass("Window close, restart and persistent settings, theme, inventory and active tab");
   await closeApp();
+  await checkMigration({root,launch,api,closeApp,baseline:process.env.DASHBOARD_ELECTRON_BASELINE});
+  pass("First launch imports legacy project notes, settings, statistics, recent scripts and cached CLI inventory exactly once");
   assert.deepEqual(errors,[]);
   console.log(checkpoints+" Windows WebView2 checkpoints passed. Evidence:",root);
 } catch(e) {
