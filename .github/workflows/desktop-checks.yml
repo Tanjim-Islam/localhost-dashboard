@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
   push:
     branches: [master, rust-build]
+    paths-ignore:
+      - "**/*.md"
   pull_request:
 
 permissions:
@@ -10,7 +12,7 @@ permissions:
 
 concurrency:
   group: desktop-checks-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   desktop:
