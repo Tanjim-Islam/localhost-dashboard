@@ -51,8 +51,6 @@ export default function AHKCard({
     setRestartState("active");
 
     try {
-      window.api.killAHK(item.pid);
-      await new Promise((resolve) => setTimeout(resolve, 500));
       await window.api.restartAHK(item.scriptPath);
 
       setRestartState("done");
