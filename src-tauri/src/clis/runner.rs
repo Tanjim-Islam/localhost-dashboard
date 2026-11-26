@@ -100,6 +100,8 @@ pub(super) fn run(
                 | "HOMEBREW_NO_AUTO_UPDATE"
                 | "HOMEBREW_NO_ANALYTICS"
                 | "PIP_DISABLE_PIP_VERSION_CHECK"
+                | "YARN_IGNORE_PATH"
+                | "SKIP_YARN_COREPACK_CHECK"
         ) {
             command.env(k, v);
         }

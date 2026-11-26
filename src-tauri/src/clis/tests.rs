@@ -101,6 +101,16 @@ fn bounded_runner_uses_absolute_executable_and_terminates_timeout() {
         assert!(runner::run(&p, tmp.path(), &c, Duration::from_secs(10), 1).is_err());
         let p = runner::Plan::new(&sys.join("ping.exe"), &["-n", "4", "127.0.0.1"]);
         assert!(runner::run(&p, tmp.path(), &c, Duration::from_millis(250), 8192).is_err());
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(150));
+                c.store(true, Ordering::Release);
+            });
+            assert_eq!(
+                runner::run(&p, tmp.path(), &c, Duration::from_secs(10), 8192),
+                Err("Scan cancelled.".into())
+            );
+        });
     }
 }
 #[test]
@@ -133,7 +143,12 @@ fn catalogue_and_source_boundaries() {
 fn expired_and_mismatched_tokens_are_single_use() {
     let mut tickets = BTreeMap::new();
     let token = uuid::Uuid::new_v4().to_string();
-    let req = json!({"confirmation":"uninstall-exact-cli-installation","previewToken":token,"installationId":"cli-inventory","inventoryRevision":"inv-changed"});
+    let req = json!({
+        "confirmation": "uninstall-exact-cli-installation",
+        "previewToken": token,
+        "installationId": "cli-inventory",
+        "inventoryRevision": "inv-changed",
+    });
     for (rev, expires) in [("inv-original", now() + 60000), ("inv-changed", now() - 1)] {
         tickets.insert(
             token.clone(),
@@ -199,6 +214,26 @@ fn live_cli_inventory() {
         .iter()
         .filter(|i| actions::supported(i))
         .count();
+    let path_dirs: Vec<_> = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .filter(|p| p.is_absolute())
+        .collect();
+    for command in list(&snapshot, "commands")
+        .iter()
+        .filter(|c| c["pathRole"] == "active")
+    {
+        let endpoint = find(&snapshot, "endpoints", &command["activeEndpointId"]).unwrap();
+        let index = endpoint["pathIndex"].as_u64().unwrap() as usize;
+        assert_eq!(
+            normal(&real(Path::new(text(endpoint, "path")).parent().unwrap())),
+            normal(&real(&path_dirs[index]))
+        );
+    }
+    for install in list(&snapshot, "installations")
+        .iter()
+        .filter(|i| actions::supported(i))
+    {
+        assert!(actions::plan(install).unwrap().exe.is_file());
+    }
     assert!(current
         .iter()
         .all(|p| strings(&p["currentInstallationIds"]).all(|id| find(
@@ -218,5 +253,21 @@ fn live_cli_inventory() {
         list(&snapshot, "installations").len(),
         list(&snapshot, "commands").len(),
         list(&snapshot, "endpoints").len()
+    );
+    let session = c.begin().unwrap();
+    let cancel = c.lock().unwrap().cancel.clone().unwrap();
+    let aborted = c.manual(session, &|event, value| {
+        if event == "onCliScanProgress" && value["stage"] == "reading-package-sources" {
+            cancel.store(true, Ordering::Release);
+        }
+    });
+    assert!(aborted.is_err());
+    assert_eq!(
+        c.lock().unwrap().store["inventory"]["revision"],
+        snapshot["revision"]
+    );
+    assert_eq!(
+        read_json(t.path(), "clis.json", Value::Null).unwrap()["lastScanStatus"],
+        "cancelled"
     );
 }

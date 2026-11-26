@@ -265,12 +265,40 @@ fn shim(path: &Path, name: &str) -> Option<(PathBuf, Option<PathBuf>)> {
         LazyLock::new(|| Regex::new(r#"["']([^"'\r\n]+)["']"#).unwrap());
     let dir = path.parent()?;
     let content = read_text(path, 65536)?;
-    for cap in PACKAGE.captures_iter(&content) {
-        let package = cap[1].replace('\\', "/");
-        if !valid_pkg("npm", &package) {
+    let expanded = content
+        .replace("%~dp0", &(path_string(dir) + "\\"))
+        .replace("%dp0%", &path_string(dir))
+        .replace("$basedir", &path_string(dir))
+        .replace("$PSScriptRoot", &path_string(dir));
+    let mut roots = BTreeSet::new();
+    for quoted in QUOTED.captures_iter(&expanded) {
+        let value = Path::new(&quoted[1]);
+        if !value.is_absolute() || quoted[1].contains(['%', '$']) {
             continue;
         }
-        let root = dir.join("node_modules").join(&package);
+        for parent in value.ancestors().skip(1) {
+            if parent
+                .file_name()
+                .is_some_and(|v| v.eq_ignore_ascii_case("node_modules"))
+            {
+                let Some(cap) = PACKAGE.captures(&quoted[1]) else {
+                    continue;
+                };
+                let package = cap[1].replace('\\', "/");
+                if valid_pkg("npm", &package) {
+                    roots.insert((real(&parent.join(&package)), package));
+                }
+                break;
+            }
+        }
+    }
+    for cap in PACKAGE.captures_iter(&content) {
+        let package = cap[1].replace('\\', "/");
+        if valid_pkg("npm", &package) {
+            roots.insert((real(&dir.join("node_modules").join(&package)), package));
+        }
+    }
+    for (root, package) in roots {
         let Some(doc) = read_doc(&root.join("package.json")) else {
             continue;
         };
@@ -297,11 +325,6 @@ fn shim(path: &Path, name: &str) -> Option<(PathBuf, Option<PathBuf>)> {
     if content.len() > 2048 || content.lines().count() > 20 {
         return None;
     }
-    let expanded = content
-        .replace("%~dp0", &(path_string(dir) + "\\"))
-        .replace("%dp0%", &path_string(dir))
-        .replace("$basedir", &path_string(dir))
-        .replace("$PSScriptRoot", &path_string(dir));
     let targets: BTreeSet<_> = QUOTED
         .captures_iter(&expanded)
         .filter_map(|q| {
@@ -419,18 +442,19 @@ pub(super) fn inspect(
         }
     }
     #[cfg(unix)]
-    {
+    let executable = {
         use std::os::unix::fs::PermissionsExt;
-        if !declared
-            && !meta
+        let executable = target
+            && meta
                 .as_ref()
-                .is_some_and(|m| m.permissions().mode() & 0o111 != 0)
-        {
+                .is_some_and(|m| m.permissions().mode() & 0o111 != 0);
+        if !declared && !executable {
             return None;
         }
-    }
-    let executable =
-        target && (!cfg!(windows) || ["exe", "com", "cmd", "bat", "ps1"].contains(&ext.as_str()));
+        executable
+    };
+    #[cfg(windows)]
+    let executable = target && ["exe", "com", "cmd", "bat", "ps1"].contains(&ext.as_str());
     let order = index.and_then(|i| {
         if cfg!(windows) {
             env.extensions
@@ -447,7 +471,18 @@ pub(super) fn inspect(
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64);
-    let mut data = json!({"id":id("endpoint",json!({"path":normal(path),"command":name})),"commandName":name,"kind":kind,"path":path_string(path),"canonicalPath":path_string(&canonical),"accessible":true,"targetExists":target,"executable":executable,"fileSize":m.len(),"modifiedAt":modified});
+    let mut data = json!({
+        "id": id("endpoint",json!({"path":normal(path),"command":name})),
+        "commandName": name,
+        "kind": kind,
+        "path": path_string(path),
+        "canonicalPath": path_string(&canonical),
+        "accessible": true,
+        "targetExists": target,
+        "executable": executable,
+        "fileSize": m.len(),
+        "modifiedAt": modified,
+    });
     if let Some((i, j)) = order {
         data["pathIndex"] = json!(i);
         data["pathextIndex"] = json!(j);
@@ -469,7 +504,15 @@ pub(super) fn inspect(
     }
     data["fingerprint"] = json!(id(
         "fp",
-        json!({"path":normal(path),"canonicalPath":normal(&canonical),"fileSize":m.len(),"modifiedAt":modified,"targetExists":data["targetExists"],"shimTarget":data["shimTarget"],"accessible":true})
+        json!({
+            "path": normal(path),
+            "canonicalPath": normal(&canonical),
+            "fileSize": m.len(),
+            "modifiedAt": modified,
+            "targetExists": data["targetExists"],
+            "shimTarget": data["shimTarget"],
+            "accessible": true,
+        })
     ));
     Some(Endpoint {
         path: path.into(),
@@ -492,7 +535,12 @@ pub(super) fn enumerate(
     let mut es = vec![];
     for (dir, index) in dirs {
         stopped(cancel)?;
-        if !seen.insert(normal(&real(&dir))) {
+        let canonical = normal(&real(&dir));
+        let system = env
+            .vars
+            .get("SystemRoot")
+            .is_some_and(|root| Path::new(&canonical).starts_with(normal(root)));
+        if !seen.insert(canonical) {
             continue;
         }
         let entries = match fs::read_dir(&dir) {
@@ -525,6 +573,9 @@ pub(super) fn enumerate(
             let Some(name) = name.and_then(|s| s.to_str()) else {
                 continue;
             };
+            if system && by_command(name).is_none() {
+                continue;
+            }
             if let Some(endpoint) = inspect(&path, &name.to_lowercase(), index, env, false) {
                 es.push(endpoint)
             }

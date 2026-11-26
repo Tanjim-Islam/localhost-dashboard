@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod action_tests;
 mod actions;
 mod changes;
 mod discovery;
@@ -58,7 +60,15 @@ impl Clis {
             write_json(dir, "clis.json", &store)?;
             state = "failed";
         }
-        let session = json!({"id":"scan-idle","status":state,"startedAt":0,"completedSources":0,"totalSources":0,"completedProbes":0,"totalProbes":0});
+        let session = json!({
+            "id": "scan-idle",
+            "status": state,
+            "startedAt": 0,
+            "completedSources": 0,
+            "totalSources": 0,
+            "completedProbes": 0,
+            "totalProbes": 0,
+        });
         Ok(Self {
             dir: dir.into(),
             fixture,
@@ -112,7 +122,16 @@ impl Clis {
         next["lastScanStartedAt"] = json!(t);
         next["lastScanStatus"] = json!("scanning");
         self.persist(&mut state, next)?;
-        let session = json!({"id":uuid::Uuid::new_v4().to_string(),"status":"scanning","startedAt":t,"stage":"revalidating-cache","completedSources":0,"totalSources":0,"completedProbes":0,"totalProbes":0});
+        let session = json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "status": "scanning",
+            "startedAt": t,
+            "stage": "revalidating-cache",
+            "completedSources": 0,
+            "totalSources": 0,
+            "completedProbes": 0,
+            "totalProbes": 0,
+        });
         state.cancel = Some(Arc::new(AtomicBool::new(false)));
         state.busy = true;
         state.session = session.clone();
@@ -154,7 +173,13 @@ impl Clis {
             prepend(
                 &mut store,
                 "scanAttempts",
-                json!({"scanSessionId":session["id"],"startedAt":session["startedAt"],"finishedAt":t,"status":snapshot["completeness"],"sourceFailureCount":list(&snapshot,"sourceResults").iter().filter(|s|s["status"]=="failed").count()}),
+                json!({
+                    "scanSessionId": session["id"],
+                    "startedAt": session["startedAt"],
+                    "finishedAt": t,
+                    "status": snapshot["completeness"],
+                    "sourceFailureCount": list(&snapshot,"sourceResults").iter().filter(|s|s["status"]=="failed").count(),
+                }),
                 20,
             );
         }
@@ -223,7 +248,14 @@ impl Clis {
                 prepend(
                     &mut store,
                     "scanAttempts",
-                    json!({"scanSessionId":start["id"],"startedAt":start["startedAt"],"finishedAt":now(),"status":status,"sourceFailureCount":0,"message":msg}),
+                    json!({
+                        "scanSessionId": start["id"],
+                        "startedAt": start["startedAt"],
+                        "finishedAt": now(),
+                        "status": status,
+                        "sourceFailureCount": 0,
+                        "message": msg,
+                    }),
                     20,
                 );
                 let persisted = self.persist(&mut s, store);
@@ -287,9 +319,12 @@ impl Clis {
         let new = find(&fresh, "installations", &item["id"])
             .ok_or("The installation is no longer present.")?;
         let fixture = self.fixture.is_some();
-        let evidence = actions::evidence(&fresh, new, fixture)?;
-        actions::check_same(&actions::evidence(previous, item, fixture)?, &evidence)?;
+        actions::check_same(
+            &actions::claim(previous, item)?,
+            &actions::claim(&fresh, new)?,
+        )?;
         if method == "getCliUninstallPreview" {
+            let evidence = actions::evidence(&fresh, new)?;
             let token = uuid::Uuid::new_v4().to_string();
             let expires = now() + 60000;
             let mut s = self.lock()?;
@@ -318,25 +353,25 @@ impl Clis {
         if now() >= ticket.expires {
             return Err("The uninstall preview expired.".into());
         }
-        actions::check_same(&ticket.evidence, &evidence)?;
         progress("uninstalling", "Removing the exact package");
-        let result = if fixture {
-            if new["productId"] == "opencode" {
-                Err("Fixture package manager rejected uninstall.".into())
+        let manager_ok = actions::execute(&fresh, new, &ticket.evidence, |plan| {
+            if fixture {
+                if new["productId"] == "opencode" {
+                    Err("Fixture package manager rejected uninstall.".into())
+                } else {
+                    self.lock()?.removed.insert(text(new, "id").into());
+                    Ok(String::new())
+                }
             } else {
-                self.lock()?.removed.insert(text(new, "id").into());
-                Ok(String::new())
+                runner::run(
+                    plan,
+                    &self.dir.join("cli-neutral"),
+                    &cancel,
+                    Duration::from_secs(90),
+                    256 * 1024,
+                )
             }
-        } else {
-            let plan = actions::plan(new)?;
-            runner::run(
-                &plan,
-                &self.dir.join("cli-neutral"),
-                &cancel,
-                Duration::from_secs(90),
-                256 * 1024,
-            )
-        };
+        })?;
         progress("verifying", "Verifying the selected installation");
         let after = self.scan(&fresh, &cancel, None, &|_, _, _, _| {});
         let absence = fixture
@@ -346,7 +381,7 @@ impl Clis {
                         .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
                 })
             });
-        let removed = result.is_ok()
+        let removed = manager_ok
             && absence
             && after.as_ref().is_ok_and(|s| {
                 find(s, "installations", &new["id"]).is_none()
@@ -357,7 +392,7 @@ impl Clis {
                     })
             });
         progress("refreshing", "Refreshing inventory");
-        let (status, message) = if result.is_err() {
+        let (status, message) = if !manager_ok {
             (
                 "failed",
                 "The package manager could not remove the selected package.",
@@ -378,12 +413,28 @@ impl Clis {
             Ok(snapshot) => Some(self.publish(&mut s, snapshot, None)?),
             Err(_) => None,
         };
-        let summary = json!({"requestId":request,"installationId":new["id"],"status":status,"verifiedRemoved":removed,"message":message,"inventoryRevision":s.store["inventory"]["revision"]});
+        let summary = json!({
+            "requestId": request,
+            "installationId": new["id"],
+            "status": status,
+            "verifiedRemoved": removed,
+            "message": message,
+            "inventoryRevision": s.store["inventory"]["revision"],
+        });
         let mut store = s.store.clone();
         prepend(
             &mut store,
             "uninstallAudits",
-            json!({"requestId":request,"installationId":new["id"],"source":new["packageIdentity"]["source"],"packageId":new["packageIdentity"]["packageId"],"startedAt":started,"finishedAt":now(),"status":status,"message":message}),
+            json!({
+                "requestId": request,
+                "installationId": new["id"],
+                "source": new["packageIdentity"]["source"],
+                "packageId": new["packageIdentity"]["packageId"],
+                "startedAt": started,
+                "finishedAt": now(),
+                "status": status,
+                "message": message,
+            }),
             100,
         );
         self.persist(&mut s, store)?;
@@ -419,6 +470,9 @@ impl Clis {
                     None
                 };
                 let mut s = self.lock()?;
+                if method == "chooseCliScanDirectory" && selected.is_none() {
+                    return Ok(dir_items(&s.store));
+                }
                 if s.busy {
                     return Err("Wait for the current CLI operation to finish.".into());
                 }

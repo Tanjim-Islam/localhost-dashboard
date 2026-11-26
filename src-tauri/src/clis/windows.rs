@@ -79,13 +79,11 @@ impl Registry {
                 "machine",
             ),
         ] {
-            if let Ok(apps) = h.open_subkey(format!("{k}\\App Paths")) {
+            if let Some(apps) = (!k.contains("WOW6432Node"))
+                .then(|| h.open_subkey(format!("{k}\\App Paths")).ok())
+                .flatten()
+            {
                 for name in apps.enum_keys().take(501).flatten() {
-                    let command = name.to_lowercase();
-                    let name_cmd = command.trim_end_matches(".exe");
-                    if by_command(name_cmd).is_none() {
-                        continue;
-                    }
                     if let Some(p) = apps
                         .open_subkey(&name)
                         .ok()
@@ -131,8 +129,26 @@ impl Registry {
                     if dir.components().count() < 3 {
                         continue;
                     }
+                    if [
+                        "USERPROFILE",
+                        "ProgramFiles",
+                        "ProgramFiles(x86)",
+                        "APPDATA",
+                        "LOCALAPPDATA",
+                    ]
+                    .iter()
+                    .filter_map(std::env::var_os)
+                    .map(PathBuf::from)
+                    .any(|root| {
+                        normal(&dir) == normal(&root)
+                            || root
+                                .parent()
+                                .is_some_and(|parent| normal(parent) == normal(&dir))
+                    }) {
+                        continue;
+                    }
                     dirs.push(dir.clone());
-                    for sub in ["bin", "Scripts", "cmd", "resources/app/bin"] {
+                    for sub in ["bin", "Scripts", "cmd"] {
                         let sub = dir.join(sub);
                         if sub.is_dir() {
                             dirs.push(sub)

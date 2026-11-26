@@ -107,6 +107,8 @@ pub(super) fn find<'a>(v: &'a Value, group: &str, key: &Value) -> Option<&'a Val
     list(v, group).iter().find(|item| &item["id"] == key)
 }
 pub(super) fn path_string(p: &Path) -> String {
+    let normalized: PathBuf = p.components().collect();
+    let p = normalized.as_path();
     p.to_string_lossy()
         .strip_prefix(r"\\?\UNC\")
         .map(|v| format!(r"\\{v}"))
@@ -138,11 +140,18 @@ pub(super) fn valid_pkg(source: &str, n: &str) -> bool {
     let mut parts = n.split('/');
     let head = parts.next().unwrap_or_default();
     let valid = |s: &str| command_name(s) && !s.contains("..");
+    let formula_name = |s: &str| {
+        s.split_once('@').map_or_else(
+            || valid(s),
+            |(base, v)| valid(base) && valid(v) && v.starts_with(|c: char| c.is_ascii_digit()),
+        )
+    };
     match (source, parts.next(), parts.next()) {
         ("npm", Some(name), None) => head.strip_prefix('@').is_some_and(valid) && valid(name),
         ("homebrew-formula", Some(tap), Some(formula)) => {
-            valid(head) && valid(tap) && valid(formula) && parts.next().is_none()
+            valid(head) && valid(tap) && formula_name(formula) && parts.next().is_none()
         }
+        ("homebrew-formula", None, None) => formula_name(head),
         (_, None, None) => valid(head),
         _ => false,
     }
@@ -162,7 +171,14 @@ pub(super) fn read_doc(path: &Path) -> Option<Value> {
     serde_json::from_str(&read_text(path, 2 * 1024 * 1024)?).ok()
 }
 pub(super) fn source(id: &str, label: &str, status: &str, count: usize, started: u64) -> Value {
-    let mut v = json!({"sourceId":id,"label":label,"status":status,"startedAt":started,"finishedAt":now(),"recordCount":count});
+    let mut v = json!({
+        "sourceId": id,
+        "label": label,
+        "status": status,
+        "startedAt": started,
+        "finishedAt": now(),
+        "recordCount": count,
+    });
     if status == "failed" {
         v["errorCode"] = json!("SOURCE_UNAVAILABLE");
         v["message"] = json!("This source could not be fully inspected.");
@@ -178,7 +194,18 @@ pub(super) fn key_id(value: &Value) -> Result<&str, String> {
     }
 }
 pub(super) fn empty() -> Value {
-    json!({"schemaVersion":2,"inventory":null,"comparisonBaseline":null,"scanDirectories":[],"scanAttempts":[],"uninstallAudits":[],"lastScanStartedAt":null,"lastSuccessfulScanAt":null,"lastCompletedScanAt":null,"lastScanStatus":"idle"})
+    json!({
+        "schemaVersion": 2,
+        "inventory": null,
+        "comparisonBaseline": null,
+        "scanDirectories": [],
+        "scanAttempts": [],
+        "uninstallAudits": [],
+        "lastScanStartedAt": null,
+        "lastSuccessfulScanAt": null,
+        "lastCompletedScanAt": null,
+        "lastScanStatus": "idle",
+    })
 }
 pub(super) fn prepend(store: &mut Value, key: &str, value: Value, limit: usize) {
     let mut entries = list(store, key).to_vec();

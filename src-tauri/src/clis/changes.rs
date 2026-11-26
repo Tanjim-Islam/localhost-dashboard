@@ -106,7 +106,12 @@ pub(super) fn compare(prev: &Value, next: &Value) -> Value {
                 .map(|c| if c.is_control() { ' ' } else { c })
                 .collect::<String>()
         };
-        let mut v = json!({"kind":kind,"productId":i["productId"],"installationId":i["id"],"name":names.get(text(i,"productId")).copied().unwrap_or("CLI")});
+        let mut v = json!({
+            "kind": kind,
+            "productId": i["productId"],
+            "installationId": i["id"],
+            "name": names.get(text(i,"productId")).copied().unwrap_or("CLI"),
+        });
         if !before.is_empty() {
             v["before"] = json!(clean(before));
         }
@@ -178,8 +183,8 @@ pub(super) fn compare(prev: &Value, next: &Value) -> Value {
                 add(
                     i,
                     "availability",
-                    format!("{} · {}", text(prior, "presence"), text(prior, "health")),
-                    format!("{} · {}", text(i, "presence"), text(i, "health")),
+                    format!("{} Â· {}", text(prior, "presence"), text(prior, "health")),
+                    format!("{} Â· {}", text(i, "presence"), text(i, "health")),
                 );
             }
         } else if i["presence"] == "present" {
@@ -216,5 +221,11 @@ pub(super) fn compare(prev: &Value, next: &Value) -> Value {
             },
         );
     }
-    json!({"schemaVersion":1,"comparedAt":next["generatedAt"],"baselineAt":prev["generatedAt"],"entries":entries,"truncated":truncated})
+    json!({
+        "schemaVersion": 1,
+        "comparedAt": next["generatedAt"],
+        "baselineAt": prev["generatedAt"],
+        "entries": entries,
+        "truncated": truncated,
+    })
 }

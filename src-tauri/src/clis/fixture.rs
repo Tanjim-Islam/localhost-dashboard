@@ -13,6 +13,14 @@ pub(super) fn scan(
     progress: &Progress,
 ) -> Result<Value, String> {
     let stamp = now();
+    for name in ["npm/node.exe", "npm/node_modules/npm/bin/npm-cli.js"] {
+        let path = root.join(name);
+        fs::create_dir_all(path.parent().unwrap())
+            .map_err(|_| "Cannot initialize fixture manager.")?;
+        if !path.exists() {
+            fs::write(&path, b"fixture manager").map_err(|_| "Cannot write fixture manager.")?;
+        }
+    }
     let mut installs = vec![];
     let mut commands = vec![];
     let mut endpoints = vec![];
@@ -90,25 +98,89 @@ pub(super) fn scan(
         let ident = if owner.is_empty() {
             Value::Null
         } else {
-            json!({"source":"npm","packageId":owner,"packageVersion":version,"scope":"user","managerRoot":root.join("npm"),"managerExecutablePath":root.join("npm/node.exe"),"managerCommandPath":root.join("npm/node_modules/npm/bin/npm-cli.js"),"installRoot":root.join("npm/node_modules").join(owner),"ownershipConfidence":"exact","uninstallEvidence":"manager-owned"})
+            json!({
+                "source": "npm",
+                "packageId": owner,
+                "packageVersion": version,
+                "scope": "user",
+                "managerRoot": root.join("npm"),
+                "managerExecutablePath": root.join("npm/node.exe"),
+                "managerCommandPath": root.join("npm/node_modules/npm/bin/npm-cli.js"),
+                "installRoot": root.join("npm/node_modules").join(owner),
+                "ownershipConfidence": "exact",
+                "uninstallEvidence": "manager-owned",
+            })
         };
         let cap = capability(&ident, product, "user", &[cmd.to_owned()]);
         let first = find(old, "installations", &json!(inst_id))
             .and_then(|i| i["firstSeenAt"].as_u64())
             .unwrap_or(stamp);
-        let mut inst = json!({"id":inst_id,"productId":product,"platform":platform(),"architecture":arch(),"origin":if owner.is_empty(){"user"}else{"package-manager"},"scope":"user","discoveryKind":"catalogue","version":version,"versionSource":if owner.is_empty(){"version-probe"}else{"package-metadata"},"verificationStatus":"partially-verified","endpointIds":[ep_id],"commandIds":[cid],"fingerprint":fp,"presence":"present","health":health,"issueCodes":issues,"firstSeenAt":first,"lastSeenAt":stamp,"lastVerifiedAt":stamp,"uninstallCapability":cap});
+        let mut inst = json!({
+            "id": inst_id,
+            "productId": product,
+            "platform": platform(),
+            "architecture": arch(),
+            "origin": if owner.is_empty(){"user"}else{"package-manager"},
+            "scope": "user",
+            "discoveryKind": "catalogue",
+            "version": version,
+            "versionSource": if owner.is_empty(){"version-probe"}else{"package-metadata"},
+            "verificationStatus": "partially-verified",
+            "endpointIds": [ep_id],
+            "commandIds": [cid],
+            "fingerprint": fp,
+            "presence": "present",
+            "health": health,
+            "issueCodes": issues,
+            "firstSeenAt": first,
+            "lastSeenAt": stamp,
+            "lastVerifiedAt": stamp,
+            "uninstallCapability": cap,
+        });
         if !ident.is_null() {
             inst["packageIdentity"] = ident;
         }
         installs.push(inst);
-        let mut command = json!({"id":cid,"productId":product,"installationId":inst_id,"name":cmd,"endpointIds":[ep_id],"pathRole":if shadow{"shadowed"}else{"active"}});
+        let mut command = json!({
+            "id": cid,
+            "productId": product,
+            "installationId": inst_id,
+            "name": cmd,
+            "endpointIds": [ep_id],
+            "pathRole": if shadow{"shadowed"}else{"active"},
+        });
         if !shadow {
             command["activeEndpointId"] = json!(ep_id);
         }
         commands.push(command);
-        endpoints.push(json!({"id":ep_id,"commandName":cmd,"kind":if file.ends_with("cmd"){"shim"}else{"native"},"path":path,"canonicalPath":path,"pathIndex":if shadow{1}else{0},"pathextIndex":1,"accessible":true,"executable":true,"targetExists":health!="broken","fingerprint":fp}));
+        endpoints.push(json!({
+            "id": ep_id,
+            "commandName": cmd,
+            "kind": if file.ends_with("cmd"){"shim"}else{"native"},
+            "path": path,
+            "canonicalPath": path,
+            "pathIndex": if shadow{1}else{0},
+            "pathextIndex": 1,
+            "accessible": true,
+            "executable": true,
+            "targetExists": health!="broken",
+            "fingerprint": fp,
+        }));
     }
-    let mut s = json!({"schemaVersion":2,"revision":uuid::Uuid::new_v4().to_string(),"platform":platform(),"architecture":arch(),"generatedAt":stamp,"completeness":"partial","cached":false,"products":[],"commands":commands,"endpoints":endpoints,"installations":installs,"sourceResults":[source("fixture-path","Fixture PATH","success",6,stamp),source("fixture-npm","Fixture npm","success",2,stamp),source("fixture-partial","Fixture unavailable source","failed",0,stamp)]});
+    let mut s = json!({
+        "schemaVersion": 2,
+        "revision": uuid::Uuid::new_v4().to_string(),
+        "platform": platform(),
+        "architecture": arch(),
+        "generatedAt": stamp,
+        "completeness": "partial",
+        "cached": false,
+        "products": [],
+        "commands": commands,
+        "endpoints": endpoints,
+        "installations": installs,
+        "sourceResults": [source("fixture-path","Fixture PATH","success",6,stamp),source("fixture-npm","Fixture npm","success",2,stamp),source("fixture-partial","Fixture unavailable source","failed",0,stamp)],
+    });
     products(&mut s);
     Ok(s)
 }

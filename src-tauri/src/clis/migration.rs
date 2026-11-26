@@ -48,7 +48,16 @@ pub(super) fn legacy(v: &Value) -> Value {
         };
         let key = id(
             "cli",
-            json!({"platform":v["platform"],"productId":prod,"source":ident["source"].as_str().unwrap_or("standalone"),"packageId":text(ident,"packageId").to_lowercase(),"scope":ident["scope"].as_str().unwrap_or("unknown"),"managerRoot":normal(Path::new(text(ident,"managerRoot"))),"installationRoot":normal(Path::new(text(ident,"installRoot"))),"canonicalPath":standalone}),
+            json!({
+                "platform": v["platform"],
+                "productId": prod,
+                "source": ident["source"].as_str().unwrap_or("standalone"),
+                "packageId": text(ident,"packageId").to_lowercase(),
+                "scope": ident["scope"].as_str().unwrap_or("unknown"),
+                "managerRoot": normal(Path::new(text(ident,"managerRoot"))),
+                "installationRoot": normal(Path::new(text(ident,"installRoot"))),
+                "canonicalPath": standalone,
+            }),
         );
         let row = groups.entry(key.clone()).or_insert_with(|| {
             let mut row = i.clone();
@@ -113,8 +122,18 @@ pub(super) fn legacy(v: &Value) -> Value {
         let mut names=BTreeMap::<String,Vec<&Value>>::new();let local:Vec<_>=strings(&i["endpointIds"]).filter_map(|k|eps.get(k).copied()).collect();
         if v["platform"]=="win32"&&local.iter().all(|e|Path::new(text(e,"path")).extension().is_none()){return false}
         for ep in local{retained.insert(text(ep,"id").to_owned());names.entry(text(ep,"commandName").into()).or_default().push(ep);}
-        let provided:Vec<_>=names.keys().cloned().collect();for(name,eps)in names{let cid=id("command",json!({"installationId":i["id"],"name":name}));let chosen=eps.iter().find(|ep|active.get(&name).is_some_and(|r|ep["id"]==r.2));let has_path=eps.iter().any(|ep|runnable(ep)&&ep["pathIndex"].is_number());
-            let mut c=json!({"id":cid,"productId":i["productId"],"installationId":i["id"],"name":name,"endpointIds":eps.iter().map(|e|&e["id"]).collect::<Vec<_>>(),"pathRole":if chosen.is_some(){"active"}else if has_path{"shadowed"}else{"not-on-path"}});
+        let provided:Vec<_>=names.keys().cloned().collect();for(name,eps)in names{let cid=id("command",json!({
+            "installationId": i["id"],
+            "name": name,
+        }));let chosen=eps.iter().find(|ep|active.get(&name).is_some_and(|r|ep["id"]==r.2));let has_path=eps.iter().any(|ep|runnable(ep)&&ep["pathIndex"].is_number());
+            let mut c=json!({
+                "id": cid,
+                "productId": i["productId"],
+                "installationId": i["id"],
+                "name": name,
+                "endpointIds": eps.iter().map(|e|&e["id"]).collect::<Vec<_>>(),
+                "pathRole": if chosen.is_some(){"active"}else if has_path{"shadowed"}else{"not-on-path"},
+            });
             if let Some(ep)=chosen{c["activeEndpointId"]=ep["id"].clone();}commands.push(c);i["commandIds"].as_array_mut().unwrap().push(json!(cid));
         }i["uninstallCapability"]=capability(&i["packageIdentity"],text(i,"productId"),text(i,"origin"),&provided);
         true

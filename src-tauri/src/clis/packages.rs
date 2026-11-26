@@ -26,7 +26,15 @@ impl Package {
         install: &Path,
         manager: Option<&Path>,
     ) -> Self {
-        let mut identity = json!({"source":source,"packageId":name,"scope":"user","managerRoot":path_string(manager_root),"installRoot":path_string(install),"ownershipConfidence":"corroborated","uninstallEvidence":"none"});
+        let mut identity = json!({
+            "source": source,
+            "packageId": name,
+            "scope": "user",
+            "managerRoot": path_string(manager_root),
+            "installRoot": path_string(install),
+            "ownershipConfidence": "corroborated",
+            "uninstallEvidence": "none",
+        });
         if let Some(v) = version.filter(|v| v.len() < 128 && !v.chars().any(char::is_control)) {
             identity["packageVersion"] = json!(v)
         }
@@ -55,7 +63,19 @@ impl Package {
             return None;
         }
         if self.product.is_empty() {
-            self.product=self.bins.keys().find_map(|n|by_command(n).map(|d|d.id.clone())).unwrap_or_else(||id("discovered-package",json!({"source":self.identity["source"],"packageId":text(&self.identity,"packageId").to_lowercase()})));
+            self.product = self
+                .bins
+                .keys()
+                .find_map(|n| by_command(n).map(|d| d.id.clone()))
+                .unwrap_or_else(|| {
+                    id(
+                        "discovered-package",
+                        json!({
+                            "source": self.identity["source"],
+                            "packageId": text(&self.identity,"packageId").to_lowercase(),
+                        }),
+                    )
+                });
         }
         Some(self)
     }
@@ -74,6 +94,69 @@ pub(super) fn child_path(root: &Path, relative: &str) -> Option<PathBuf> {
         return None;
     }
     Some(p)
+}
+// Multiple wheels may advertise the same launcher. The sha256 in a wheel's
+// installed RECORD is positive evidence of which distribution wrote the current file.
+fn resolve_python_conflicts(packages: &mut [Package]) {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut claims = BTreeMap::<PathBuf, Vec<usize>>::new();
+    for (index, pkg) in packages
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.identity["source"] == "pip")
+    {
+        for target in pkg.bins.values().flatten() {
+            claims.entry(target.clone()).or_default().push(index);
+        }
+    }
+    for (target, owners) in claims.into_iter().filter(|(_, owners)| owners.len() > 1) {
+        let Ok(file) = std::fs::File::open(&target) else {
+            continue;
+        };
+        if !file
+            .metadata()
+            .is_ok_and(|m| m.is_file() && m.len() <= 16 * 1024 * 1024)
+        {
+            continue;
+        }
+        let mut hash = Sha256::new();
+        if std::io::copy(&mut file.take(16 * 1024 * 1024 + 1), &mut hash).is_err() {
+            continue;
+        }
+        let digest = format!("sha256={}", URL_SAFE_NO_PAD.encode(hash.finalize()));
+        let matching: Vec<_> = owners
+            .iter()
+            .copied()
+            .filter(|&idx| {
+                let record = Path::new(text(&packages[idx].identity, "installRoot"));
+                let Some(site) = record.parent() else {
+                    return false;
+                };
+                read_text(&record.join("RECORD"), 2 * 1024 * 1024).is_some_and(|rows| {
+                    rows.lines().any(|line| {
+                        let mut cols = line.rsplitn(3, ',');
+                        let _size = cols.next();
+                        if cols.next() != Some(&digest) {
+                            return false;
+                        }
+                        cols.next().is_some_and(|p| {
+                            normal(&real(&site.join(p.trim_matches('"')))) == normal(&real(&target))
+                        })
+                    })
+                })
+            })
+            .collect();
+        if let [winner] = matching.as_slice() {
+            for owner in owners.into_iter().filter(|idx| idx != winner) {
+                packages[owner].bins.retain(|_, paths| {
+                    paths.retain(|path| path != &target);
+                    !paths.is_empty()
+                });
+            }
+        }
+    }
 }
 fn named(s: &str) -> bool {
     valid_pkg("npm", s) || valid_pkg("cargo", s)
@@ -100,6 +183,17 @@ fn node_package(
         root,
         manager.map(|p| p.exe.as_path()),
     );
+    if pkg.product.is_empty() {
+        pkg.product = by_package("npm", expected)
+            .or_else(|| by_command(expected))
+            .map(|d| d.id.clone())
+            .unwrap_or_else(|| {
+                id(
+                    "discovered-package",
+                    json!({"source":source,"packageId":expected.to_lowercase()}),
+                )
+            });
+    }
     if let Some(m) = manager.and_then(|p| p.args.first()) {
         pkg.identity["managerCommandPath"] = json!(m)
     }
@@ -132,6 +226,11 @@ fn manager_plan(source: &str, es: &[Endpoint], e: &Endpoint) -> Option<Plan> {
     }
     if ["npm", "pnpm", "yarn-classic"].contains(&source) {
         if normal(&e.canonical).contains("corepack")
+            || e.data["shimPackageRoot"].as_str().is_some_and(|p| {
+                normal(Path::new(p))
+                    .replace('\\', "/")
+                    .contains("/corepack")
+            })
             || (["cmd", "ps1", "bat", ""].contains(&e.ext.as_str())
                 && read_text(&e.path, 65536)
                     .is_some_and(|s| s.to_ascii_lowercase().contains("corepack")))
@@ -140,11 +239,30 @@ fn manager_plan(source: &str, es: &[Endpoint], e: &Endpoint) -> Option<Plan> {
         }
         if cfg!(windows) && e.ext != "exe" {
             let root = e.canonical.parent()?;
-            let entry = root.join(match source {
+            let resolved = e.data["shimTarget"].as_str().map(PathBuf::from);
+            if let Some(target) = resolved.as_ref().filter(|p| {
+                p.is_file()
+                    && p.extension().is_some_and(|ext| {
+                        ext.eq_ignore_ascii_case("exe") || ext.eq_ignore_ascii_case("com")
+                    })
+            }) {
+                return Some(Plan::new(target, &[]));
+            }
+            let bundled = root.join(match source {
                 "npm" => "node_modules/npm/bin/npm-cli.js",
                 "pnpm" => "node_modules/pnpm/bin/pnpm.cjs",
                 _ => "node_modules/yarn/bin/yarn.js",
             });
+            let entry = resolved
+                .filter(|p| {
+                    p.is_file()
+                        && p.file_name().is_some_and(|f| match source {
+                            "npm" => f == "npm-cli.js",
+                            "pnpm" => f == "pnpm.cjs" || f == "pnpm.mjs",
+                            _ => f == "yarn.js",
+                        })
+                })
+                .unwrap_or(bundled);
             if !entry.is_file() {
                 return None;
             }
@@ -291,7 +409,7 @@ fn pipx(raw: &str, env: &Environment, m: &Plan) -> Option<Vec<Package>> {
     }
     Some(packages)
 }
-fn manager_output(
+pub(super) fn manager_output(
     source: &str,
     raw: &str,
     env: &Environment,
@@ -312,19 +430,28 @@ fn manager_output(
         d["formulae"].as_array()?;
         for (key, src) in [("formulae", "homebrew-formula"), ("casks", "homebrew-cask")] {
             for item in list(&d, key) {
-                let name = item["full_name"]
+                let Some(name) = item["full_name"]
                     .as_str()
                     .or(item["name"].as_str())
-                    .or(item["token"].as_str())?;
+                    .or(item["token"].as_str())
+                else {
+                    continue;
+                };
                 if !valid_pkg("homebrew-formula", name) {
                     continue;
                 }
                 let short = name.rsplit('/').next()?;
                 let version = item["linked_keg"]
                     .as_str()
-                    .or_else(|| list(item, "installed").last()?.get("version")?.as_str());
+                    .or(item["version"].as_str())
+                    .or_else(|| list(item, "installed").last()?.get("version")?.as_str())
+                    .filter(|v| command_name(v));
                 let root = prefix
-                    .join("Cellar")
+                    .join(if key == "formulae" {
+                        "Cellar"
+                    } else {
+                        "Caskroom"
+                    })
                     .join(short)
                     .join(version.unwrap_or(""));
                 let mut p = Package::new(src, name, version, prefix, &root, Some(&plan.exe));
@@ -332,6 +459,32 @@ fn manager_output(
                     for b in children(&root.join("bin"), 256) {
                         if let Some(n) = b.file_name().and_then(|s| s.to_str()) {
                             p.add(n, &b)
+                        }
+                    }
+                } else {
+                    // Only a cask's explicitly declared binary artifacts qualify as commands.
+                    for artifact in list(item, "artifacts") {
+                        let Some(bin) = artifact["binary"].as_array() else {
+                            continue;
+                        };
+                        let Some(src) = bin.first().and_then(Value::as_str) else {
+                            continue;
+                        };
+                        let target = Path::new(src);
+                        let target = if target.is_absolute() {
+                            target.to_owned()
+                        } else if let Some(target) = child_path(&root, src) {
+                            target
+                        } else {
+                            continue;
+                        };
+                        let name = bin
+                            .get(1)
+                            .and_then(|v| v["target"].as_str())
+                            .and_then(|v| Path::new(v).file_name()?.to_str())
+                            .or_else(|| target.file_name()?.to_str());
+                        if let Some(n) = name {
+                            p.add(n, &target);
                         }
                     }
                 }
@@ -409,6 +562,19 @@ pub(super) fn collect(
     cancel: &AtomicBool,
     sources: &mut Vec<Value>,
 ) -> Result<Vec<Package>, String> {
+    fn label(source: &str) -> &str {
+        match source {
+            "npm" => "npm global packages",
+            "pnpm" => "pnpm global packages",
+            "yarn-classic" => "yarn global packages",
+            "pipx" => "pipx applications",
+            "chocolatey" => "Chocolatey packages",
+            "winget" => "Winget packages",
+            "homebrew" => "Homebrew formulas",
+            "macports" => "MacPorts packages",
+            other => other,
+        }
+    }
     let mut packages = vec![];
     let mut seen = BTreeSet::new();
     let mut queries = Vec::new();
@@ -447,10 +613,16 @@ pub(super) fn collect(
                 ("HOMEBREW_NO_AUTO_UPDATE".into(), "1".into()),
                 ("HOMEBREW_NO_ANALYTICS".into(), "1".into()),
             ];
+            if source_id == "yarn-classic" {
+                query.env.extend([
+                    ("YARN_IGNORE_PATH".into(), "1".into()),
+                    ("SKIP_YARN_COREPACK_CHECK".into(), "1".into()),
+                ]);
+            }
             queries.push((source_id, ep, plan, query));
         }
         if !found {
-            sources.push(source(source_id, source_id, "skipped", 0, now()));
+            sources.push(source(source_id, label(source_id), "skipped", 0, now()));
         }
     }
     for batch in queries.chunks(4) {
@@ -474,7 +646,7 @@ pub(super) fn collect(
                         });
                         let status = source(
                             &format!("{source_id}|{}", path_string(&endpoint.path)),
-                            source_id,
+                            label(source_id),
                             if rows.is_some() { "success" } else { "failed" },
                             rows.as_ref().map_or(0, Vec::len),
                             started,
@@ -498,6 +670,7 @@ pub(super) fn collect(
         }
     }
     passive(env, es, cancel, sources, &mut packages)?;
+    resolve_python_conflicts(&mut packages);
     Ok(packages)
 }
 fn passive(
@@ -534,7 +707,13 @@ fn passive(
                 m.is_file().then_some(m.as_path()),
             );
             for bin in strings(&val["bins"]).filter(|n| command_name(n)) {
-                p.add(bin, &cargo.join("bin").join(bin));
+                let target = cargo.join("bin").join(bin);
+                let target = if cfg!(windows) && target.extension().is_none() {
+                    target.with_extension("exe")
+                } else {
+                    target
+                };
+                p.add(bin, &target);
             }
             if let Some(p) = p.finish() {
                 packages.push(p);
@@ -619,6 +798,8 @@ fn passive(
         sources.push(source("scoop", "Scoop manifests", "success", count, now()));
     }
     let base = env.var("BUN_INSTALL", ".bun").join("install/global");
+    let bun_manifest = base.join("package.json");
+    let before = packages.len();
     if let Some(doc) = read_doc(&base.join("package.json")) {
         for n in doc["dependencies"]
             .as_object()
@@ -632,10 +813,45 @@ fn passive(
             }
         }
     }
+    let bun_count = packages.len() - before;
     let dirs: BTreeSet<_> = es
         .iter()
         .filter_map(|ep| ep.canonical.parent().map(Path::to_owned))
         .collect();
+    let shim_roots: BTreeSet<_> = es
+        .iter()
+        .filter_map(|e| e.data["shimPackageRoot"].as_str().map(PathBuf::from))
+        .collect();
+    for root in shim_roots {
+        let Some(modules) = root.ancestors().find(|p| {
+            p.file_name()
+                .is_some_and(|n| n.eq_ignore_ascii_case("node_modules"))
+        }) else {
+            continue;
+        };
+        let (Some(prefix), Ok(rel)) = (modules.parent(), root.strip_prefix(modules)) else {
+            continue;
+        };
+        let name = path_string(rel).replace('\\', "/");
+        if let Some(pkg) = node_package("unknown", &name, &root, prefix, None) {
+            packages.push(pkg);
+        }
+    }
+    sources.push(source(
+        "bun-passive",
+        "Bun global packages",
+        if !bun_manifest.exists() {
+            "skipped"
+        } else if read_doc(&bun_manifest).is_some() {
+            "success"
+        } else {
+            "failed"
+        },
+        bun_count,
+        now(),
+    ));
+    let mut pip_count = 0;
+    let mut pip_partial = false;
     for bin in &dirs {
         stopped(cancel)?;
         let modules = bin.join("node_modules");
@@ -665,7 +881,11 @@ fn passive(
         {
             let Some(base) = bin.parent() else { continue };
             for site in [base.join("Lib/site-packages"), base.join("site-packages")] {
-                for p in children(&site, 2000) {
+                let candidates = children(&site, 2001);
+                if candidates.len() > 2000 {
+                    pip_partial = true
+                }
+                for p in candidates.into_iter().take(2000) {
                     if !p
                         .file_name()
                         .is_some_and(|s| s.to_string_lossy().ends_with(".dist-info"))
@@ -705,12 +925,21 @@ fn passive(
                         }
                     }
                     if let Some(p) = pkg.finish() {
+                        pip_count += 1;
                         packages.push(p)
                     }
                 }
             }
         }
     }
+    sources.push(source(
+        "pip",
+        "Python command packages",
+        if pip_partial { "failed" } else { "success" },
+        pip_count,
+        now(),
+    ));
+    let before = packages.len();
     let mut roots = vec![env.var("UV_TOOL_DIR", ".local/share/uv/tools")];
     if let Some(v) = env.vars.get("APPDATA") {
         roots.push(v.join("uv/tools"))
@@ -756,6 +985,13 @@ fn passive(
             }
         }
     }
+    sources.push(source(
+        "uv",
+        "uv tool receipts",
+        "success",
+        packages.len() - before,
+        now(),
+    ));
     Ok(())
 }
 pub(super) fn probe_plan(ep: &Endpoint, es: &[Endpoint], args: &[String]) -> Option<Plan> {

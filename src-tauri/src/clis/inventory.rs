@@ -20,10 +20,12 @@ struct Group {
     identity: Value,
     indices: Vec<usize>,
     standalone: String,
+    provided: BTreeSet<String>,
 }
 fn owner_key(p: &Package) -> String {
     format!(
-        "{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}",
+        p.product,
         text(&p.identity, "source"),
         text(&p.identity, "packageId"),
         text(&p.identity, "managerRoot"),
@@ -44,7 +46,16 @@ fn installation_id(g: &Group) -> String {
     let ident = &g.identity;
     id(
         "cli",
-        json!({"platform":platform(),"productId":g.product,"source":ident["source"].as_str().unwrap_or("standalone"),"packageId":text(ident,"packageId").to_lowercase(),"scope":ident["scope"].as_str().unwrap_or("unknown"),"managerRoot":normal(Path::new(text(ident,"managerRoot"))),"installationRoot":normal(Path::new(text(ident,"installRoot"))),"canonicalPath":g.standalone}),
+        json!({
+            "platform": platform(),
+            "productId": g.product,
+            "source": ident["source"].as_str().unwrap_or("standalone"),
+            "packageId": text(ident,"packageId").to_lowercase(),
+            "scope": ident["scope"].as_str().unwrap_or("unknown"),
+            "managerRoot": normal(Path::new(text(ident,"managerRoot"))),
+            "installationRoot": normal(Path::new(text(ident,"installRoot"))),
+            "canonicalPath": g.standalone,
+        }),
     )
 }
 fn origin(g: &Group, endpoints: &[Endpoint], env: &Environment) -> &'static str {
@@ -114,7 +125,7 @@ fn group(es: &mut Vec<Endpoint>, packages: Vec<Package>, env: &Environment) -> V
         let source = text(&p.identity, "source");
         let priority = match source {
             "npm" | "pipx" | "cargo" | "homebrew-formula" | "scoop" => 3,
-            "unknown" | "registry" => 1,
+            "registry" => 1,
             _ => 2,
         };
         let prefix = real(Path::new(text(&p.identity, "managerRoot")));
@@ -146,7 +157,11 @@ fn group(es: &mut Vec<Endpoint>, packages: Vec<Package>, env: &Environment) -> V
                 let mut matches = vec![idx];
                 for &ei in names.get(n).into_iter().flatten() {
                     let e = &es[ei];
-                    if e.canonical == target {
+                    if e.canonical == target
+                        || e.data["shimTarget"]
+                            .as_str()
+                            .is_some_and(|s| normal(&real(Path::new(s))) == normal(&target))
+                    {
                         matches.push(ei);
                         continue;
                     }
@@ -199,11 +214,16 @@ fn group(es: &mut Vec<Endpoint>, packages: Vec<Package>, env: &Environment) -> V
                 }
             }
         }
-        groups.entry(key).or_insert_with(|| Group {
-            product: p.product,
-            identity: p.identity,
-            ..Group::default()
-        });
+        let declared = p.bins.keys().cloned().collect::<Vec<_>>();
+        groups
+            .entry(key)
+            .or_insert_with(|| Group {
+                product: p.product,
+                identity: p.identity,
+                ..Group::default()
+            })
+            .provided
+            .extend(declared);
     }
     for (i, e) in es.iter().enumerate() {
         if let Some((_, keys)) = owners.get(&i) {
@@ -288,7 +308,16 @@ pub(super) fn capability(identity: &Value, prod: &str, origin: &str, commands: &
             "This package source is inventory-only.",
         )
     };
-    json!({"source":source,"packageId":identity["packageId"],"providedCommands":commands,"requiresElevation":false,"status":status,"reasonCode":code,"reason":reason,"warnings":if status=="requires-warning"{vec![reason]}else{vec![]}})
+    json!({
+        "source": source,
+        "packageId": identity["packageId"],
+        "providedCommands": commands,
+        "requiresElevation": false,
+        "status": status,
+        "reasonCode": code,
+        "reason": reason,
+        "warnings": if status=="requires-warning"{vec![reason]}else{vec![]},
+    })
 }
 fn probe(
     ep: &Endpoint,
@@ -377,7 +406,23 @@ pub(super) fn products(snapshot: &mut Value) {
         let verified = current
             .iter()
             .any(|i| i["verificationStatus"] == "verified");
-        products.push(json!({"id":prod,"displayName":def.map_or(alias,|d|&d.display_name),"category":def.map_or("developer-tool",|d|&d.category),"aliases":def.map(|d|&d.aliases).cloned().unwrap_or_default(),"commandNames":names,"supportedPlatforms":def.filter(|d|!d.platforms.is_empty()).map(|d|d.platforms.clone()).unwrap_or_else(||vec![platform().into()]),"discoveryConfidence":if def.is_some(){"catalogued"}else if installs.iter().any(|i|i["packageIdentity"].is_object()){"package-owned"}else{"executable"},"installationIds":ids(&installs),"currentInstallationIds":ids(&current),"candidateInstallationIds":ids(&candidates),"embeddedInstallationIds":ids(&embedded),"removedInstallationIds":[],"health":health,"verificationStatus":if verified{"verified"}else{"partially-verified"},"issueCodes":issues}));
+        products.push(json!({
+            "id": prod,
+            "displayName": def.map_or(alias,|d|&d.display_name),
+            "category": def.map_or("developer-tool",|d|&d.category),
+            "aliases": def.map(|d|&d.aliases).cloned().unwrap_or_default(),
+            "commandNames": names,
+            "supportedPlatforms": def.filter(|d|!d.platforms.is_empty()).map(|d|d.platforms.clone()).unwrap_or_else(||vec![platform().into()]),
+            "discoveryConfidence": if def.is_some(){"catalogued"}else if installs.iter().any(|i|i["packageIdentity"].is_object()){"package-owned"}else{"executable"},
+            "installationIds": ids(&installs),
+            "currentInstallationIds": ids(&current),
+            "candidateInstallationIds": ids(&candidates),
+            "embeddedInstallationIds": ids(&embedded),
+            "removedInstallationIds": [],
+            "health": health,
+            "verificationStatus": if verified{"verified"}else{"partially-verified"},
+            "issueCodes": issues,
+        }));
     }
     snapshot["products"] = json!(products)
 }
@@ -403,19 +448,25 @@ pub(super) fn scan(
     let mut installs = vec![];
     let mut endpoints = vec![];
     let mut active = BTreeMap::<String, (usize, usize, String)>::new();
+    let mut path_owners = BTreeMap::<String, usize>::new();
     for g in &groups {
         if ["application-embedded", "sdk-bundled"].contains(&origin(g, &es, env)) {
             continue;
         }
+        let mut provided_on_path = BTreeSet::new();
         for &i in &g.indices {
             let e = &es[i];
             if let Some((a, b)) = e.order.filter(|_| e.data["targetExists"] == true) {
+                provided_on_path.insert(&e.name);
                 let item = (a, b, text(&e.data, "id").to_owned());
                 active
                     .entry(e.name.clone())
                     .and_modify(|old| *old = old.clone().min(item.clone()))
                     .or_insert(item);
             }
+        }
+        for name in provided_on_path {
+            *path_owners.entry(name.clone()).or_default() += 1;
         }
     }
     let previous_by_id = list(old, "installations")
@@ -501,11 +552,20 @@ pub(super) fn scan(
             };
             if role == "shadowed" {
                 issues.insert("shadowed");
+            }
+            if role != "not-on-path" && path_owners.get(name).is_some_and(|count| *count > 1) {
                 issues.insert("path-conflict");
             }
             let cid = id("command", json!({"installationId":idv,"name":name}));
             cids.push(cid.clone());
-            let mut c = json!({"id":cid,"productId":g.product,"installationId":idv,"name":name,"endpointIds":local.iter().map(|e|&e.data["id"]).collect::<Vec<_>>(),"pathRole":role});
+            let mut c = json!({
+                "id": cid,
+                "productId": g.product,
+                "installationId": idv,
+                "name": name,
+                "endpointIds": local.iter().map(|e|&e.data["id"]).collect::<Vec<_>>(),
+                "pathRole": role,
+            });
             if let Some(ep) = chosen {
                 c["activeEndpointId"] = ep.data["id"].clone();
             }
@@ -568,7 +628,11 @@ pub(super) fn scan(
                     if let Some(v) = probe(e, &es, d, env, cancel) {
                         version = Some(v);
                         vs = "version-probe";
-                        verification = json!({"endpointId":e.data["id"],"endpointFingerprint":e.data["fingerprint"],"checkedAt":timestamp});
+                        verification = json!({
+                            "endpointId": e.data["id"],
+                            "endpointFingerprint": e.data["fingerprint"],
+                            "checkedAt": timestamp,
+                        });
                         break;
                     }
                 }
@@ -595,9 +659,30 @@ pub(super) fn scan(
             &g.identity,
             &g.product,
             org,
-            &names.into_iter().collect::<Vec<_>>(),
+            &names.union(&g.provided).cloned().collect::<Vec<_>>(),
         );
-        let mut item = json!({"id":idv,"productId":g.product,"platform":platform(),"architecture":arch(),"scope":g.identity["scope"].as_str().unwrap_or("unknown"),"origin":org,"discoveryKind":kind,"includedByUser":included,"versionSource":vs,"verificationStatus":if verification.is_object(){"verified"}else if g.identity.is_null(){"ownership-unknown"}else{"partially-verified"},"endpointIds":members.iter().map(|e|&e.data["id"]).collect::<Vec<_>>(),"commandIds":cids,"fingerprint":fp,"presence":"present","health":health,"issueCodes":issues,"firstSeenAt":earliest,"lastSeenAt":timestamp,"lastVerifiedAt":timestamp,"uninstallCapability":cap});
+        let mut item = json!({
+            "id": idv,
+            "productId": g.product,
+            "platform": platform(),
+            "architecture": arch(),
+            "scope": g.identity["scope"].as_str().unwrap_or("unknown"),
+            "origin": org,
+            "discoveryKind": kind,
+            "includedByUser": included,
+            "versionSource": vs,
+            "verificationStatus": if verification.is_object(){"verified"}else if g.identity.is_null(){"ownership-unknown"}else{"partially-verified"},
+            "endpointIds": members.iter().map(|e|&e.data["id"]).collect::<Vec<_>>(),
+            "commandIds": cids,
+            "fingerprint": fp,
+            "presence": "present",
+            "health": health,
+            "issueCodes": issues,
+            "firstSeenAt": earliest,
+            "lastSeenAt": timestamp,
+            "lastVerifiedAt": timestamp,
+            "uninstallCapability": cap,
+        });
         if let Some(v) = version {
             item["version"] = json!(v);
         }
@@ -640,7 +725,20 @@ pub(super) fn scan(
         }
     }
     let partial = sources.iter().any(|s| s["status"] == "failed");
-    let mut snap = json!({"schemaVersion":2,"revision":uuid::Uuid::new_v4().to_string(),"platform":platform(),"architecture":arch(),"generatedAt":now(),"cached":false,"completeness":if partial{"partial"}else{"complete"},"products":[],"commands":commands,"endpoints":endpoints,"installations":installs,"sourceResults":sources});
+    let mut snap = json!({
+        "schemaVersion": 2,
+        "revision": uuid::Uuid::new_v4().to_string(),
+        "platform": platform(),
+        "architecture": arch(),
+        "generatedAt": now(),
+        "cached": false,
+        "completeness": if partial{"partial"}else{"complete"},
+        "products": [],
+        "commands": commands,
+        "endpoints": endpoints,
+        "installations": installs,
+        "sourceResults": sources,
+    });
     if partial {
         let confirmed: BTreeSet<_> = list(&snap, "installations")
             .iter()

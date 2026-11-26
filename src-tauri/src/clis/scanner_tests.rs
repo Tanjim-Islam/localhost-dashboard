@@ -52,6 +52,43 @@ fn scan(e: &Environment, p: &Value) -> Value {
     inventory::scan(e, p, &AtomicBool::new(false), None, &|_, _, _, _| {}).unwrap()
 }
 #[test]
+fn homebrew_and_macports_owned_bin_contracts_are_fixture_testable_on_windows() {
+    use super::{discovery::Endpoint, runner::Plan};
+    let t = tempfile::tempdir().unwrap();
+    let prefix = t.path();
+    let brew = prefix.join("bin/brew");
+    file(&brew, b"fixture");
+    let exe = prefix.join("Cellar/widget@2/2.1/bin/widget");
+    file(&exe, b"fixture");
+    let cask_bin = prefix.join("Application.app/Contents/MacOS/widgetapp");
+    file(&cask_bin, b"fixture");
+    let ep = Endpoint {
+        path: brew.clone(),
+        canonical: brew.clone(),
+        name: "brew".into(),
+        ext: String::new(),
+        order: Some((0, 0)),
+        data: json!({"executable":true}),
+    };
+    let env = isolated(prefix, &[]);
+    let p = Plan::new(&brew, &[]);
+    let input = json!({
+        "formulae": [{},{"full_name":"widget@2","linked_keg":"2.1"}],
+        "casks": [{"token":"widgetapp","version":"1.0","artifacts":[{"binary":[cask_bin]}]}],
+    });
+    let rows =
+        packages::manager_output("homebrew", &input.to_string(), &env, &p, &ep, &[]).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].identity["source"], "homebrew-formula");
+    assert!(rows[0].bins.contains_key("widget"));
+    assert_eq!(rows[1].identity["source"], "homebrew-cask");
+    assert!(rows[1].bins.contains_key("widgetapp"));
+    assert!(packages::manager_output("homebrew", "malformed", &env, &p, &ep, &[]).is_none());
+    assert!(packages::manager_output("macports", "", &env, &p, &ep, &[])
+        .unwrap()
+        .is_empty());
+}
+#[test]
 #[cfg(windows)]
 fn console_admission_shims_and_exact_node_bins() {
     let dir = tempfile::tempdir().unwrap();
