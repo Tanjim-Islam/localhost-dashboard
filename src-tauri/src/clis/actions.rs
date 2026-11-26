@@ -74,7 +74,14 @@ pub(super) fn plan(i: &Value) -> Result<Plan, String> {
                 .push(("npm_config_ignore_scripts".into(), "true".into()));
             p
         }
-        "pipx" if same("pipx") => Plan::new(exe, &["uninstall", package]),
+        "pipx" if same("pipx") => {
+            let mut plan = Plan::new(exe, &["uninstall", package]);
+            plan.env = vec![
+                ("PIPX_HOME".into(), path_string(root)),
+                ("PIP_DISABLE_PIP_VERSION_CHECK".into(), "1".into()),
+            ];
+            plan
+        }
         "cargo" if same("cargo") => Plan::new(
             exe,
             &[
@@ -95,18 +102,22 @@ pub(super) fn plan(i: &Value) -> Result<Plan, String> {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
                 .join("System32/WindowsPowerShell/v1.0/powershell.exe");
-            Plan::new(
+            let mut p = Plan::new(
                 &ps,
                 &[
                     "-NoLogo",
                     "-NoProfile",
                     "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
                     "-File",
                     text(owner, "managerExecutablePath"),
                     "uninstall",
                     package,
                 ],
-            )
+            );
+            p.env.push(("SCOOP".into(), path_string(root)));
+            p
         }
         _ => return Err("The management command does not match the package source.".into()),
     };

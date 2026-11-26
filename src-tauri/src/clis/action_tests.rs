@@ -76,7 +76,26 @@ fn exact_manager_plans_only_and_immutable_preview_evidence() {
                     "--package"
                 ]
             ),
-            "scoop" => assert!(p.args.contains(&"-NoProfile".into())),
+            "scoop" => {
+                assert!(p.args.starts_with(
+                    &[
+                        "-NoLogo",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File"
+                    ]
+                    .map(str::to_owned)
+                ));
+                assert!(p.env.contains(&("SCOOP".into(), path_string(root.path()))));
+            }
+            "pipx" => {
+                assert_eq!(p.args, ["uninstall", name]);
+                assert!(p
+                    .env
+                    .contains(&("PIPX_HOME".into(), path_string(root.path()))));
+            }
             "homebrew-formula" => assert_eq!(&p.args[..2], ["uninstall", "--formula"]),
             _ => assert_eq!(p.args.len(), 2),
         }

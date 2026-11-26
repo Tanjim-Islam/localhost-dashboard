@@ -158,9 +158,6 @@ fn resolve_python_conflicts(packages: &mut [Package]) {
         }
     }
 }
-fn named(s: &str) -> bool {
-    valid_pkg("npm", s) || valid_pkg("cargo", s)
-}
 fn node_package(
     source: &str,
     expected: &str,
@@ -375,33 +372,69 @@ fn node_list(source: &str, raw: &str, m: &Plan, e: &Endpoint) -> Option<Vec<Pack
 fn pipx(raw: &str, env: &Environment, m: &Plan) -> Option<Vec<Package>> {
     let doc: Value = serde_json::from_str(raw).ok()?;
     let mut packages = vec![];
-    let base = env.var("PIPX_HOME", ".local/share/pipx");
     for (name, venv) in doc["venvs"].as_object()? {
-        if !named(name) {
+        if !valid_pkg("pipx", name) {
             continue;
         }
         let meta = venv
             .pointer("/metadata/main_package")
             .unwrap_or(&venv["main_package"]);
+        let mut bins = Vec::new();
+        let mut homes = BTreeSet::new();
+        for record in list(meta, "app_paths") {
+            let Some(path) = record
+                .as_str()
+                .or_else(|| record["__Path__"].as_str())
+                .map(PathBuf::from)
+                .filter(|p| p.is_absolute())
+            else {
+                continue;
+            };
+            let Some(file) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let cmd = file.trim_end_matches(".exe");
+            if !strings(&meta["apps"]).any(|app| app.trim_end_matches(".exe") == cmd) {
+                continue;
+            }
+            if path.is_file() {
+                let target = real(&path);
+                let venv = target
+                    .ancestors()
+                    .skip(1)
+                    .find(|p| p.file_name().is_some_and(|s| s.eq_ignore_ascii_case(name)));
+                if let Some(parent) = venv
+                    .and_then(Path::parent)
+                    .filter(|p| {
+                        p.file_name()
+                            .is_some_and(|s| s.eq_ignore_ascii_case("venvs"))
+                    })
+                    .and_then(Path::parent)
+                {
+                    homes.insert(parent.to_owned());
+                }
+            }
+            bins.push((cmd.to_owned(), path));
+        }
+        let configured = env.vars.get("PIPX_HOME");
+        let home = homes
+            .first()
+            .cloned()
+            .or_else(|| configured.cloned())
+            .unwrap_or_else(|| env.home.join(".local/share/pipx"));
+        let verified = homes.len() == 1
+            && configured.is_none_or(|p| normal(&real(p)) == normal(&home))
+            && home.join("venvs").join(name).is_dir();
         let mut p = Package::new(
             "pipx",
             name,
             meta["package_version"].as_str(),
-            &base,
-            &base.join("venvs").join(name),
-            Some(&m.exe),
+            &home,
+            &home.join("venvs").join(name),
+            verified.then_some(m.exe.as_path()),
         );
-        for path in list(meta, "app_paths") {
-            let Some(path) = path.as_str().or_else(|| path["__Path__"].as_str()) else {
-                continue;
-            };
-            let path = Path::new(path);
-            let Some(cmd) = path.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if strings(&meta["apps"]).any(|s| s.trim_end_matches(".exe") == cmd) {
-                p.add(cmd, path)
-            }
+        for (cmd, path) in bins {
+            p.add(&cmd, &path);
         }
         if let Some(p) = p.finish() {
             packages.push(p)

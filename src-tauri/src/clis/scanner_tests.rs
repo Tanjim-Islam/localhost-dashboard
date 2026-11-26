@@ -52,6 +52,44 @@ fn scan(e: &Environment, p: &Value) -> Value {
     inventory::scan(e, p, &AtomicBool::new(false), None, &|_, _, _, _| {}).unwrap()
 }
 #[test]
+fn pipx_pins_the_home_proven_by_installed_application_paths() {
+    use super::{discovery::Endpoint, runner::Plan};
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("legacy-pipx-home");
+    let app = home.join("venvs/demo/Scripts/demo.exe");
+    file(&app, b"fixture");
+    let bin = tmp.path().join("pipx.exe");
+    file(&bin, b"fixture manager");
+    let manager = Plan::new(&bin, &[]);
+    let ep = Endpoint {
+        path: bin.clone(),
+        canonical: bin,
+        name: "pipx".into(),
+        ext: "exe".into(),
+        order: Some((0, 0)),
+        data: json!({"executable":true}),
+    };
+    let raw = json!({"venvs":{"demo":{"metadata":{"main_package":{
+        "apps":["demo"],"app_paths":[{"__Path__":app}],"package_version":"1.2"
+    }}}}})
+    .to_string();
+    let mut env = isolated(tmp.path(), &[]);
+    let parse = |env: &Environment| {
+        packages::manager_output("pipx", &raw, env, &manager, &ep, &[])
+            .unwrap()
+            .remove(0)
+            .identity
+    };
+    assert_eq!(parse(&env)["managerRoot"], path_string(&real(&home)));
+    assert_eq!(parse(&env)["ownershipConfidence"], "exact");
+    env.vars
+        .insert("PIPX_HOME".into(), tmp.path().join("different-home"));
+    assert_eq!(parse(&env)["ownershipConfidence"], "corroborated");
+    env.vars.insert("PIPX_HOME".into(), home);
+    fs::remove_file(app).unwrap();
+    assert_eq!(parse(&env)["ownershipConfidence"], "corroborated");
+}
+#[test]
 fn homebrew_and_macports_owned_bin_contracts_are_fixture_testable_on_windows() {
     use super::{discovery::Endpoint, runner::Plan};
     let t = tempfile::tempdir().unwrap();
