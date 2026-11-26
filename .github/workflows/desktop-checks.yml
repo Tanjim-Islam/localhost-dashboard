@@ -10,16 +10,15 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: desktop-checks-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   desktop:
     strategy:
       fail-fast: false
       matrix:
         os: [windows-2022, macos-15, ubuntu-24.04]
+    concurrency:
+      group: desktop-checks-${{ github.ref }}-${{ matrix.os }}
+      cancel-in-progress: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -39,6 +38,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run build:renderer
       - run: npm test
+      - run: node --test scripts/release.test.mjs
       - if: runner.os != 'macOS'
         run: npm run build:debug
       - name: Launch and quit the macOS application bundle
@@ -62,3 +62,5 @@ jobs:
           Copy-Item -LiteralPath $installer[0].FullName -Destination (Join-Path $stage 'Localhost-Dashboard-Setup-qa.exe')
           ./scripts/check-windows-upgrade.ps1 -Stage $stage
           node scripts/desktop-shell.mjs --installed
+      - if: runner.os == 'Windows'
+        run: node scripts/check-dev-launch.mjs

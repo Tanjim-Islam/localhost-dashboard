@@ -109,7 +109,7 @@ pub(super) fn discover(dir: &Path, processes: &[Process]) -> Result<Vec<Record>,
         let Ok(metadata) = path.metadata() else {
             continue;
         };
-        if !metadata.is_file() && !(workflow && metadata.is_dir()) {
+        if !(metadata.is_file() || workflow && metadata.is_dir()) {
             continue;
         }
         let stem = path.file_stem().unwrap_or_default().to_string_lossy();

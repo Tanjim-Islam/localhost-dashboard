@@ -10,7 +10,7 @@ fn string<'a>(data: &mut &'a [u8]) -> Option<&'a [u8]> {
     *data = &rest[1..];
     Some(value)
 }
-fn padding<'a>(data: &mut &'a [u8]) {
+fn padding(data: &mut &[u8]) {
     *data = &data[data.iter().position(|&b| b != 0).unwrap_or(data.len())..];
 }
 pub(super) fn parse(bytes: &[u8]) -> Option<Arguments<'_>> {
