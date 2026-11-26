@@ -1,5 +1,93 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const run = promisify(execFile);
+
+export async function checkCliFolders({ root, page, api, pid, pass }) {
+  assert.equal((await api("getMeta")).clisTestMode, true);
+  assert.deepEqual(await api("getCliScanDirectories"), []);
+  const folder = path.join(root, "Additional CLI folder");
+  await fs.mkdir(folder);
+  await fs.writeFile(
+    path.join(folder, "fixture.txt"),
+    "scan directory fixture",
+  );
+  await page.getByRole("button", { name: "Scan folders", exact: true }).click();
+  const add = page.getByRole("button", { name: "Add folder", exact: true });
+  async function pick(action) {
+    await add.click();
+    await run(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        fileURLToPath(new URL("./desktop-cli-folder.ps1", import.meta.url)),
+        "-DashboardPid",
+        String(pid),
+        "-FixtureRoot",
+        root,
+        "-Action",
+        action,
+      ],
+      { windowsHide: true, timeout: 35000 },
+    );
+  }
+  await pick("select");
+  await page
+    .getByRole("button", { name: "Scan folders (1)", exact: true })
+    .waitFor();
+  const selected = await api("getCliScanDirectories");
+  assert.equal(selected.length, 1);
+  assert.equal(await fs.realpath(selected[0].path), await fs.realpath(folder));
+  assert(selected[0].id);
+  await pick("select");
+  assert.deepEqual(await api("getCliScanDirectories"), selected);
+  await pick("cancel");
+  assert.deepEqual(await api("getCliScanDirectories"), selected);
+  pass(
+    "Native CLI folder picker adds one fixture folder, deduplicates a second selection and preserves it on cancel",
+  );
+  return selected;
+}
+
+export async function removeSavedCliFolder({
+  root,
+  page,
+  api,
+  selected,
+  pass,
+}) {
+  assert.deepEqual(await api("getCliScanDirectories"), selected);
+  const toggle = page.getByRole("button", {
+    name: "Scan folders (1)",
+    exact: true,
+  });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true")
+    await toggle.click();
+  const remove = page.getByRole("button", {
+    name: "Remove scan folder " + selected[0].path,
+    exact: true,
+  });
+  await remove.click();
+  await remove.waitFor({ state: "hidden" });
+  assert.deepEqual(await api("getCliScanDirectories"), []);
+  const store = JSON.parse(
+    await fs.readFile(path.join(root, "tauri-app-data", "clis.json"), "utf8"),
+  );
+  assert.deepEqual(store.scanDirectories, []);
+  assert.equal(
+    await fs.readFile(path.join(selected[0].path, "fixture.txt"), "utf8"),
+    "scan directory fixture",
+  );
+  pass(
+    "CLI scan folder survives restart and removing it preserves files in the directory",
+  );
+}
 
 export async function checkCliActions({ root, page, api, pass, inventory }) {
   assert.equal((await api("getMeta")).clisTestMode, true);

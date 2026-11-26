@@ -11,7 +11,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import { chromium } from "playwright-core";
 import { checkServerScreen } from "./desktop-servers.mjs";
-import { checkCliActions } from "./desktop-clis.mjs";
+import {
+  checkCliActions,
+  checkCliFolders,
+  removeSavedCliFolder,
+} from "./desktop-clis.mjs";
 import { checkMigration } from "./desktop-migration.mjs";
 import { checkAhkScreen } from "./desktop-ahk.mjs";
 
@@ -261,7 +265,20 @@ try {
   pass(
     "CLI scan, progress, partial source, cancellation, cache integrity and uninstall rejection",
   );
-  const cliRevision = await checkCliActions({ root, page, api, pass, inventory });
+  const cliRevision = await checkCliActions({
+    root,
+    page,
+    api,
+    pass,
+    inventory,
+  });
+  const cliFolders = await checkCliFolders({
+    root,
+    page,
+    api,
+    pid: app.pid,
+    pass,
+  });
   const bounded = await api("getProjects");
   for (const key of ["projects", "activity", "recentlyStopped", "legacyNotes"])
     assert(Array.isArray(bounded[key]));
@@ -281,6 +298,7 @@ try {
   await closeApp();
   await launch();
   assert.equal((await api("getCliInventory")).revision, cliRevision);
+  await removeSavedCliFolder({ root, page, api, selected: cliFolders, pass });
   assert.equal((await api("getSettings")).scanIntervalMs, 2200);
   assert(
     (await api("getProjects")).projects.some(
