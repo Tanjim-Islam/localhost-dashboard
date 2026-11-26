@@ -108,6 +108,32 @@ fn import(old: &Path, dir: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    #[ignore = "read-only import of an existing dashboard profile into a temporary directory"]
+    fn existing_profile_opens_in_all_native_subsystems() {
+        let source = PathBuf::from(
+            std::env::var_os("DASHBOARD_LEGACY_PROFILE").expect("Set DASHBOARD_LEGACY_PROFILE"),
+        );
+        assert!(source.is_absolute() && source.join("settings.json").is_file());
+        let imported = tempfile::tempdir().unwrap();
+        import(&source, imported.path()).unwrap();
+        for name in STORES.iter().filter(|name| source.join(name).is_file()) {
+            #[cfg(target_os = "macos")]
+            if *name == "settings.json" && source.join("settings.sqlite").is_file() {
+                continue;
+            }
+            // Compare without formatting either user's data or its contents on error.
+            assert!(
+                read_json(&source, name, Value::Null).unwrap()
+                    == read_json(imported.path(), name, Value::Null).unwrap(),
+                "Import changed {name}"
+            );
+        }
+        crate::settings::Settings::new(imported.path()).unwrap();
+        crate::servers::Servers::new(imported.path()).unwrap();
+        crate::automation::Automation::new(imported.path()).unwrap();
+        crate::clis::Clis::new(imported.path()).unwrap();
+    }
+    #[test]
     fn migration_is_scoped_repeatable_and_preserves_source() {
         let old = tempfile::tempdir().unwrap();
         let new = tempfile::tempdir().unwrap();

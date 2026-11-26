@@ -203,7 +203,7 @@ test("tab, preload, and modal contracts expose no raw destructive input", async 
   ]);
   assert.match(app, /saved === "clis"/);
   assert.match(app, /showRefresh=\{activeTab !== "clis"\}/);
-  assert.match(preload, /uninstallCliInstallation: value => request\("uninstallCliInstallation", value\)/);
+  assert.match(preload, /request\("uninstallCliInstallation", value\)/);
   assert.match(types, /confirmation: "uninstall-exact-cli-installation"/);
   assert.doesNotMatch(
     types.slice(

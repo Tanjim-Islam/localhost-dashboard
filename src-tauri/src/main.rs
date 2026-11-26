@@ -5,6 +5,8 @@ mod clis;
 mod preferences;
 mod servers;
 mod settings;
+#[cfg(all(test, windows))]
+mod shell_checks;
 mod storage;
 mod updater;
 #[cfg(test)]
