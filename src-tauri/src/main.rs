@@ -2,6 +2,7 @@
 
 mod automation;
 mod clis;
+mod hotkey;
 mod preferences;
 mod servers;
 mod settings;
@@ -61,6 +62,10 @@ async fn dashboard(
             "clisTestMode":storage::isolated()
         })),
         "getSettings" => Ok(settings::snapshot(&app)),
+        "recordGlobalHotkey" => {
+            settings::set_recording(&app, arg.as_bool().ok_or("Invalid recording state.")?);
+            Ok(Value::Null)
+        }
         "getRendererPreferences" => {
             tauri::async_runtime::spawn_blocking(move || storage::renderer_preferences(&app))
                 .await
@@ -173,6 +178,11 @@ fn main() {
                 .ok_or("Missing main window.")?;
             let mut webview = tauri::WebviewWindowBuilder::from_config(app, config)?
                 .on_navigation(local_origin)
+                .on_page_load(|window, payload| {
+                    if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                        settings::set_recording(window.app_handle(), false);
+                    }
+                })
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny);
             if storage::isolated() {
                 webview = webview.data_directory(dir.join("webview"));

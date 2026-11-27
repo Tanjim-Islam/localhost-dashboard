@@ -108,7 +108,9 @@ export default function App() {
   const showSettings = useCallback(() => setOpenSettings(true), []);
   const closeSettings = useCallback(() => setOpenSettings(false), []);
   const saveSettings = useCallback(async (s: Parameters<typeof window.api.updateSettings>[0]) => {
-    setSettings(await window.api.updateSettings(s));
+    const updated = await window.api.updateSettings(s);
+    if (updated.error) throw new Error(updated.error);
+    setSettings(updated);
     setOpenSettings(false);
   }, []);
   const resetSettings = useCallback(async () => {

@@ -1,18 +1,23 @@
+use crate::hotkey;
 use crate::storage::{isolated, read_json, write_json};
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
 };
 use tauri::{AppHandle, Emitter, Manager};
 #[cfg(not(windows))]
 use tauri_plugin_autostart::ManagerExt;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 pub struct Settings {
     pub dir: PathBuf,
     inner: Mutex<Value>,
     writer: Mutex<()>,
+    recording: AtomicBool,
 }
 
 fn defaults() -> Value {
@@ -26,16 +31,14 @@ fn defaults() -> Value {
     } else {
         "Ctrl+Shift+D"
     });
+    value["__platformHotkeyDefaultsMigrated"] = json!(true);
     value
 }
 
-fn parse_hotkey(name: &str) -> Result<Shortcut, String> {
-    if name.len() > 90 || !(2..=4).contains(&name.split('+').count()) {
-        return Err("Shortcut must use 2 to 4 keys.".into());
-    }
-    name.replace("CommandOrControl", "CmdOrCtrl")
-        .parse::<Shortcut>()
-        .map_err(|_| "Invalid global hotkey.".into())
+pub fn set_recording(app: &AppHandle, recording: bool) {
+    app.state::<Settings>()
+        .recording
+        .store(recording, Ordering::Release);
 }
 fn merged(mut base: Value, patch: &Value) -> Result<Value, String> {
     let incoming = patch.as_object().ok_or("Invalid settings.")?;
@@ -49,8 +52,9 @@ fn merged(mut base: Value, patch: &Value) -> Result<Value, String> {
                 base[key] = json!(value.as_u64().ok_or("Invalid scan interval.")?.max(2000))
             }
             "globalHotkey" => {
-                parse_hotkey(value.as_str().ok_or("Invalid global hotkey.")?)?;
-                base[key] = value.clone();
+                base[key] = json!(
+                    hotkey::parse(value.as_str().ok_or("Invalid global hotkey.")?)?.accelerator
+                );
             }
             _ => {}
         }
@@ -74,6 +78,19 @@ fn migrate(stored: &Value) -> Value {
             out["notifyOnStop"] = json!(v);
         }
     }
+    if stored["__platformHotkeyDefaultsMigrated"] != true
+        && matches!(
+            stored["globalHotkey"].as_str(),
+            Some(
+                "Ctrl+Shift+D"
+                    | "Control+Shift+D"
+                    | "CommandOrControl+Shift+D"
+                    | "Control+Alt+Shift+D"
+            )
+        )
+    {
+        out["globalHotkey"] = defaults()["globalHotkey"].clone();
+    }
     out
 }
 impl Settings {
@@ -87,6 +104,7 @@ impl Settings {
             dir: dir.to_owned(),
             inner: Mutex::new(current),
             writer: Mutex::default(),
+            recording: AtomicBool::default(),
         })
     }
 }
@@ -98,22 +116,30 @@ pub fn snapshot(app: &AppHandle) -> Value {
         .clone()
 }
 fn register(app: &AppHandle, name: &str) -> Result<(), String> {
-    let shortcut = parse_hotkey(name)?;
+    let binding = hotkey::parse(name)?;
     if isolated() {
         return Ok(());
     }
     app.global_shortcut()
-        .on_shortcut(shortcut, |app, _, event| {
+        .on_shortcut(binding.shortcut, move |app, _, event| {
             if event.state == ShortcutState::Pressed {
-                crate::window::toggle(app);
+                if app.state::<Settings>().recording.load(Ordering::Acquire)
+                    && app.get_webview_window("main").is_some_and(|w| {
+                        w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false)
+                    })
+                {
+                    let _ = app.emit_to("main", "onRecordGlobalHotkey", &binding.accelerator);
+                } else {
+                    crate::window::toggle(app);
+                }
             }
         })
-        .map_err(|_| "That global hotkey could not be registered.".into())
+        .map_err(|_| "This shortcut is unavailable. Choose another combination.".into())
 }
 fn unregister(app: &AppHandle, name: &str) {
     if !isolated() {
-        if let Ok(shortcut) = parse_hotkey(name) {
-            let _ = app.global_shortcut().unregister(shortcut);
+        if let Ok(binding) = hotkey::parse(name) {
+            let _ = app.global_shortcut().unregister(binding.shortcut);
         }
     }
 }
@@ -149,6 +175,9 @@ pub fn update(app: &AppHandle, patch: Option<Value>) -> Result<Value, String> {
     let state = app.state::<Settings>();
     let _serial = state.writer.lock().map_err(|_| "Settings unavailable.")?;
     let old = snapshot(app);
+    let requested_hotkey = patch
+        .as_ref()
+        .is_none_or(|p| p.get("globalHotkey").is_some());
     let next = match patch {
         Some(p) => merged(old.clone(), &p)?,
         None => defaults(),
@@ -157,8 +186,11 @@ pub fn update(app: &AppHandle, patch: Option<Value>) -> Result<Value, String> {
         .as_str()
         .ok_or("Invalid stored shortcut.")?;
     let after = next["globalHotkey"].as_str().ok_or("Invalid shortcut.")?;
-    let changed = parse_hotkey(before)? != parse_hotkey(after)?;
-    if changed {
+    let candidate = hotkey::parse(after)?.shortcut;
+    let changed = hotkey::parse(before)?.shortcut != candidate;
+    let register_candidate = changed
+        || (requested_hotkey && !isolated() && !app.global_shortcut().is_registered(candidate));
+    if register_candidate {
         register(app, after)?;
     }
     let login_changed = next["startAtLogin"] != old["startAtLogin"];
@@ -169,7 +201,7 @@ pub fn update(app: &AppHandle, patch: Option<Value>) -> Result<Value, String> {
         write_json(&state.dir, "settings.json", &next)
     })();
     if let Err(err) = save {
-        if changed {
+        if register_candidate {
             unregister(app, after);
         }
         if login_changed {
@@ -192,6 +224,15 @@ pub fn start_hidden(prefs: &Value, login_arg: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn default_migration_preserves_subsequent_user_choices() {
+        let legacy = json!({"globalHotkey":"Control+Shift+D"});
+        let mut migrated = migrate(&legacy);
+        assert_eq!(migrated["globalHotkey"], defaults()["globalHotkey"]);
+        assert_eq!(migrated["__platformHotkeyDefaultsMigrated"], true);
+        migrated["globalHotkey"] = json!("Ctrl+Shift+D");
+        assert_eq!(migrate(&migrated)["globalHotkey"], "Control+Shift+D");
+    }
     #[test]
     fn validates_updates_before_persisting() {
         let original = defaults();

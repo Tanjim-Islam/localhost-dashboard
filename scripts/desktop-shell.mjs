@@ -202,6 +202,22 @@ async function osActions() {
     globalHotkey: "Control+Alt+Shift+F23",
     closeToTray: true,
   });
+  await button("Settings").click();
+  const settings = page.getByRole("dialog", {name: "Settings"});
+  await settings.getByRole("button", {name: "Edit", exact: true}).click();
+  await settings.getByText("Recording...", {exact: true}).waitFor();
+  windows("hotkey", 0x86);
+  await settings.getByText("F23", {exact: true}).waitFor();
+  assert.equal(state().visible, 1);
+  assert(await settings.locator("footer").getByRole("button", {name: "Save"}).isDisabled());
+  await settings.getByRole("button", {name: "Cancel", exact: true}).click();
+  await button("Close settings").click();
+  await settings.waitFor({state: "hidden"});
+  windows("hotkey", 0x86);
+  await until(() => !state().visible, "shortcut hides the dashboard after cancelling a recording");
+  windows("hotkey", 0x86);
+  await until(() => state().visible, "shortcut restores the dashboard after recording");
+  pass("Recording the active global shortcut keeps Settings open and Cancel restores normal toggling");
   await button("Close").click();
   await until(() => !state().visible, "close-to-tray");
   windows("hotkey", 0x86);

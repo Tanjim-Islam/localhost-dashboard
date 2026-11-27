@@ -24,6 +24,27 @@ function subscribe<T>(
   };
 }
 
+let recordingChanges = Promise.resolve();
+function onRecordGlobalHotkey(callback: (accelerator: string) => void): () => void {
+  let active = true;
+  const listening = listen<string>("onRecordGlobalHotkey", ({payload}) => {
+    if (active) callback(payload);
+  });
+  // Set recording only after the native event listener exists. Serialize close/open
+  // transitions so a previous Settings panel cannot disable its replacement.
+  recordingChanges = recordingChanges.then(async () => {
+    await listening;
+    if (active) await request("recordGlobalHotkey", true);
+  }).catch((error: unknown) => console.error("Could not start shortcut recording", error));
+  return () => {
+    active = false;
+    recordingChanges = recordingChanges.then(async () => {
+      try { await request("recordGlobalHotkey", false); }
+      finally { (await listening)(); }
+    }).catch((error: unknown) => console.error("Could not stop shortcut recording", error));
+  };
+}
+
 window.api = {
   getServers: () => request("getServers"),
   openProjectFolder: (value) => request("openProjectFolder", value),
@@ -46,6 +67,7 @@ window.api = {
   openTerminal: (value) => request("openTerminal", value),
   openExplorer: (value) => request("openExplorer", value),
   getSettings: () => request("getSettings"),
+  onRecordGlobalHotkey,
   updateSettings: (value) => request("updateSettings", value),
   resetSettings: () => request("resetSettings"),
   onSettingsUpdate: (cb) => subscribe("onSettingsUpdate", cb),

@@ -15,6 +15,7 @@
   "include": [
     "src/types/*.d.ts",
     "tests/titlebar-layout.test.ts",
+    "tests/hotkey.test.ts",
     "tests/semantic-colors.test.ts",
     "tests/clis-renderer-contract.test.ts"
   ]
