@@ -39,8 +39,9 @@ export default function SettingsPanel({
   const [notifyOnStop, setNotifyOnStop] = useState(true);
   const [closeToTray, setCloseToTray] = useState(true);
   const [globalHotkey, setGlobalHotkey] = useState("Ctrl+Shift+D");
-  const [recording, setRecording] = useState(false);
-  useEffect(() => { if (!open) setRecording(false); }, [open]);
+  const [recordingState, setRecordingState] = useState<"idle" | "starting" | "ready">("idle");
+  const recording = recordingState !== "idle";
+  useEffect(() => { if (!open) setRecordingState("idle"); }, [open]);
   const [recordedHotkey, setRecordedHotkey] = useState("");
   const [saving, setSaving] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
@@ -110,7 +111,16 @@ export default function SettingsPanel({
 
   useEffect(() => {
     if (!recording || !open) return;
-    const stopListening = window.api.onRecordGlobalHotkey(setRecordedHotkey);
+    let active = true;
+    const session = window.api.onRecordGlobalHotkey(setRecordedHotkey);
+    void session.ready.then(() => {
+      if (active) setRecordingState("ready");
+    }).catch(() => {
+      if (active) {
+        setRecordingState("idle");
+        setHotkeyError("Could not start shortcut recording. Try again.");
+      }
+    });
     const handler = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
@@ -118,8 +128,9 @@ export default function SettingsPanel({
     };
     window.addEventListener("keydown", handler, { capture: true });
     return () => {
+      active = false;
       window.removeEventListener("keydown", handler, { capture: true });
-      stopListening();
+      session.stop();
     };
   }, [recording, open, platform]);
 
@@ -127,7 +138,7 @@ export default function SettingsPanel({
     <AnimatePresence>
     {open && <AnimatedOverlay
       key="settings"
-      onClose={() => { setRecording(false); onClose(); }}
+      onClose={() => { setRecordingState("idle"); onClose(); }}
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4 no-drag backdrop-blur-[2px]"
     >
       <motion.section
@@ -281,7 +292,7 @@ export default function SettingsPanel({
                     <button
                       type="button"
                       onClick={() => {
-                        setRecording(true);
+                        setRecordingState("starting");
                         setRecordedHotkey("");
                         setHotkeyError(null);
                       }}
@@ -296,7 +307,7 @@ export default function SettingsPanel({
                         type="button"
                         onClick={() => {
                           setRecordedHotkey("");
-                          setRecording(false);
+                          setRecordingState("idle");
                           setHotkeyError(null);
                         }}
                         className="rounded-full bg-gray-300 px-3 py-1.5 text-sm text-gray-900 hover:bg-gray-400"
@@ -307,7 +318,7 @@ export default function SettingsPanel({
                         type="button"
                         onClick={() => {
                           setGlobalHotkey(recordedHotkey);
-                          setRecording(false);
+                          setRecordingState("idle");
                           setHotkeyError(null);
                         }}
                         disabled={!canAcceptRecording}
@@ -328,14 +339,14 @@ export default function SettingsPanel({
                   hotkeyParts(recording ? recordedHotkey : globalHotkey, platform),
                   platform,
                 )}
-                {recording && (
+                {recordingState === "ready" && (
                   <span className="flex items-center gap-1 text-xs text-danger-text animate-pulse">
                     <span className="h-2 w-2 rounded-full bg-mimi_pink-500"></span>
                     Recording...
                   </span>
                 )}
               </div>
-              {recording && !recordedHotkey && (
+              {recordingState === "ready" && !recordedHotkey && (
                 <div className="mt-2 text-xs text-gray-700">
                   Press a modifier and a key together.
                 </div>
@@ -400,7 +411,7 @@ export default function SettingsPanel({
                     closeToTray,
                     ...(hotkeyChanged ? { globalHotkey: editedHotkey } : {}),
                   });
-                  setRecording(false);
+                  setRecordingState("idle");
                 } catch (error) {
                   setHotkeyError(error instanceof Error ? error.message : "Could not save settings.");
                 } finally {

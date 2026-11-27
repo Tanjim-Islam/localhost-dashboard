@@ -25,25 +25,33 @@ function subscribe<T>(
 }
 
 let recordingChanges = Promise.resolve();
-function onRecordGlobalHotkey(callback: (accelerator: string) => void): () => void {
+const onRecordGlobalHotkey: Api["onRecordGlobalHotkey"] = (callback) => {
   let active = true;
-  const listening = listen<string>("onRecordGlobalHotkey", ({payload}) => {
-    if (active) callback(payload);
-  });
+  let unlisten: (() => void) | undefined;
   // Set recording only after the native event listener exists. Serialize close/open
   // transitions so a previous Settings panel cannot disable its replacement.
-  recordingChanges = recordingChanges.then(async () => {
-    await listening;
+  const ready = recordingChanges.then(async () => {
+    if (!active) return;
+    unlisten = await listen<string>("onRecordGlobalHotkey", ({ payload }) => {
+      if (active) callback(payload);
+    });
     if (active) await request("recordGlobalHotkey", true);
-  }).catch((error: unknown) => console.error("Could not start shortcut recording", error));
-  return () => {
-    active = false;
-    recordingChanges = recordingChanges.then(async () => {
-      try { await request("recordGlobalHotkey", false); }
-      finally { (await listening)(); }
-    }).catch((error: unknown) => console.error("Could not stop shortcut recording", error));
+  });
+  // The panel handles activation errors. Keep later cleanup and retries runnable.
+  recordingChanges = ready.catch(() => {});
+  return {
+    ready,
+    stop() {
+      if (!active) return;
+      active = false;
+      recordingChanges = recordingChanges.then(async () => {
+        if (!unlisten) return;
+        try { await request("recordGlobalHotkey", false); }
+        finally { unlisten(); }
+      }).catch((error: unknown) => console.error("Could not stop shortcut recording", error));
+    },
   };
-}
+};
 
 window.api = {
   getServers: () => request("getServers"),

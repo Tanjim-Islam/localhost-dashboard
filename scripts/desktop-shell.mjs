@@ -46,10 +46,10 @@ const windows = (...args) =>
     windowsHide: true,
   }).trim();
 const state = () => {
-  const [visible, minimized, maximized, x, y] = windows("state")
+  const [visible, minimized, maximized, x, y, foreground] = windows("state")
     .split(" ")
     .map(Number);
-  return { visible, minimized, maximized, x, y };
+  return { visible, minimized, maximized, x, y, foreground };
 };
 const until = async (check, label, timeout = 25000) => {
   const end = Date.now() + timeout;
@@ -160,6 +160,48 @@ async function checkSingleInstance() {
   }
 }
 
+const centerOnDesktop = (locator) =>
+  locator.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return [
+      Math.round((r.x + r.width / 2) * devicePixelRatio),
+      Math.round((r.y + r.height / 2) * devicePixelRatio),
+    ];
+  });
+
+async function checkShortcutRecording() {
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await button("Settings").click();
+  try {
+    const edit = settings.getByRole("button", { name: "Edit", exact: true });
+    // A real click activates the native window. A CDP click alone can target a
+    // background WebView, where the global shortcut should raise the dashboard.
+    await edit.click({ trial: true });
+    windows("click", ...(await centerOnDesktop(edit)));
+    await settings.getByText("Recording...", { exact: true }).waitFor();
+    assert.equal(state().foreground, 1, "Shortcut recorder lost native focus");
+    windows("hotkey", 0x86);
+    await settings.getByText("F23", { exact: true }).waitFor();
+    assert.equal(state().visible, 1);
+    assert(await settings.locator("footer").getByRole("button", { name: "Save" }).isDisabled());
+    await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  } catch (error) {
+    const shortcut = settings.locator("section").filter({ hasText: "Global hotkey" });
+    console.error("Shortcut check:", state(), await shortcut.allTextContents());
+    throw error;
+  } finally {
+    // A failed capture can hide the window and leave Settings over the AHK tab.
+    if (!state().visible) windows("restore");
+    if (await settings.isVisible()) await button("Close settings").click();
+    await settings.waitFor({ state: "hidden" });
+  }
+  windows("hotkey", 0x86);
+  await until(() => !state().visible, "shortcut hides the dashboard after cancelling a recording");
+  windows("hotkey", 0x86);
+  await until(() => state().visible, "shortcut restores the dashboard after recording");
+  pass("Recording the active global shortcut keeps Settings open and Cancel restores normal toggling");
+}
+
 async function osActions() {
   assert.equal(loginCommand(), "", "Hosted profile already has a login item.");
   const marker = "dashboard-clipboard-" + randomUUID();
@@ -177,16 +219,9 @@ async function osActions() {
     );
     return;
   }
-  const spot = await page
-    .locator(".title-bar")
-    .getByText("Localhost Dashboard", { exact: true })
-    .evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      return [
-        Math.round((r.x + r.width / 2) * devicePixelRatio),
-        Math.round((r.y + r.height / 2) * devicePixelRatio),
-      ];
-    });
+  const spot = await centerOnDesktop(
+    page.locator(".title-bar").getByText("Localhost Dashboard", { exact: true }),
+  );
   const before = state();
   windows("drag", ...spot);
   await until(
@@ -202,22 +237,8 @@ async function osActions() {
     globalHotkey: "Control+Alt+Shift+F23",
     closeToTray: true,
   });
-  await button("Settings").click();
-  const settings = page.getByRole("dialog", {name: "Settings"});
-  await settings.getByRole("button", {name: "Edit", exact: true}).click();
-  await settings.getByText("Recording...", {exact: true}).waitFor();
-  windows("hotkey", 0x86);
-  await settings.getByText("F23", {exact: true}).waitFor();
-  assert.equal(state().visible, 1);
-  assert(await settings.locator("footer").getByRole("button", {name: "Save"}).isDisabled());
-  await settings.getByRole("button", {name: "Cancel", exact: true}).click();
-  await button("Close settings").click();
-  await settings.waitFor({state: "hidden"});
-  windows("hotkey", 0x86);
-  await until(() => !state().visible, "shortcut hides the dashboard after cancelling a recording");
-  windows("hotkey", 0x86);
-  await until(() => state().visible, "shortcut restores the dashboard after recording");
-  pass("Recording the active global shortcut keeps Settings open and Cancel restores normal toggling");
+  await exercise("Installed global shortcut recording", checkShortcutRecording);
+  if (!state().visible) windows("restore");
   await button("Close").click();
   await until(() => !state().visible, "close-to-tray");
   windows("hotkey", 0x86);

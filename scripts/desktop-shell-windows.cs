@@ -24,6 +24,7 @@ internal static class DashboardShellCheck {
     [DllImport("user32")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32")] static extern bool GetWindowRect(IntPtr h,out Rect rect);
     [DllImport("user32")] static extern bool ShowWindow(IntPtr h,int state);
+    [DllImport("user32")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32")] static extern bool SetProcessDPIAware();
     [DllImport("user32")] static extern bool GetCursorPos(out Point p);
@@ -106,7 +107,7 @@ internal static class DashboardShellCheck {
             var action=args[1];
             if(action=="state") {
                 Rect r; if(!GetWindowRect(h,out r)) throw new Exception("Cannot read window rectangle.");
-                Console.WriteLine("{0} {1} {2} {3} {4}", IsWindowVisible(h)?1:0,IsIconic(h)?1:0,IsZoomed(h)?1:0,r.left,r.top);
+                Console.WriteLine("{0} {1} {2} {3} {4} {5}", IsWindowVisible(h)?1:0,IsIconic(h)?1:0,IsZoomed(h)?1:0,r.left,r.top,GetForegroundWindow()==h?1:0);
                 return 0;
             }
             if(action=="restore") {ShowWindow(h,9); SetForegroundWindow(h); return 0;}
@@ -169,20 +170,20 @@ internal static class DashboardShellCheck {
                 foreach(var key in new byte[]{fKey,0x10,0x12,0x11}) keybd_event(key,0,2,UIntPtr.Zero);
                 return 0;
             }
-            if(action!="drag" && action!="double") throw new Exception("Unknown window test action.");
+            if(action!="drag" && action!="double" && action!="click") throw new Exception("Unknown window test action.");
             var p=new Point{x=int.Parse(args[2]),y=int.Parse(args[3])};
             Point original; GetCursorPos(out original);
             try {
                 SetForegroundWindow(h);
                 Thread.Sleep(150);
                 ClientToScreen(h,ref p);
-                if(GetAncestor(WindowFromPoint(p),2)!=h) throw new Exception("The fixture title bar is covered by another window.");
+                if(GetAncestor(WindowFromPoint(p),2)!=h) throw new Exception("The fixture click target is covered by another window.");
                 SetCursorPos(p.x,p.y);
                 mouse_event(2,0,0,0,UIntPtr.Zero); Thread.Sleep(75);
                 if(action=="drag") {
                     for(int n=1;n<=8;n++) {SetCursorPos(p.x+6*n,p.y+3*n); Thread.Sleep(30);}
                     mouse_event(4,0,0,0,UIntPtr.Zero);
-                } else {
+                } else if(action=="double") {
                     mouse_event(4,0,0,0,UIntPtr.Zero); Thread.Sleep(65);
                     mouse_event(2,0,0,0,UIntPtr.Zero); Thread.Sleep(40); mouse_event(4,0,0,0,UIntPtr.Zero);
                 }

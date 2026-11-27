@@ -87,6 +87,48 @@ const api = (name, arg) =>
   page.evaluate(([method, value]) => window.api[method](value), [name, arg]);
 const button = (name) =>
   page.getByRole("button", { name, exact: typeof name === "string" });
+
+async function checkShortcutRecorderReadiness(settings) {
+  const edit = settings.getByRole("button", { name: "Edit", exact: true });
+  const recording = settings.getByText("Recording...", { exact: true });
+  // Hold the first enable before Rust receives it, even on a fast local machine.
+  await page.evaluate(() => {
+    const originalFetch = window.fetch;
+    const dashboard = window.__TAURI_INTERNALS__.convertFileSrc("dashboard", "ipc");
+    const transitions = [];
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    window.fetch = async (url, options) => {
+      if (url === dashboard && typeof options?.body === "string") {
+        const { method, arg } = JSON.parse(options.body);
+        if (method === "recordGlobalHotkey") {
+          transitions.push(arg);
+          if (transitions.length === 1 && arg) await gate;
+        }
+      }
+      return originalFetch(url, options);
+    };
+    window.recorderFixture = {
+      transitions, release,
+      restore() { release(); window.fetch = originalFetch; delete window.recorderFixture; },
+    };
+  });
+  try {
+    await edit.click();
+    await page.waitForFunction(() => window.recorderFixture.transitions.length > 0);
+    assert.equal(await recording.isVisible(), false, "Recording was announced before native activation");
+    await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+    await edit.click();
+    assert.equal(await recording.isVisible(), false, "Reopened recorder inherited a pending activation");
+    await page.evaluate(() => window.recorderFixture.release());
+    await recording.waitFor();
+    assert.deepEqual(await page.evaluate(() => window.recorderFixture.transitions), [true, false, true]);
+    pass("Shortcut recording waits for native activation across cancel and reopen");
+  } finally {
+    await page.evaluate(() => window.recorderFixture.restore());
+  }
+}
+
 async function closeApp() {
   await api("updateSettings", { closeToTray: false });
   const stopped = once(app, "exit");
@@ -191,7 +233,7 @@ try {
   await button("Settings").click();
   const settingsDialog = page.getByRole("dialog", {name: "Settings"});
   assert.equal(await settingsDialog.getByRole("spinbutton").inputValue(), "2200");
-  await settingsDialog.getByRole("button", {name: "Edit", exact: true}).click();
+  await checkShortcutRecorderReadiness(settingsDialog);
   await page.keyboard.down("Control");
   assert(await settingsDialog.locator("footer").getByRole("button", {name:"Save"}).isDisabled());
   await page.keyboard.press("Shift+J");
