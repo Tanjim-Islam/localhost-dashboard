@@ -264,6 +264,7 @@ export default function ClisTab({
   const sourceFailures =
     inventory?.sourceResults.filter((source) => source.status === "failed") ??
     [];
+  const lastScanAt = inventory?.generatedAt ?? inventory?.lastSuccessfulScanAt;
 
   return (
     <AnimatePresence>
@@ -283,8 +284,8 @@ export default function ClisTab({
           </div>
           <p className="mt-1 text-xs text-gray-600">
             Last scan:{" "}
-            {inventory?.lastSuccessfulScanAt
-              ? formatCliAge(inventory.lastSuccessfulScanAt)
+            {lastScanAt
+              ? formatCliAge(lastScanAt)
               : "Never"}
           </p>
         </div>

@@ -120,7 +120,7 @@ pub(super) fn launch_mac(path: &Path) -> Result<(), String> {
     }
     let executable = match extension(path).as_str() {
         "workflow" => "/usr/bin/automator",
-        "scpt" => "/usr/bin/osascript",
+        "scpt" | "applescript" => "/usr/bin/osascript",
         "app" => "/usr/bin/open",
         _ => return Err("Unsupported automation file type.".into()),
     };

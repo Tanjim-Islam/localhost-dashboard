@@ -43,6 +43,28 @@ pub fn isolated() -> bool {
     std::env::var_os("LOCAL_DASHBOARD_CLIS_TEST_ROOT").is_some()
 }
 
+#[cfg(target_os = "macos")]
+pub fn fixture_webview_id(dir: &Path) -> io::Result<[u8; 16]> {
+    // WKWebView identifies persistent stores by UUID. Keep it with the fixture
+    // so relaunches reuse it and recreating the fixture starts a fresh store.
+    let path = dir.join("webview-id");
+    if !path.exists() {
+        let mut pending = tempfile::NamedTempFile::new_in(dir)?;
+        pending.write_all(uuid::Uuid::new_v4().as_bytes())?;
+        match pending.persist_noclobber(&path) {
+            Ok(_) => (),
+            Err(e) if e.error.kind() == io::ErrorKind::AlreadyExists => (),
+            Err(e) => return Err(e.error),
+        }
+    }
+    fs::read(path)?.try_into().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid fixture webview identifier",
+        )
+    })
+}
+
 pub fn initialize(app: &AppHandle) -> Result<PathBuf, String> {
     let fixture = std::env::var_os("LOCAL_DASHBOARD_CLIS_TEST_ROOT").map(PathBuf::from);
     let dir = match &fixture {

@@ -234,6 +234,18 @@ fn manager_plan(source: &str, es: &[Endpoint], e: &Endpoint) -> Option<Plan> {
         {
             return None;
         }
+        // Finder can discover a Homebrew or nvm npm outside its own PATH.
+        // Invoke the matching Node directly, including for later package actions.
+        #[cfg(target_os = "macos")]
+        if source == "npm" && e.canonical.ends_with("node_modules/npm/bin/npm-cli.js") {
+            let sibling = e.path.with_file_name("node");
+            if let Some(node) = es
+                .iter()
+                .find(|ep| ep.path == sibling && ep.data["executable"] == true)
+            {
+                return Some(Plan::new(&node.path, &[&path_string(&e.canonical)]));
+            }
+        }
         if cfg!(windows) && e.ext != "exe" {
             let root = e.canonical.parent()?;
             let resolved = e.data["shimTarget"].as_str().map(PathBuf::from);

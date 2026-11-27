@@ -51,6 +51,30 @@ fn fixture_pe(subsystem: u16) -> Vec<u8> {
 fn scan(e: &Environment, p: &Value) -> Value {
     inventory::scan(e, p, &AtomicBool::new(false), None, &|_, _, _, _| {}).unwrap()
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn npm_outside_finder_path_uses_its_sibling_node() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    let tmp = tempfile::tempdir().unwrap();
+    let bin = tmp.path().join("bin");
+    let node = bin.join("node");
+    let entry = tmp.path().join("lib/node_modules/npm/bin/npm-cli.js");
+    file(&node, "#!/bin/sh\n");
+    file(&entry, "#!/usr/bin/env node\n");
+    for path in [&node, &entry] {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let npm = bin.join("npm");
+    symlink(&entry, &npm).unwrap();
+    let env = isolated(tmp.path(), &[]);
+    let node_ep = discovery::inspect(&node, "node", None, &env, false).unwrap();
+    let npm_ep = discovery::inspect(&npm, "npm", None, &env, false).unwrap();
+    let args = vec!["--version".to_owned()];
+    let plan = packages::probe_plan(&npm_ep, &[node_ep], &args).unwrap();
+    assert_eq!(plan.exe, node);
+    assert_eq!(plan.args, [path_string(&real(&entry)), "--version".into()]);
+}
 #[test]
 fn pipx_pins_the_home_proven_by_installed_application_paths() {
     use super::{discovery::Endpoint, runner::Plan};

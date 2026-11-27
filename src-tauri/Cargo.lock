@@ -2460,12 +2460,13 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "local-dashboard"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
  "httparse",
  "libc",
+ "objc2",
  "regex",
  "rusqlite",
  "rusty-leveldb",

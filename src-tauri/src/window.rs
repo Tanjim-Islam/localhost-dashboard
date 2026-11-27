@@ -61,7 +61,16 @@ pub fn tray(app: &AppHandle) -> tauri::Result<()> {
             true,
             &[&about, &first, &hide, &others, &show, &last, &quit],
         )?;
-        app.set_menu(Menu::with_items(app, &[&application])?)?;
+        let edit = tauri::menu::SubmenuBuilder::new(app, "Edit")
+            .undo()
+            .redo()
+            .separator()
+            .cut()
+            .copy()
+            .paste()
+            .select_all()
+            .build()?;
+        app.set_menu(Menu::with_items(app, &[&application, &edit])?)?;
         return Ok(());
     }
     let open = MenuItem::with_id(app, "open", "Open Dashboard", true, None::<&str>)?;

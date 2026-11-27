@@ -185,7 +185,18 @@ fn main() {
                 })
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny);
             if storage::isolated() {
-                webview = webview.data_directory(dir.join("webview"));
+                #[cfg(target_os = "macos")]
+                {
+                    webview = if objc2::available!(macos = 14.0) {
+                        webview.data_store_identifier(storage::fixture_webview_id(&dir)?)
+                    } else {
+                        webview.incognito(true)
+                    };
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    webview = webview.data_directory(dir.join("webview"));
+                }
             }
             let _window = webview.build()?;
             window::tray(app.handle())?;
