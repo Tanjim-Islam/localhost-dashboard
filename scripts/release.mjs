@@ -8,6 +8,7 @@ import { gunzipSync } from "node:zlib";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const legacyPublicKey = "pLcjY+xshxhfKvhZyQbg8XZZFmrPzOw+lyVUGkd9JcI=";
 const text = (file) => readFileSync(file, "utf8");
+const macMinimum = JSON.parse(text(join(root, "src-tauri/tauri.macos.conf.json"))).bundle.macOS.minimumSystemVersion;
 const rawPublicKey = (bytes) => {
   assert.equal(bytes.length, 32, "Invalid Ed25519 public key");
   return createPublicKey({ format: "der", type: "spki", key: Buffer.concat([
@@ -22,7 +23,7 @@ export function releaseInfo(version, repository, notes, date) {
   assert.ok(Number.isFinite(Date.parse(date)), "Invalid release date");
   const prefix = "Localhost-Dashboard-";
   return {
-    version, notes: notes.trim(), date, base: "https://github.com/" + repository + "/releases/download/v" + version + "/",
+    version, notes: notes.trim(), date, macMinimum, base: "https://github.com/" + repository + "/releases/download/v" + version + "/",
     installer: prefix + "Setup-" + version + ".exe", portable: prefix + version + ".exe",
     dmg: prefix + version + "-universal.dmg", zip: prefix + version + "-universal.zip",
     archive: prefix + version + "-universal.app.tar.gz",
@@ -67,6 +68,7 @@ function legacyMacXml(info, length, signature) {
     '<title>Localhost Dashboard ' + info.version + '</title>',
     '<sparkle:version>' + info.version + '</sparkle:version>',
     '<sparkle:shortVersionString>' + info.version + '</sparkle:shortVersionString>',
+    '<sparkle:minimumSystemVersion>' + info.macMinimum + '</sparkle:minimumSystemVersion>',
     '<enclosure url="' + info.base + info.zip + '" length="' + length + '" type="application/octet-stream" sparkle:edSignature="' + signature + '"/>',
     '</item></channel></rss>', '',
   ].join('\n');
@@ -138,6 +140,7 @@ function run(command, args) {
     assert.equal(process.env.GITHUB_REF_NAME, "v" + info.version);
     const cfg = JSON.parse(text(join(root,"src-tauri/tauri.conf.json")));
     const lock = JSON.parse(text(join(root, "package-lock.json")));
+    assert.equal(lock.version, info.version);
     assert.equal(lock.packages[""].version, info.version);
     assert.equal(cfg.version, info.version);
     assert.equal(/^version\s*=\s*"([^"]+)"/m.exec(text(join(root, "src-tauri/Cargo.toml")))?.[1], info.version);
@@ -145,7 +148,10 @@ function run(command, args) {
     assert.ok(publicKey && Buffer.from(publicKey,"base64").toString().startsWith("untrusted comment:"), "Set TAURI_UPDATER_PUBLIC_KEY");
   } else if (command === "config") {
     assert.ok(publicKey);
-    writeFileSync(args[0], JSON.stringify({ bundle: {createUpdaterArtifacts: true}, plugins: {updater:{pubkey:publicKey,requireSignedVersion:true}} }));
+    writeFileSync(args[0], JSON.stringify({
+      bundle: {createUpdaterArtifacts: true, macOS: {bundleVersion: info.version}},
+      plugins: {updater:{pubkey:publicKey,requireSignedVersion:true}},
+    }));
   } else if (command === "stage") {
     assert.ok(["mac","windows"].includes(args[0]));
     stage(args[2], args[1], info, args[0], publicKey);

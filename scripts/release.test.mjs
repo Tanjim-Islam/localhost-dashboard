@@ -21,6 +21,7 @@ test("both updater generations accept the signed assets and detect substituted b
   const verifier = publicKey.export({format:"der",type:"spki"}).subarray(-32).toString("base64");
   const sparkleSig = sign(null, contents(info.zip), privateKey).toString("base64");
   writeLegacyMac(dir, info, sparkleSig, verifier);
+  assert.match(contents("appcast.xml").toString(), /<sparkle:minimumSystemVersion>12\.0<\/sparkle:minimumSystemVersion>/);
   writeLegacyWindows(dir, info);
   write(info.installer + ".blockmap", gzipSync(JSON.stringify({version:"2", files:[{sizes:[contents(info.installer).length]}]})));
   const cli = fileURLToPath(new URL("../node_modules/@tauri-apps/cli/tauri.js", import.meta.url));

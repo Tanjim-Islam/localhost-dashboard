@@ -1,6 +1,6 @@
 {
   "name": "local-dashboard",
-  "version": "1.13.0",
+  "version": "2.0.0",
   "description": "A native dashboard for local development servers and utilities.",
   "type": "module",
   "author": "Tanjim Islam",
