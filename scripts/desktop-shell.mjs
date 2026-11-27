@@ -172,6 +172,26 @@ const centerOnDesktop = (locator) =>
 async function checkShortcutRecording() {
   const settings = page.getByRole("dialog", { name: "Settings" });
   await button("Settings").click();
+  const trace = await page.evaluateHandle(() => {
+    const events = [];
+    const onKey = ({ key }) => {
+      if (["Control", "Alt", "Shift", "F23"].includes(key)) events.push("DOM " + key);
+    };
+    const subscribe = window.api.onRecordGlobalHotkey;
+    window.api.onRecordGlobalHotkey = (record) => subscribe((value) => {
+      events.push(value === "Control+Alt+Shift+F23" ? "native F23 chord" : "unexpected native chord");
+      record(value);
+    });
+    window.addEventListener("keydown", onKey, true);
+    return {
+      events,
+      stop() {
+        window.removeEventListener("keydown", onKey, true);
+        window.api.onRecordGlobalHotkey = subscribe;
+        return events;
+      },
+    };
+  });
   try {
     const edit = settings.getByRole("button", { name: "Edit", exact: true });
     // A real click activates the native window. A CDP click alone can target a
@@ -181,6 +201,7 @@ async function checkShortcutRecording() {
     await settings.getByText("Recording...", { exact: true }).waitFor();
     assert.equal(state().foreground, 1, "Shortcut recorder lost native focus");
     windows("hotkey", 0x86);
+    await page.waitForFunction((trace) => trace.events.includes("native F23 chord"), trace);
     await settings.getByText("F23", { exact: true }).waitFor();
     assert.equal(state().visible, 1);
     assert(await settings.locator("footer").getByRole("button", { name: "Save" }).isDisabled());
@@ -190,6 +211,8 @@ async function checkShortcutRecording() {
     console.error("Shortcut check:", state(), await shortcut.allTextContents());
     throw error;
   } finally {
+    console.log("Shortcut delivery order:", await trace.evaluate((trace) => trace.stop()));
+    await trace.dispose();
     // A failed capture can hide the window and leave Settings over the AHK tab.
     if (!state().visible) windows("restore");
     if (await settings.isVisible()) await button("Close settings").click();
@@ -237,7 +260,10 @@ async function osActions() {
     globalHotkey: "Control+Alt+Shift+F23",
     closeToTray: true,
   });
-  await exercise("Installed global shortcut recording", checkShortcutRecording);
+  for (const attempt of [1, 2]) {
+    if (!state().visible) windows("restore");
+    await exercise("Installed global shortcut recording " + attempt, checkShortcutRecording);
+  }
   if (!state().visible) windows("restore");
   await button("Close").click();
   await until(() => !state().visible, "close-to-tray");

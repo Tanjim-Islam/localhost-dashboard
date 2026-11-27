@@ -112,7 +112,11 @@ export default function SettingsPanel({
   useEffect(() => {
     if (!recording || !open) return;
     let active = true;
-    const session = window.api.onRecordGlobalHotkey(setRecordedHotkey);
+    let nativeChordHeld = false;
+    const session = window.api.onRecordGlobalHotkey((accelerator) => {
+      nativeChordHeld = true;
+      setRecordedHotkey(accelerator);
+    });
     void session.ready.then(() => {
       if (active) setRecordingState("ready");
     }).catch(() => {
@@ -124,12 +128,21 @@ export default function SettingsPanel({
     const handler = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!event.repeat) setRecordedHotkey(recordedAccelerator(event, platform));
+      if (event.repeat) return;
+      const accelerator = recordedAccelerator(event, platform);
+      // Windows can deliver the registered chord before WebView2 delivers its modifiers.
+      if (nativeChordHeld && !isValidHotkey(accelerator)) return;
+      setRecordedHotkey(accelerator);
+    };
+    const release = (event: KeyboardEvent) => {
+      if (!event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) nativeChordHeld = false;
     };
     window.addEventListener("keydown", handler, { capture: true });
+    window.addEventListener("keyup", release, { capture: true });
     return () => {
       active = false;
       window.removeEventListener("keydown", handler, { capture: true });
+      window.removeEventListener("keyup", release, { capture: true });
       session.stop();
     };
   }, [recording, open, platform]);

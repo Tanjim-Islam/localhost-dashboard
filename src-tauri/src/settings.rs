@@ -122,16 +122,15 @@ fn register(app: &AppHandle, name: &str) -> Result<(), String> {
     }
     app.global_shortcut()
         .on_shortcut(binding.shortcut, move |app, _, event| {
-            if event.state == ShortcutState::Pressed {
-                if app.state::<Settings>().recording.load(Ordering::Acquire)
-                    && app.get_webview_window("main").is_some_and(|w| {
-                        w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false)
-                    })
-                {
-                    let _ = app.emit_to("main", "onRecordGlobalHotkey", &binding.accelerator);
-                } else {
-                    crate::window::toggle(app);
-                }
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            if !crate::window::is_foreground(app) {
+                crate::window::show(app);
+            } else if app.state::<Settings>().recording.load(Ordering::Acquire) {
+                let _ = app.emit_to("main", "onRecordGlobalHotkey", &binding.accelerator);
+            } else {
+                crate::window::hide(app);
             }
         })
         .map_err(|_| "This shortcut is unavailable. Choose another combination.".into())

@@ -21,15 +21,25 @@ pub fn hide(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     let _ = app.set_dock_visibility(false);
 }
-pub fn toggle(app: &AppHandle) {
-    if app
-        .get_webview_window("main")
-        .is_some_and(|w| w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false))
-    {
-        hide(app)
-    } else {
-        show(app)
-    }
+pub fn is_foreground(app: &AppHandle) -> bool {
+    app.get_webview_window("main").is_some_and(|window| {
+        if !window.is_visible().unwrap_or(false) {
+            return false;
+        }
+        // WebView2 can hold keyboard focus in a child HWND. Windows still reports
+        // the dashboard's top-level HWND as the foreground window.
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+            window
+                .hwnd()
+                .is_ok_and(|hwnd| hwnd.0 == unsafe { GetForegroundWindow() })
+        }
+        #[cfg(not(windows))]
+        {
+            window.is_focused().unwrap_or(false)
+        }
+    })
 }
 pub fn sync_tray(app: &AppHandle, enabled: bool) {
     if let Some(check) = app.try_state::<CheckMenuItem<tauri::Wry>>() {

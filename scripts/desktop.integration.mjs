@@ -88,12 +88,18 @@ const api = (name, arg) =>
 const button = (name) =>
   page.getByRole("button", { name, exact: typeof name === "string" });
 
-async function checkShortcutRecorderReadiness(settings) {
+async function checkShortcutRecorder(settings) {
   const edit = settings.getByRole("button", { name: "Edit", exact: true });
   const recording = settings.getByText("Recording...", { exact: true });
   // Hold the first enable before Rust receives it, even on a fast local machine.
   await page.evaluate(() => {
     const originalFetch = window.fetch;
+    const subscribe = window.api.onRecordGlobalHotkey;
+    let notify;
+    window.api.onRecordGlobalHotkey = (callback) => {
+      notify = callback;
+      return subscribe(callback);
+    };
     const dashboard = window.__TAURI_INTERNALS__.convertFileSrc("dashboard", "ipc");
     const transitions = [];
     let release;
@@ -110,7 +116,13 @@ async function checkShortcutRecorderReadiness(settings) {
     };
     window.recorderFixture = {
       transitions, release,
-      restore() { release(); window.fetch = originalFetch; delete window.recorderFixture; },
+      sendActiveChord() { notify("Control+Alt+Shift+F23"); },
+      restore() {
+        release();
+        window.fetch = originalFetch;
+        window.api.onRecordGlobalHotkey = subscribe;
+        delete window.recorderFixture;
+      },
     };
   });
   try {
@@ -124,6 +136,28 @@ async function checkShortcutRecorderReadiness(settings) {
     await recording.waitFor();
     assert.deepEqual(await page.evaluate(() => window.recorderFixture.transitions), [true, false, true]);
     pass("Shortcut recording waits for native activation across cancel and reopen");
+    const sendActiveChord = () => page.evaluate(() => window.recorderFixture.sendActiveChord());
+    for (const nativeFirst of [true, false]) {
+      if (nativeFirst) await sendActiveChord();
+      await page.keyboard.down("Control");
+      await page.keyboard.down("Alt");
+      await page.keyboard.down("Shift");
+      if (!nativeFirst) await sendActiveChord();
+      await settings.getByText("F23", { exact: true }).waitFor();
+      await page.keyboard.up("Shift");
+      await page.keyboard.up("Alt");
+      await page.keyboard.up("Control");
+      await page.keyboard.down("Control");
+      await settings.getByText("F23", { exact: true }).waitFor({ state: "hidden" });
+      await page.keyboard.press("K");
+      await page.keyboard.up("Control");
+      await settings.getByText("K", { exact: true }).waitFor();
+      await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+      await edit.click();
+      await recording.waitFor();
+      await settings.getByText("No shortcut set", { exact: true }).waitFor();
+    }
+    pass("Native shortcut survives either modifier event order and can be recorded again");
   } finally {
     await page.evaluate(() => window.recorderFixture.restore());
   }
@@ -233,7 +267,7 @@ try {
   await button("Settings").click();
   const settingsDialog = page.getByRole("dialog", {name: "Settings"});
   assert.equal(await settingsDialog.getByRole("spinbutton").inputValue(), "2200");
-  await checkShortcutRecorderReadiness(settingsDialog);
+  await checkShortcutRecorder(settingsDialog);
   await page.keyboard.down("Control");
   assert(await settingsDialog.locator("footer").getByRole("button", {name:"Save"}).isDisabled());
   await page.keyboard.press("Shift+J");
