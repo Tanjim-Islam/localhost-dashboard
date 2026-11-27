@@ -172,6 +172,7 @@ export default function App() {
       setHealthResults(map);
     });
     const offRecent = window.api.onRecentScriptsUpdate(setRecentScripts);
+    const offSettings = window.api.onSettingsUpdate(setSettings);
     window.api.getSettings().then(setSettings);
     window.api.getRecentScripts().then(setRecentScripts);
     window.api.getMeta().then((nextMeta) => {
@@ -189,6 +190,7 @@ export default function App() {
       offAutomator?.();
       offHealth?.();
       offRecent?.();
+      offSettings();
     };
   }, []);
 

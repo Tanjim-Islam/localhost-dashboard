@@ -190,6 +190,7 @@ try {
   await assert.rejects(api("updateSettings", { globalHotkey: "invalid" }));
   await button("Settings").click();
   const settingsDialog = page.getByRole("dialog", {name: "Settings"});
+  assert.equal(await settingsDialog.getByRole("spinbutton").inputValue(), "2200");
   await settingsDialog.getByRole("button", {name: "Edit", exact: true}).click();
   await page.keyboard.down("Control");
   assert(await settingsDialog.locator("footer").getByRole("button", {name:"Save"}).isDisabled());
@@ -197,7 +198,11 @@ try {
   await page.keyboard.up("Control");
   await settingsDialog.locator("footer").getByRole("button", {name:"Save"}).click();
   await settingsDialog.waitFor({state:"hidden"});
-  assert.equal((await api("getSettings")).globalHotkey, "Control+Shift+J");
+  const saved = await api("getSettings");
+  assert.equal(saved.globalHotkey, "Control+Shift+J");
+  assert.equal(saved.scanIntervalMs, 2200);
+  assert.equal(saved.notifyOnStart, false);
+  assert.equal(saved.notifyOnStop, false);
   pass("Settings rejects a modifier-only recording and saves the complete native shortcut");
   await api("checkForUpdates");
   assert.equal((await api("getUpdateStatus")).state, "not-available");
